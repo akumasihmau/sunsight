@@ -31,35 +31,41 @@ cd fe
 npm install
 npm run dev
 Frontend akan berjalan di http://localhost:3000.
+```
 
 2. Setup Backend & Database
 Buat database kosong di PostgreSQL dengan nama sunsight.
 
 PENTING: Aktifkan ekstensi PostGIS di database tersebut dengan mengeksekusi query SQL ini:
 
-SQL
+```SQL
 CREATE EXTENSION IF NOT EXISTS postgis;
-Konfigurasi Laravel:
+```
 
-Bash
+Konfigurasi Laravel:
+```Bash
 cd be
 composer install
 cp .env.example .env
 php artisan key:generate
-Sesuaikan konfigurasi database di file be/.env:
+```
 
-Cuplikan kode
+Sesuaikan konfigurasi database di file be/.env:
+```PHP
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_DATABASE=sunsight
 DB_USERNAME=postgres
 DB_PASSWORD=password_postgres_anda
-Jalankan migrasi dan nyalakan server:
+```
 
-Bash
+Jalankan migrasi dan nyalakan server:
+```Bash
 php artisan migrate
 php artisan serve
+```
+
 Backend API akan berjalan di http://localhost:8000.
 
 🤝 Alur Kerja & Kontribusi
@@ -68,3 +74,7 @@ Branching: Jangan melakukan push langsung ke main. Buat branch fitur baru untuk 
 Commit: Repositori ini menerapkan standar Conventional Commits. Silakan baca file commit-convention.md sebelum melakukan git commit.
 
 Dikelola oleh Tim Pengembang Sunsight.
+
+Rafid Wahyu Aditya
+Habibi Farhan Hamdani
+Muhammad Abi Rizky
