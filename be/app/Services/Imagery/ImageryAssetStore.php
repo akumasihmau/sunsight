@@ -10,8 +10,12 @@ use RuntimeException;
 /**
  * Satu-satunya tempat yang mengetahui tata letak berkas citra dan metadatanya.
  *
- * Aset selalu ditulis sebagai PNG sehingga ekstensinya tidak pernah menjadi tebakan
- * saat dibaca kembali, dan selalu berada di bawah direktori pemiliknya. Kepemilikan
+ * Ekstensi berkas ditentukan dari tipe MIME sungguhan, bukan dipaksa. Penyedia
+ * citra raster mengembalikan JPEG, sehingga menamainya `.png` membuat ekstensi
+ * berbohong dan merusak apa pun yang mempercayainya. Ekstensi yang dipakai
+ * dicatat di metadata aset, dan pembacaan kembali memakai catatan itu.
+ *
+ * Berkas selalu berada di bawah direktori pemiliknya, sehingga kepemilikan
  * ditegakkan dua kali: oleh kueri atas user_id, dan oleh letak berkasnya.
  */
 class ImageryAssetStore
@@ -20,23 +24,19 @@ class ImageryAssetStore
 
     private const DIRECTORY = 'imagery';
 
-    private const EXTENSION = 'png';
-
     /**
-     * Menyimpan citra dasar beserta georeferensinya.
-     *
      * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox
      */
     public function storeImagery(
         int $userId,
-        string $pngBinary,
+        string $binary,
         float $lat,
         float $lng,
         int $zoom,
         array $bbox,
         float $metersPerPixel,
     ): ImageryAsset {
-        return $this->persist($userId, $pngBinary, ImageryAsset::KIND_RAW, [
+        return $this->persist($userId, $binary, ImageryAsset::KIND_RAW, [
             'center_lat' => $lat,
             'center_lng' => $lng,
             'zoom' => $zoom,
@@ -46,11 +46,11 @@ class ImageryAssetStore
     }
 
     /**
-     * Menyimpan mask turunan yang tidak punya georeferensi.
+     * Menyimpan mask atau turunan lain yang tidak punya georeferensi.
      */
-    public function storeDerived(int $userId, string $pngBinary, string $kind): ImageryAsset
+    public function storeDerived(int $userId, string $binary, string $kind): ImageryAsset
     {
-        return $this->persist($userId, $pngBinary, $kind, []);
+        return $this->persist($userId, $binary, $kind, []);
     }
 
     /**
@@ -75,18 +75,20 @@ class ImageryAssetStore
     /**
      * @param  array<string, mixed>  $attributes
      */
-    private function persist(int $userId, string $pngBinary, string $kind, array $attributes): ImageryAsset
+    private function persist(int $userId, string $binary, string $kind, array $attributes): ImageryAsset
     {
-        $size = getimagesizefromstring($pngBinary);
+        $image = getimagesizefromstring($binary);
 
-        if ($size === false) {
-            throw new RuntimeException('Aset citra bukan PNG yang dikenali.');
+        if ($image === false) {
+            throw new RuntimeException('Isi citra bukan berkas gambar yang dikenali.');
         }
 
-        $imageId = (string) Str::uuid();
-        $path = sprintf('%s/%d/%s.%s', self::DIRECTORY, $userId, $imageId, self::EXTENSION);
+        [$extension, $mimeType] = self::describe($image['mime'] ?? '');
 
-        if (! Storage::disk(self::DISK)->put($path, $pngBinary)) {
+        $imageId = (string) Str::uuid();
+        $path = sprintf('%s/%d/%s.%s', self::DIRECTORY, $userId, $imageId, $extension);
+
+        if (! Storage::disk(self::DISK)->put($path, $binary)) {
             throw new RuntimeException("Gagal menulis aset citra ke {$path}.");
         }
 
@@ -95,9 +97,26 @@ class ImageryAssetStore
             'user_id' => $userId,
             'kind' => $kind,
             'path' => $path,
-            'width' => $size[0],
-            'height' => $size[1],
+            'extension' => $extension,
+            'mime_type' => $mimeType,
+            'width' => $image[0],
+            'height' => $image[1],
             ...$attributes,
         ]);
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private static function describe(string $mimeType): array
+    {
+        return match ($mimeType) {
+            'image/jpeg' => ['jpg', 'image/jpeg'],
+            'image/png' => ['png', 'image/png'],
+            'image/webp' => ['webp', 'image/webp'],
+            default => throw new RuntimeException(
+                "Tipe citra tidak didukung: {$mimeType}. Diharapkan JPEG, PNG, atau WebP.",
+            ),
+        };
     }
 }

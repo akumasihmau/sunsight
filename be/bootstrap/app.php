@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\Cv\CvFailureException;
+use App\Services\Imagery\ImageryUnavailableException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,9 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
 
-        // Kegagalan pemrosesan citra selalu berbentuk JSON yang dapat dibaca klien,
-        // bukan 500 tanpa keterangan. Detail lengkapnya tetap tercatat di log.
-        $exceptions->render(function (CvFailureException $e, Request $request) {
+        // Masalah konfigurasi penyedia citra dikembalikan apa adanya: pengguna berhak
+        // tahu variabel mana yang harus diisi, bukan sekadar menerima 500 tanpa pesan.
+        $exceptions->render(function (ImageryUnavailableException $e, Request $request) {
             if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null;
             }

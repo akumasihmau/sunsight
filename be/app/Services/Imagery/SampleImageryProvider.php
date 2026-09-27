@@ -3,12 +3,15 @@
 namespace App\Services\Imagery;
 
 use App\Models\ImageryAsset;
-use RuntimeException;
 
 /**
- * Membaca citra dari fixture lokal sehingga seluruh alur dapat dijalankan tanpa
- * jaringan. Fixture dipilih secara deterministik dari koordinat, sehingga lokasi
- * yang sama selalu menampilkan citra yang sama saat didemokan.
+ * Citra dari fixture lokal sehingga seluruh alur dapat dijalankan tanpa jaringan
+ * dan tanpa kredensial penyedia.
+ *
+ * Fixture adalah citra sintetis, bukan citra satelit. Atribusinya menyatakan itu
+ * supaya tidak ada yang salah sangka saat alur didemokan dengan penyedia ini.
+ * Fixture dipilih secara deterministik dari koordinat, sehingga lokasi yang sama
+ * selalu menampilkan citra yang sama.
  */
 class SampleImageryProvider implements ImageryProvider
 {
@@ -23,24 +26,29 @@ class SampleImageryProvider implements ImageryProvider
         $binary = file_get_contents($fixture);
 
         if ($binary === false) {
-            throw new RuntimeException("Fixture citra tidak dapat dibaca: {$fixture}");
+            throw new ImageryUnavailableException("Fixture citra tidak dapat dibaca: {$fixture}");
         }
 
         $size = getimagesize($fixture);
 
         if ($size === false) {
-            throw new RuntimeException("Fixture citra tidak dikenali: {$fixture}");
+            throw new ImageryUnavailableException("Fixture citra tidak dikenali: {$fixture}");
         }
 
         return $this->store->storeImagery(
             userId: $userId,
-            pngBinary: $binary,
+            binary: $binary,
             lat: $lat,
             lng: $lng,
             zoom: $zoom,
             bbox: ImageryBoundingBox::forPoint($lat, $lng, $size[0], $zoom),
             metersPerPixel: ImageryBoundingBox::metersPerPixel($lat, $zoom),
         );
+    }
+
+    public function attribution(): string
+    {
+        return 'Citra contoh sintetis — bukan citra satelit';
     }
 
     /**
@@ -54,7 +62,7 @@ class SampleImageryProvider implements ImageryProvider
         sort($files);
 
         if ($files === []) {
-            throw new RuntimeException(
+            throw new ImageryUnavailableException(
                 "Tidak ada fixture citra di {$directory}. Jalankan tests/fixtures/imagery/make_fixtures.py.",
             );
         }

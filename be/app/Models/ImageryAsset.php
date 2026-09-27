@@ -10,14 +10,16 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Satu berkas citra yang tersimpan, beserta metadata yang dibutuhkan server.
  *
- * Citra dasar menyimpan georeferensi (titik tengah, zoom, bbox, skala). Mask
- * turunan tidak, karena tidak ada koordinat yang melekat padanya.
+ * Citra dasar menyimpan georeferensi (titik tengah, zoom, bbox, skala). Turunan
+ * seperti mask tidak, karena tidak ada koordinat yang melekat padanya.
  */
 #[Fillable([
     'image_id',
     'user_id',
     'kind',
     'path',
+    'extension',
+    'mime_type',
     'width',
     'height',
     'meters_per_pixel',
@@ -29,10 +31,6 @@ use Illuminate\Support\Facades\Storage;
 class ImageryAsset extends Model
 {
     public const KIND_RAW = 'raw';
-
-    public const KIND_REFINE_MASK = 'refine_mask';
-
-    public const KIND_SHADOW_MASK = 'shadow_mask';
 
     /**
      * @return array<string, string>

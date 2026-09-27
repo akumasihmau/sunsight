@@ -5,14 +5,13 @@ namespace App\Services\Imagery;
 use App\Models\ImageryAsset;
 use GdImage;
 use Illuminate\Support\Facades\Http;
-use RuntimeException;
 
 /**
- * Menyusun citra dari ubin Web Mercator milik penyedia citra jaringan.
+ * Menyusun citra dari ubin Web Mercator milik penyedia jaringan.
  *
- * Sumber citra masih menjadi pertanyaan terbuka, sehingga penyedia ini tidak
- * diaktifkan secara bawaan dan menolak berjalan tanpa IMAGERY_TILE_URL yang
- * dikonfigurasi secara sadar.
+ * Tidak dipakai produk, disimpan sebagai jalur alternatif bila penyedia static
+ * image tidak dapat dipakai. Karena itu ia menolak berjalan tanpa URL yang
+ * dikonfigurasi secara sadar, alih-alih memilih penyedia diam-diam.
  */
 class TileImageryProvider implements ImageryProvider
 {
@@ -27,13 +26,13 @@ class TileImageryProvider implements ImageryProvider
         $template = (string) config('imagery.tile.url');
 
         if ($template === '') {
-            throw new RuntimeException(
-                'Penyedia citra jaringan belum dikonfigurasi. Set IMAGERY_TILE_URL, '
-                .'atau pakai IMAGERY_PROVIDER=sample untuk menjalankan alur tanpa jaringan.',
+            throw new ImageryUnavailableException(
+                'Penyedia ubin belum dikonfigurasi. Set IMAGERY_TILE_URL, '
+                .'atau pakai penyedia lain lewat IMAGERY_PROVIDER.',
             );
         }
 
-        $size = (int) config('imagery.size');
+        $size = (int) config('imagery.tile.size');
         $tilesPerSide = (int) ceil($size / self::TILE_SIZE);
         [$firstX, $firstY] = self::tileFor($lat, $lng, $zoom);
 
@@ -56,7 +55,7 @@ class TileImageryProvider implements ImageryProvider
         $cropped = imagecrop($canvas, ['x' => 0, 'y' => 0, 'width' => $size, 'height' => $size]);
 
         if ($cropped === false) {
-            throw new RuntimeException('Citra tidak dapat dipotong ke ukuran yang diminta.');
+            throw new ImageryUnavailableException('Citra tidak dapat dipotong ke ukuran yang diminta.');
         }
 
         ob_start();
@@ -68,13 +67,18 @@ class TileImageryProvider implements ImageryProvider
 
         return $this->store->storeImagery(
             userId: $userId,
-            pngBinary: $binary,
+            binary: $binary,
             lat: $lat,
             lng: $lng,
             zoom: $zoom,
             bbox: ImageryBoundingBox::forPoint($lat, $lng, $size, $zoom),
             metersPerPixel: ImageryBoundingBox::metersPerPixel($lat, $zoom),
         );
+    }
+
+    public function attribution(): string
+    {
+        return 'Ubin citra dari penyedia yang dikonfigurasi';
     }
 
     /**
@@ -112,13 +116,13 @@ class TileImageryProvider implements ImageryProvider
             ->get($url);
 
         if (! $response->successful()) {
-            throw new RuntimeException("Ubin citra gagal diambil ({$response->status()}): {$url}");
+            throw new ImageryUnavailableException("Ubin citra gagal diambil ({$response->status()}): {$url}");
         }
 
         $tile = imagecreatefromstring($response->body());
 
         if ($tile === false) {
-            throw new RuntimeException("Ubin citra tidak dikenali: {$url}");
+            throw new ImageryUnavailableException("Ubin citra tidak dikenali: {$url}");
         }
 
         imagecopy($canvas, $tile, $destinationX, $destinationY, 0, 0, self::TILE_SIZE, self::TILE_SIZE);

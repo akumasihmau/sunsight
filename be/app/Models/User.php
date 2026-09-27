@@ -33,12 +33,12 @@ class User extends Authenticatable
     }
 
     /**
-     * Riwayat analisis atap milik user ini.
+     * Simulasi PLTS milik user ini.
      *
-     * @return HasMany<RoofAnalysis, $this>
+     * @return HasMany<Simulation, $this>
      */
-    public function roofAnalyses(): HasMany
+    public function simulations(): HasMany
     {
-        return $this->hasMany(RoofAnalysis::class);
+        return $this->hasMany(Simulation::class);
     }
 }
