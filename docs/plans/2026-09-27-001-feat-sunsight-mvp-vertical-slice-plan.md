@@ -366,7 +366,7 @@ Milestone B tidak bergantung pada Milestone C. Milestone C dikerjakan setelah Mi
 | Penyajian berkas | `cd be && php artisan storage:link` lalu pastikan `be/public/storage` ada | U2, U5, U10 |
 | Interpreter Python | `cd be && .venv/bin/python -c "import cv2"` | U2, U6 |
 | Uji skrip CV langsung | `cd be && .venv/bin/python scripts/cv/refine_polygon.py --image tests/fixtures/imagery/<fixture> --polygon <json>` | U6, U12, U13 |
-| Tipe FE | `cd fe && npx tsc --noEmit` | U9, U10, U11 |
+| Tipe FE | `cd fe && npm run build && npx tsc --noEmit` | U9, U10, U11 |
 | Lint FE | `cd fe && npm run lint` | U9, U10, U11 |
 | Build FE | `cd fe && npm run build` | U10, U11 |
 | Smoke alur penuh | `cd be && php artisan serve` lalu `cd fe && npm run dev`, jalankan F1 dan F2 di browser | Milestone A |
@@ -374,7 +374,7 @@ Milestone B tidak bergantung pada Milestone C. Milestone C dikerjakan setelah Mi
 
 Gerbang yang wajib lulus sebelum slice vertikal dinyatakan selesai: migrasi bersih, test backend, penyajian berkas, interpreter Python, tipe FE, build FE, dan smoke alur penuh. Pemeriksaan gaya kode dan daftar rute bersifat informatif. Uji akurasi CV adalah gerbang untuk Milestone B, bukan untuk Milestone A.
 
-Catatan prasyarat: gerbang test backend dan uji skrip CV baru bernilai setelah U2 selesai, karena keduanya bergantung pada basis data test ber-PostGIS dan virtual environment Python. Menjalankannya sebelum U2 selesai akan gagal karena alasan yang salah, bukan karena kode yang salah.
+Catatan prasyarat: gerbang test backend dan uji skrip CV baru bernilai setelah U2 selesai, karena keduanya bergantung pada basis data test ber-PostGIS dan virtual environment Python. Menjalankannya sebelum U2 selesai akan gagal karena alasan yang salah, bukan karena kode yang salah. Gerbang tipe FE juga bergantung pada `npm run build` lebih dulu: tipe global Next seperti `LayoutProps` dihasilkan oleh build ke `fe/next-env.d.ts` dan `fe/.next/types`, sehingga `npx tsc --noEmit` pada klon bersih gagal sebelum build pertama dijalankan.
 
 ## Definition of Done
 
