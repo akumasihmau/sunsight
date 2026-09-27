@@ -8,70 +8,56 @@ Setiap perubahan bentuk payload, satuan, atau kode status harus mengubah berkas 
 - **Format:** JSON, `Content-Type: application/json` dan `Accept: application/json`
 - **Timestamp:** string ISO 8601 UTC, contoh `2026-09-27T10:15:30.000000Z`
 
-Endpoint di luar daftar ini tidak termasuk lingkup pengerjaan. Lupa sandi, reset sandi, dan ekspor PDF
-sengaja belum ada dan tidak boleh diperkirakan oleh Frontend.
+**Aturan yang paling penting, dan tidak boleh dilanggar oleh klien mana pun:** endpoint yang
+menghasilkan angka (`/simulate`, `/analyses`) **selalu menghitung ulang di server**. Klien hanya mengirim
+masukan. Bila klien mengirim kunci hasil sekaligus, kunci itu **diabaikan** — tidak ditolak, tetapi juga
+tidak berpengaruh. Ini disengaja supaya angka kapasitas, produksi, penghematan, dan payback tidak pernah
+berasal dari klien.
 
 ## 1. Amplop Kesalahan
 
-Backend selalu mengembalikan JSON untuk permintaan di bawah `/api/*`. Frontend hanya perlu menangani dua bentuk berikut.
+Backend selalu mengembalikan JSON untuk permintaan di bawah `/api/*`.
 
 | Status | Kapan | Bentuk body |
 | :---- | :---- | :---- |
 | `401` | Token tidak ada, kedaluwarsa, sudah dicabut, atau kredensial login salah | `{"message": "..."}` |
-| `422` | Validasi masukan gagal | `{"message": "...", "errors": {"<field>": ["...", "..."]}}` |
-| `429` | Terlalu banyak percobaan login atau pendaftaran | `{"message": "..."}` |
 | `404` | Sumber daya tidak ditemukan atau bukan milik pemanggil | `{"message": "..."}` |
-| `500` | Kesalahan tak terduga | `{"message": "..."}` |
+| `422` | Validasi masukan gagal | `{"message": "...", "errors": {"<field>": ["..."]}}` |
+| `500` | Kesalahan tak terduga, termasuk kegagalan penyedia citra | `{"message": "..."}` |
 
-Aturan yang mengikat:
-
-- Login gagal **selalu** `401`, baik ketika email tidak terdaftar maupun ketika password salah, dengan
-  pesan yang identik. Frontend tidak boleh membedakan kedua kasus itu.
-- Permintaan terproteksi tanpa token yang sah **selalu** `401`.
-- Sumber daya milik user lain **selalu** `404`, bukan `403`, agar keberadaannya tidak terbocorkan.
+- Login gagal **selalu** `401` dengan pesan identik untuk email tidak terdaftar maupun password salah.
+- Sumber daya milik user lain **selalu** `404`, bukan `403`.
 - Masukan yang tidak valid **tidak pernah** menghasilkan `500`.
 
 ## 2. Ruang Koordinat dan Satuan
 
-Ada dua ruang koordinat dan batasnya dipatok tegas. Tertukar di antara keduanya tidak memunculkan error,
-hanya hasil yang salah.
+| Dipakai pada | Ruang | Format |
+| :---- | :---- | :---- |
+| `roof_rect` | Piksel citra | `{"x", "y", "width", "height", "rotation_deg"}`, origin kiri-atas |
+| `roof_polygon` (respons riwayat) | Geografis | GeoJSON, `[[lng, lat], ...]`, WGS84 |
 
-| Dipakai pada | Ruang | Format | Keterangan |
-| :---- | :---- | :---- | :---- |
-| `rough_polygon`, `refined_polygon` | Piksel citra | `[[x, y], ...]` | Relatif terhadap citra, origin kiri-atas, `x` ke kanan, `y` ke bawah, satuan piksel, boleh pecahan |
-| `polygon`, `roof_polygon` | Geografis | `[[lng, lat], ...]` | GeoJSON, WGS84 (EPSG:4326) |
-
-Aturan poligon:
-
-- Minimal 3 titik unik. Kurang dari itu `422`.
-- Poligon geografis memakai ring tertutup: titik pertama sama dengan titik terakhir.
-- `refined_polygon` selalu berada di dalam batas citra `[0, width] x [0, height]`.
-
-Konversi piksel ke geografis memakai `bbox` dari `/cv/fetch-osm` dan proyeksi Web Mercator:
+Konversi piksel ke geografis memakai `bbox` dari `/location` dan proyeksi Web Mercator:
 
 ```
 lng = bbox[0] + (x / width)  * (bbox[2] - bbox[0])
-lat = bbox[3] - (y / height) * (bbox[3] - bbox[1])   // perhatikan: y tumbuh ke bawah, lat mengecil
+lat = bbox[3] - (y / height) * (bbox[3] - bbox[1])
 ```
 
-Citra memakai proyeksi Web Mercator, sehingga `lat` yang dihasilkan linier hanya pada rentang bbox satu citra.
-Itu cukup untuk ukuran satu bidikan dan tidak boleh dipakai untuk rentang lintang yang lebar.
+| Field | Satuan |
+| :---- | :---- |
+| `*_area_sqm`, `*_m2` | meter persegi |
+| semua `*_m` yang berdiri sendiri (setback, gutter, clearance, dimensi atap) | meter |
+| `capacity_kwp` | kilowatt-peak |
+| `annual_production_kwh` | kWh per tahun |
+| `daily_irradiance_kwh_per_sqm` | kWh/m²/hari |
+| `*_idr` | rupiah |
+| `payback_years` | tahun, `null` bila tidak dapat dihitung |
+| `tilt_deg` | 0–60, kemiringan bidang atap |
+| `azimuth_deg` | 0–360 dari utara searah jarum jam |
+| `meters_per_pixel` | meter per piksel |
 
-Satuan yang dipakai, tanpa pengecualian:
-
-| Field | Satuan | Catatan |
-| :---- | :---- | :---- |
-| `*_area_sqm` | meter persegi | |
-| `estimated_energy_kwh_per_day` | kWh per hari | Energi, bukan daya. Nama lama `estimated_power_kwh` tidak dipakai |
-| `daily_ghi_kwh_per_sqm` | kWh/m²/hari | Iradiasi harian rata-rata di bidang horizontal |
-| `roof_orientation_deg` | derajat, 0–180 | Orientasi **sumbu** atap, bukan arah kemiringan |
-| `recommended_azimuth_deg` | derajat, 0–360 | Azimut panel terbaik untuk lokasi, dari utara searah jarum jam |
-| `meters_per_pixel` | meter per piksel | |
-
-Semantik orientasi atap: dari citra nadir, arah kemiringan atap **tidak dapat** ditentukan. Karena itu
-`roof_orientation_deg` adalah orientasi sumbu utama poligon hasil analisis komponen utama (PCA), dilaporkan
-sebagai nilai 0–180 derajat dari utara searah jarum jam tanpa arah hadap. Untuk lintang selatan,
-`recommended_azimuth_deg` bernilai `0` (utara); untuk lintang utara, `180` (selatan).
+**Kemiringan dan azimuth adalah masukan pengguna, bukan hasil deteksi.** Dari satu citra nadir, arah
+kemiringan tidak dapat ditentukan. Klien tidak boleh menampilkan keduanya sebagai "terdeteksi otomatis".
 
 ## 3. Autentikasi dan Pengguna
 
@@ -79,44 +65,26 @@ Endpoint publik: `/register`, `/login`. Sisanya butuh header `Authorization`.
 
 ### `POST /register`
 
-| Field | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `name` | string | wajib, maksimal 255 |
-| `email` | string | wajib, format email, unik, maksimal 255 |
-| `password` | string | wajib, minimal 8, harus sama dengan `password_confirmation` |
-| `password_confirmation` | string | wajib |
+Field: `name` (string, wajib, maks 255), `email` (string, wajib, unik), `password` (wajib, min 8, cocok dengan `password_confirmation`), `password_confirmation` (wajib).
 
 ```json
 // 201 Created
-{
-  "token": "1|R4nd0mPl41nT3xtT0k3n...",
-  "user": { "id": 1, "name": "Rafid", "email": "rafid@example.com" }
-}
+{ "token": "1|R4nd0mPl41nT3xtT0k3n...", "user": { "id": 1, "name": "Rafid", "email": "rafid@example.com" } }
 ```
 
 ### `POST /login`
 
-| Field | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `email` | string | wajib, format email |
-| `password` | string | wajib |
+Field: `email`, `password`.
 
 ```json
 // 200 OK
-{
-  "token": "2|An0th3rPl41nT3xtT0k3n...",
-  "user": { "id": 1, "name": "Rafid", "email": "rafid@example.com" }
-}
-```
+{ "token": "2|An0th3rPl41nT3xtT0k3n...", "user": { "id": 1, "name": "Rafid", "email": "rafid@example.com" } }
 
-```json
 // 401 Unauthorized — sama untuk email tidak terdaftar maupun password salah
 { "message": "Email atau password salah." }
 ```
 
 ### `POST /logout`
-
-Tidak berpayload. Mencabut token yang sedang dipakai.
 
 ```json
 // 200 OK
@@ -130,13 +98,11 @@ Tidak berpayload. Mencabut token yang sedang dipakai.
 { "id": 1, "name": "Rafid", "email": "rafid@example.com" }
 ```
 
-Respons tidak pernah memuat `password`, `remember_token`, maupun token lain.
+## 4. Lokasi dan Citra
 
-## 4. Pipeline Citra
+### `POST /location`
 
-### `POST /cv/fetch-osm`
-
-Mengunduh citra nadir untuk satu titik. Mengembalikan identitas aset yang dipakai oleh dua endpoint berikutnya.
+Mengambil citra satelit nadir untuk satu koordinat.
 
 | Field | Tipe | Aturan |
 | :---- | :---- | :---- |
@@ -148,121 +114,150 @@ Mengunduh citra nadir untuk satu titik. Mengembalikan identitas aset yang dipaka
 // 200 OK
 {
   "image_id": "9f1c2d34-5e6a-4b7c-8d9e-0a1b2c3d4e5f",
-  "image_url": "http://localhost:8000/storage/imagery/1/9f1c2d34-5e6a-4b7c-8d9e-0a1b2c3d4e5f.jpg",
+  "image_url": "http://localhost:8000/storage/imagery/1/9f1c2d34-....jpg",
   "bbox": [-6.598000, 106.797000, -6.593000, 106.802000],
-  "width": 512,
-  "height": 512,
-  "meters_per_pixel": 0.2966
+  "width": 1280,
+  "height": 1280,
+  "meters_per_pixel": 0.1483,
+  "attribution": "© Mapbox © Maxar"
 }
 ```
-
-Aturan yang mengikat:
 
 - `bbox` selalu berurutan `[minLng, minLat, maxLng, maxLat]`.
-- `image_id` adalah UUID dan merupakan satu-satunya cara merujuk aset pada endpoint berikutnya.
-  Tidak ada field `image_path` — nama berkas internal tidak pernah dikirim ke klien.
-- Ukuran citra selalu `512 x 512` piksel.
-- `meters_per_pixel = 156543.03392 * cos(lat * pi / 180) / 2^zoom`. Nilai ini yang dipakai untuk
-  mengubah luas piksel menjadi meter persegi, sehingga tidak boleh dihitung ulang oleh Frontend.
-- `image_url` dapat dimuat tanpa header tambahan.
+- `image_id` adalah UUID dan satu-satunya cara merujuk aset pada endpoint berikutnya. Tidak ada `image_path`.
+- `attribution` **wajib ditampilkan** di antarmuka. ToS penyedia citra melarang penghapusan tanda kepemilikan.
+- `meters_per_pixel` berasal dari server dan tidak boleh dihitung ulang oleh klien.
 
-### `POST /cv/refine-polygon`
+### Kegagalan penyedia citra
+
+```json
+// 500 Internal Server Error
+{ "message": "Penyedia citra belum dikonfigurasi. Set MAPBOX_ACCESS_TOKEN." }
+```
+
+## 5. Simulasi
+
+### `POST /simulate`
+
+Menghitung simulasi lengkap. **Tidak menyimpan apa pun.**
 
 | Field | Tipe | Aturan |
 | :---- | :---- | :---- |
 | `image_id` | string | wajib, UUID milik pemanggil |
-| `rough_polygon` | array | wajib, koordinat **piksel**, minimal 3 titik unik |
+| `roof_rect.x`, `.y` | number | wajib, ≥ 0, sudut kiri-atas persegi dalam piksel |
+| `roof_rect.width`, `.height` | number | wajib, > 0 |
+| `roof_rect.rotation_deg` | number | wajib, −45 s.d. 45, putaran searah jarum jam terhadap pusat persegi |
+| `setback_m` | number | wajib, 0 s.d. 5, jarak aman dari tepi bidang |
+| `gutter_m` | number | wajib, 0 s.d. 5, lebar jalur talang pada sisi bawah |
+| `tilt_deg` | number | wajib, 0 s.d. 60 |
+| `azimuth_deg` | number | wajib, 0 s.d. 360 |
+| `module_key` | string | wajib, salah satu kunci dari `GET /options` |
+| `orientation` | string | wajib, `portrait` atau `landscape` |
+| `clearance_m` | number | wajib, 0 s.d. 1 |
+| `panel_count` | integer | wajib, ≥ 0; dipotong ke jumlah slot maksimum bila melebihi |
+| `inverter_type` | string | wajib, `string` atau `micro` |
+| `monthly_bill_idr` | integer | wajib, ≥ 0 |
+| `tariff_key` | string | wajib, salah satu kunci dari `GET /options` |
 
 ```json
-// 200 OK
+// 200 OK — nilai di bawah ini berasal dari satu permintaan sungguhan, bukan karangan.
+// Bidang atap 12,46 x 7,42 m di Jakarta (-6.59, 106.80), 20 modul 550 W terpasang.
 {
-  "refined_polygon": [[128.5, 96.0], [402.0, 101.5], [398.5, 344.0], [131.0, 339.5]],
-  "mask_image_url": "http://localhost:8000/storage/imagery/1/9f1c2d34-....mask.png"
-}
-```
-
-`refined_polygon` memakai ruang piksel yang sama dengan `rough_polygon` dan selalu berada di dalam citra.
-
-### `POST /cv/detect-shadow`
-
-| Field | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `image_id` | string | wajib, UUID milik pemanggil |
-| `refined_polygon` | array | wajib, koordinat **piksel**, minimal 3 titik unik |
-
-```json
-// 200 OK
-{
-  "usable_area_sqm": 45.5,
-  "shadow_area_sqm": 5.0,
-  "total_area_sqm": 50.5,
-  "shadow_mask_url": "http://localhost:8000/storage/imagery/1/9f1c2d34-....shadow.png"
-}
-```
-
-Selalu berlaku `usable_area_sqm + shadow_area_sqm = total_area_sqm`, dan tidak ada nilai yang negatif.
-Deteksi bayangan saat ini memakai ambang kecerahan sehingga dapat keliru menganggap atap gelap, kolam,
-atau vegetasi sebagai bayangan. Keterbatasan ini disadari dan dicatat.
-
-### Kepemilikan aset
-
-`image_id` di atas selalu divalidasi terhadap user pemanggil. Mengirim `image_id` milik user lain
-menghasilkan `404` yang sama dengan UUID yang tidak pernah ada, sehingga keberadaan aset tidak terbocorkan.
-
-## 5. Kalkulasi Energi
-
-### `POST /solar/calculate`
-
-Tidak menyimpan apa pun. Penyimpanan hanya terjadi lewat `POST /analyses`.
-
-| Field | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `usable_area_sqm` | number | wajib, > 0 |
-| `center_point` | object | wajib, `{"lat": ..., "lng": ...}` |
-| `polygon` | array | wajib, koordinat **geografis** `[[lng, lat], ...]`, ring tertutup, minimal 3 titik unik |
-
-```json
-// 200 OK
-{
-  "usable_area_sqm": 45.5,
-  "daily_ghi_kwh_per_sqm": 5.2,
-  "estimated_energy_kwh_per_day": 38.76,
-  "roof_orientation_deg": 15.5,
-  "recommended_azimuth_deg": 0.0,
-  "assumptions": {
-    "module_efficiency": 0.2,
-    "performance_ratio": 0.78,
-    "tilt_deg": 10.0,
-    "tilt_factor": 1.05,
+  "geometry": {
+    "roof_width_m": 7.42,
+    "roof_length_m": 12.46,
+    "total_area_sqm": 92.37,
+    "effective_area_sqm": 66.62
+  },
+  "layout": {
+    "max_slots": 20,
+    "installed": 20,
+    "rows": 5,
+    "columns": 4,
+    "module_area_sqm": 51.67,
+    "density_ratio": 0.7755
+  },
+  "energy": {
+    "capacity_kwp": 11,
+    "annual_production_kwh": 13829.81,
+    "daily_irradiance_kwh_per_sqm": 4.8324,
+    "incidence_factor": 0.891,
+    "performance_ratio": 0.8,
     "irradiance_source": "NASA POWER",
-    "irradiance_period": "climatology",
-    "irradiance_kwh_per_sqm_day": 5.2
+    "irradiance_period": "klimatologi tahunan"
+  },
+  "finance": {
+    "capex_total_idr": 72200000,
+    "capex_breakdown": {
+      "modules_idr": 37000000,
+      "inverter_idr": 13200000,
+      "racking_idr": 7000000,
+      "installation_idr": 15000000
+    },
+    "monthly_saving_idr": 1959223,
+    "annual_saving_idr": 23510676,
+    "payback_years": 3.07,
+    "tariff_key": "R2",
+    "tariff_label": "R-2 / 3.500-5.500 VA",
+    "tariff_idr_per_kwh": 1700,
+    "monthly_bill_idr": 2800000,
+    "co2_reduction_kg_per_year": 11063.85,
+    "trees_equivalent": 503
   }
 }
 ```
 
+Angka di atas dapat diverifikasi ulang dari responsnya sendiri:
+
+```
+annual_production_kwh = capacity_kwp x daily_irradiance x incidence_factor x 365 x performance_ratio
+                      = 11 x 4,8324 x 0,891 x 365 x 0,8 = 13.829,8
+monthly_saving_idr   = (annual_production_kwh / 12) x tariff_idr_per_kwh, dibatasi monthly_bill_idr
+                      = (13.829,81 / 12) x 1700 = 1.959.223
+payback_years        = capex_total_idr / annual_saving_idr = 72.200.000 / 23.510.676 = 3,07
+```
+
 Aturan yang mengikat:
 
-- Kemiringan panel **tidak** dikirim oleh klien. Nilainya berasal dari konfigurasi backend dan
-  dilaporkan kembali di blok `assumptions`.
-- `assumptions` selalu ada pada respons ini. Nilainya yang menjelaskan angka energi, sehingga Frontend
-  wajib menyimpannya saat menyimpan analisis, dan Backend wajib menuliskannya ke basis data.
-- `assumptions.irradiance_source` memuat penanda `(cadangan)` bila sumber iradiasi tidak dapat dihubungi
-  dan nilai dari konfigurasi backend yang dipakai. Estimasi tetap dihasilkan, tetapi nilai cadangan tidak
-  boleh diperlakukan sebagai data pengukuran.
-- `estimated_energy_kwh_per_day = usable_area_sqm * module_efficiency * irradiance_kwh_per_sqm_day * performance_ratio * tilt_factor`.
+- `effective_area_sqm` tidak pernah negatif dan tidak pernah melebihi `total_area_sqm`.
+- `installed` tidak pernah melebihi `max_slots`.
+- `monthly_saving_idr` **tidak pernah melebihi** `monthly_bill_idr`.
+- `payback_years` bernilai `null` bila penghematan tahunan nol.
+- `capacity_kwp = installed × power_w / 1000`.
+- Seluruh nilai di atas dihitung server. Kunci hasil pada payload kiriman diabaikan.
 
-## 6. Riwayat Analisis
+### `GET /options`
 
-Semua endpoint di sini hanya menyentuh data milik user pemanggil.
+Katalog yang dipakai antarmuka untuk mengisi pilihan, sehingga klien tidak pernah menyalin konstanta.
+
+```json
+// 200 OK
+{
+  "modules": [
+    { "key": "mono_perc_550", "label": "550 W Mono PERC Bifacial", "power_w": 550, "length_m": 2.278, "width_m": 1.134, "efficiency": 0.2129, "price_idr": 1850000 }
+  ],
+  "tariffs": [
+    { "key": "R2", "label": "R-2 / 3.500-5.500 VA", "idr_per_kwh": 1700, "year": 2024 }
+  ],
+  "defaults": { "module_key": "mono_perc_550", "tariff_key": "R2", "orientation": "portrait", "inverter_type": "string" }
+}
+```
+
+## 6. Riwayat Simulasi
+
+### `POST /analyses`
+
+Payload **identik dengan** `POST /simulate`. Perhatikan: **tidak ada kunci hasil** pada payload ini.
+Server menghitung ulang, lalu menyimpan hasil hitungannya sendiri.
+
+```json
+// 201 Created
+{ "message": "Simulation saved", "id": 12, "capacity_kwp": 11, "payback_years": 3.07 }
+```
 
 ### `GET /analyses`
 
-| Query | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `page` | integer | opsional, bawaan `1` |
-| `per_page` | integer | opsional, bawaan `10`, maksimal `100` |
-| `limit` | integer | opsional, alias dari `per_page`; `per_page` menang bila keduanya dikirim |
+Query: `page` (bawaan 1), `per_page` (bawaan 10, maks 100), `limit` (alias `per_page`).
 
 ```json
 // 200 OK
@@ -270,11 +265,11 @@ Semua endpoint di sini hanya menyentuh data milik user pemanggil.
   "data": [
     {
       "id": 12,
-      "center_point": { "lat": -6.5955, "lng": 106.7995 },
-      "usable_area_sqm": 45.5,
-      "shadow_area_sqm": 5.0,
-      "estimated_energy_kwh_per_day": 38.76,
-      "roof_orientation_deg": 15.5,
+      "center_point": { "lat": -6.59, "lng": 106.8 },
+      "capacity_kwp": 11,
+      "annual_production_kwh": 13829.81,
+      "monthly_saving_idr": 1959223,
+      "payback_years": 3.07,
       "created_at": "2026-09-27T10:15:30.000000Z"
     }
   ],
@@ -283,55 +278,54 @@ Semua endpoint di sini hanya menyentuh data milik user pemanggil.
 }
 ```
 
-### `POST /analyses`
-
-Menyimpan satu hasil kalkulasi lengkap beserta poligon dan asumsinya.
-
-| Field | Tipe | Aturan |
-| :---- | :---- | :---- |
-| `usable_area_sqm` | number | wajib, > 0 |
-| `shadow_area_sqm` | number | wajib, >= 0 |
-| `center_point` | object | wajib, `{"lat": ..., "lng": ...}` |
-| `polygon` | array | wajib, koordinat **geografis**, ring tertutup |
-| `estimated_energy_kwh_per_day` | number | wajib, >= 0 |
-| `roof_orientation_deg` | number | wajib, 0–180 |
-| `recommended_azimuth_deg` | number | wajib, 0–360 |
-| `assumptions` | object | wajib, dikirim kembali apa adanya dari `/solar/calculate` |
-
-```json
-// 201 Created
-{ "message": "Analysis saved", "id": 12 }
-```
-
 ### `GET /analyses/{id}`
 
+Objek datar (tidak dibungkus `data`). Memuat seluruh masukan, hasil, dan asumsi yang dipakai.
+
 ```json
-// 200 OK
+// 200 OK — objek datar, tidak dibungkus `data`
 {
   "id": 12,
-  "center_point": { "lat": -6.5955, "lng": 106.7995 },
-  "roof_polygon": {
-    "type": "Polygon",
-    "coordinates": [[[106.7978, -6.5941], [106.8010, -6.5940], [106.8009, -6.5968], [106.7978, -6.5969], [106.7978, -6.5941]]]
+  "center_point": { "lat": -6.59, "lng": 106.8 },
+  "roof_polygon": { "type": "Polygon", "coordinates": [[[106.7995, -6.5901], [106.8004, -6.5904], [106.8001, -6.5928], [106.7992, -6.5925], [106.7995, -6.5901]]] },
+  "input": {
+    "roof_width_m": 7.42, "roof_length_m": 12.46, "rotation_deg": -4.0,
+    "setback_m": 0.5, "gutter_m": 0.6, "tilt_deg": 22.0, "azimuth_deg": 188.0,
+    "module_key": "mono_perc_550", "orientation": "portrait", "clearance_m": 0.03,
+    "panel_count": 24, "inverter_type": "string",
+    "monthly_bill_idr": 2800000, "tariff_key": "R2"
   },
-  "usable_area_sqm": 45.5,
-  "shadow_area_sqm": 5.0,
-  "estimated_energy_kwh_per_day": 38.76,
-  "roof_orientation_deg": 15.5,
-  "recommended_azimuth_deg": 0.0,
-  "assumptions": { "module_efficiency": 0.2, "performance_ratio": 0.78, "tilt_deg": 10.0, "tilt_factor": 1.05, "irradiance_source": "NASA POWER", "irradiance_period": "climatology", "irradiance_kwh_per_sqm_day": 5.2 },
+  "result": {
+    "total_area_sqm": 92.37, "effective_area_sqm": 66.62,
+    "max_slots": 20, "installed": 20, "rows": 5, "columns": 4,
+    "module_area_sqm": 51.67, "density_ratio": 0.7755,
+    "capacity_kwp": 11, "annual_production_kwh": 13829.81,
+    "capex_total_idr": 72200000, "monthly_saving_idr": 1959223,
+    "annual_saving_idr": 23510676, "payback_years": 3.07,
+    "co2_reduction_kg_per_year": 11063.85, "trees_equivalent": 503
+  },
+  "assumptions": {
+    "daily_irradiance_kwh_per_sqm": 4.8324,
+    "irradiance_source": "NASA POWER",
+    "irradiance_period": "klimatologi tahunan",
+    "incidence_factor": 0.891,
+    "performance_ratio": 0.8,
+    "tariff_key": "R2",
+    "tariff_label": "R-2 / 3.500-5.500 VA",
+    "tariff_idr_per_kwh": 1700,
+    "capex_breakdown": { "modules_idr": 37000000, "inverter_idr": 13200000, "racking_idr": 7000000, "installation_idr": 15000000 }
+  },
   "created_at": "2026-09-27T10:15:30.000000Z"
 }
 ```
 
-`roof_polygon` dikembalikan sebagai objek GeoJSON, bukan array. `id` yang bukan milik pemanggil
-menghasilkan `404`.
+`id` yang bukan milik pemanggil menghasilkan `404` yang identik dengan `id` yang tidak ada.
 
 ### `DELETE /analyses/{id}`
 
 ```json
 // 200 OK
-{ "message": "Analysis deleted successfully" }
+{ "message": "Simulation deleted successfully" }
 ```
 
 ## 7. Ringkasan Endpoint
@@ -342,11 +336,13 @@ menghasilkan `404`.
 | `/login` | POST | — | `200` |
 | `/logout` | POST | Bearer | `200` |
 | `/user` | GET | Bearer | `200` |
-| `/cv/fetch-osm` | POST | Bearer | `200` |
-| `/cv/refine-polygon` | POST | Bearer | `200` |
-| `/cv/detect-shadow` | POST | Bearer | `200` |
-| `/solar/calculate` | POST | Bearer | `200` |
+| `/location` | POST | Bearer | `200` |
+| `/options` | GET | Bearer | `200` |
+| `/simulate` | POST | Bearer | `200` |
 | `/analyses` | GET | Bearer | `200` |
 | `/analyses` | POST | Bearer | `201` |
 | `/analyses/{id}` | GET | Bearer | `200` |
 | `/analyses/{id}` | DELETE | Bearer | `200` |
+
+Endpoint produk lama (`/cv/fetch-osm`, `/cv/refine-polygon`, `/cv/detect-shadow`, `/solar/calculate`)
+**sudah tidak ada** dan tidak boleh dipakai lagi.
