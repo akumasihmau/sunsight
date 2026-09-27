@@ -114,16 +114,32 @@ Cara menjalankan dan menguji ulang seluruh gerbang ada di `README.md`.
 - [x] `cd fe && npm run lint` — bersih
 - [x] `API CONTRACT.md` cocok dengan perilaku nyata; contoh pada kontrak berasal dari satu permintaan sungguhan dan dapat diverifikasi ulang dari aritmetikanya
 
-## 10. ⚠️ Belum terverifikasi
+## 10. ⚠️ Pengukuran daya pisah citra — menentukan rencana CV
 
-- [ ] **Panggilan Mapbox sungguhan belum pernah dijalankan.** Penyedianya ada dan teruji dengan `Http::fake` (penyusunan URL, penyimpanan JPEG, pesan saat token kosong), tetapi belum pernah menyentuh layanan Mapbox yang sesungguhnya karena token belum diisi. Ini hal pertama yang harus dicoba.
-- [ ] **Ketajaman citra satelit pada zoom kerja belum dinilai.** Persegi ditempatkan pengguna, jadi alur tidak bergantung pada ketajaman tepi, tetapi untuk mengusulkan batas atap otomatis nanti ini perlu diukur pada citra sungguhan.
+Panggilan Mapbox sungguhan **sudah dijalankan**: JPEG 1280×1280, 257 KB, atribusi `© Mapbox © Maxar`, dan koordinat berbeda menghasilkan citra berbeda (Jakarta, Surabaya, dan Monas memberi md5 yang berbeda-beda). Saat penyedia `sample` dipakai, Surabaya dan London justru memberi berkas identik — jadi pengukuran ini yang membuktikan citranya nyata.
+
+Namun daya pisahnya **lebih rendah dari yang diasumsikan di plan**:
+
+| Zoom | m/piksel nominal | Galat bolak-balik | Tafsir |
+| :--- | :--- | :--- | :--- |
+| 17 | 2,37 | 9,94% | detail nyata di skala piksel |
+| 18 | 1,19 | 7,86% | detail nyata di skala piksel |
+| 19 | 0,59 | 3,50% | **hampir habis** |
+| 20 | 0,30 | 2,16% | **hasil upsample** |
+
+Galat bolak-balik adalah uji perkecil lalu kembalikan ke ukuran asal: citra yang sudah di-upsample nyaris tidak kehilangan apa pun. Metriknya divalidasi dengan pembanding — fixture sintetis 6,68%, Mapbox z19 dipertegas 7,21%, z19 apa adanya 3,50%, z19 yang sengaja diblur 1,42% — sehingga angkanya dapat dipercaya. Lima kota berbeda (termasuk San Francisco dan New York) semuanya menunjukkan hal yang sama pada zoom 19, jadi ini batas penyedia, bukan batas wilayah.
+
+- [x] Citra Mapbox sungguhan terverifikasi bekerja
+- [x] Daya pisah efektif diukur: sekitar **1,2 m per piksel pada zoom 18**; zoom 19 ke atas adalah interpolasi
+- [x] Produk tidak terpengaruh: keempat angka hasil bergantung pada persegi yang ditempatkan pengguna, bukan pada detail piksel
+- [ ] **Rencana usulan otomatis batas atap perlu ditinjau ulang.** Pada 1,2 m/px, atap rumah 10 × 8 m hanya sekitar 8 × 7 piksel. Penelusuran batas atap per bangunan, deteksi bayangan, dan deteksi rintangan tidak layak pada daya pisah ini. Yang tetap layak: klasifikasi jenis atap dari tekstur, dan penyaringan banyak atap dalam satu wilayah. Ini keputusan produk yang harus diambil sadar.
+- [ ] Potongan citra untuk dinilai sendiri ada di `../bukti/spike-zoom18-potongan.png` dan `spike-zoom19-potongan.png` (320 piksel pusat, diperbesar 3× tanpa interpolasi sehingga pikselasi terlihat).
 
 ## 11. Berjalan, tetapi masih baseline
 
 Bagian ini **wajib masuk batasan laporan**.
 
-- [ ] **Belum ada pemrosesan citra sama sekali.** Persegi bidang atap ditempatkan pengguna secara manual; batas atap belum diusulkan otomatis. Ini kontribusi yang direncanakan untuk tahap berikutnya, dan justru bagian yang paling relevan dengan mata kuliah Pemrosesan Citra dan Visual Komputer Cerdas.
+- [ ] **Belum ada pemrosesan citra sama sekali.** Persegi bidang atap ditempatkan pengguna secara manual; batas atap belum diusulkan otomatis. Ini kontribusi yang direncanakan untuk tahap berikutnya, dan justru bagian yang paling relevan dengan mata kuliah Pemrosesan Citra dan Visual Komputer Cerdas. **Catat bahwa daya pisah citra membatasi bentuk kontribusinya** — lihat bagian 10.
 - [ ] **Satu bidang atap per simulasi.** Bentuk limasan, L, dan atap jamak belum ada.
 - [ ] **Kemiringan dan azimuth adalah masukan pengguna.** Bukan keterbatasan implementasi: dari satu citra nadir, arah kemiringan memang tidak dapat ditentukan. Ini harus dinyatakan di laporan, bukan disembunyikan.
 - [ ] **Rintangan di atas atap belum terdeteksi** (HVAC, skylight, tandon); pengguna belum punya cara mengecualikannya selain mengurangi jumlah panel.
