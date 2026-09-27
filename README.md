@@ -12,7 +12,8 @@ Cerdas**.
 
 Repositori ini memakai arsitektur *monorepo*:
 
-- **Frontend:** Next.js 16 (App Router), TypeScript, Tailwind CSS 4
+- **Frontend:** Next.js 16 (App Router), TypeScript, Tailwind CSS 4 dengan sistem desain bertoken
+  (lihat `docs/DESIGN.md`; contoh hidupnya di halaman `/design`)
 - **Backend:** Laravel 13, PHP 8.3, Laravel Sanctum
 - **Database:** PostgreSQL 16 dengan ekstensi PostGIS (menyimpan poligon bidang atap sebagai geometri)
 - **Citra satelit:** Mapbox Static Images (`satellite-v9`)
@@ -26,6 +27,8 @@ Repositori ini memakai arsitektur *monorepo*:
 - `/be/scripts/cv` — disiapkan untuk tahap usulan otomatis batas atap (lihat *Rencana Lanjutan*).
 - `/docs/plans` — plan implementasi.
 - `/docs/CHECKLIST.md` — status fitur beserta cara pembuktiannya.
+- `/docs/DESIGN.md` — token, komponen, dan aturan pemakaian sistem desain. Baca ini sebelum menambah
+  gaya baru; nilai mentah hanya boleh ditulis di `fe/src/styles/tokens.css`.
 - `API CONTRACT.md` — **sumber kebenaran** bentuk request/response. Baca ini sebelum menyentuh kode FE atau BE.
 - `commit-convention.md` — aturan penulisan pesan commit.
 

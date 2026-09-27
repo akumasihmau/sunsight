@@ -100,6 +100,10 @@ Cara menjalankan dan menguji ulang seluruh gerbang ada di `README.md`.
 - [x] Kegagalan penyedia citra ditampilkan apa adanya dan tidak mengunci antarmuka
 - [x] `/history` — kolom kapasitas, produksi, hemat bulanan, payback; payback kosong ditampilkan sebagai `—`; detail memuat asumsi dan rincian CAPEX yang tersimpan
 - [x] Atribusi penyedia citra tampil di antarmuka
+- [x] **UI memakai sistem desain** yang dipindahkan dari proyek Transense: token `--brand-*` di `fe/src/styles/tokens.css`, komponen di `fe/src/styles/components.css`, dan peta ke utilitas Tailwind di `fe/src/app/globals.css`. Aturan pakainya ada di `docs/DESIGN.md`
+- [x] Seluruh halaman bebas dari palet bawaan Tailwind (`zinc`, `sky`, `red`); permukaan, tipografi, dan kontrol berasal dari kelas sistem desain, dan utilitas Tailwind hanya dipakai untuk tata letak
+- [x] Tema gelap dihapus mengikuti sistem desain — Transense hanya punya tema terang, dan mengarang palet gelap akan menambah satu set warna yang tidak berasal dari sistem mana pun. Ini perubahan perilaku yang disengaja
+- [x] `/design` — contoh hidup seluruh token dan komponen, dirender dengan kelas yang sama seperti halaman produk sehingga berfungsi sekaligus sebagai halaman pemeriksaan
 
 **Alur penuh di browser nyata sudah ditempuh:** isi koordinat → ambil citra → atur persegi → hasil muncul, dan angkanya berubah saat parameter diubah.
 
@@ -109,9 +113,12 @@ Cara menjalankan dan menguji ulang seluruh gerbang ada di `README.md`.
 - [x] `cd be && php artisan test` — **91 test, 475 assertion, semuanya lulus**
 - [x] `cd be && ./vendor/bin/pint --test` — 0 temuan
 - [x] `cd be && php artisan route:list --path=api` — 11 route, cocok persis dengan kontrak
-- [x] `cd fe && npm run build` — 6 route ter-generate, tanpa `/analysis`
+- [x] `cd fe && npm run build` — 7 route ter-generate (termasuk `/design`), tanpa `/analysis`
 - [x] `cd fe && npx tsc --noEmit` — bersih
 - [x] `cd fe && npm run lint` — bersih
+- [x] **Sistem desain diperiksa pada peramban sungguhan lewat `getComputedStyle`**, bukan dengan melihat gambar: Plus Jakarta Sans termuat; teks utama `#111111` di atas latar `#f5f5f5`; `.primary-button` berwarna `rgb(22, 119, 255)` dengan bayangan aksen; `.input` setinggi 38 px; `.select` tanpa panah bawaan dan memakai panah SVG; `.card` radius 16 px; h1 28 px; dan kerangka halaman tepat 1200 px pada jendela 1440 px
+- [x] Alur studio yang sama juga ditempuh ulang **setelah** sistem desain dipasang: citra Mapbox 1280 × 1280 sungguhan termuat, atribusi `© Mapbox © Maxar` tampil, persegi bidang 12 × 8 m terbaca, dan keempat metrik muncul (11 kWp, 14.066 kWh, Rp1.500.000, payback 4,01 tahun)
+- [x] Tidak ada luapan mendatar pada lebar 390 px maupun 768 px di `/`, `/login`, `/design`, dan `/history`; tabel lebar menggulir di dalam pembungkusnya sendiri
 - [x] `API CONTRACT.md` cocok dengan perilaku nyata; contoh pada kontrak berasal dari satu permintaan sungguhan dan dapat diverifikasi ulang dari aritmetikanya
 
 ## 10. ⚠️ Pengukuran daya pisah citra — menentukan rencana CV
