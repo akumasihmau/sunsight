@@ -35,7 +35,7 @@ class User extends Authenticatable
     /**
      * Riwayat analisis atap milik user ini.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany<RoofAnalysis, $this>
+     * @return HasMany<RoofAnalysis, $this>
      */
     public function roofAnalyses(): HasMany
     {
