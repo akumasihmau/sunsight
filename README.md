@@ -1,27 +1,40 @@
 # ☀️ Sunsight
 
-Sunsight adalah aplikasi WebGIS berbasis Computer Vision untuk menganalisis dan menghitung estimasi efektivitas pemasangan panel surya pada atap bangunan. Aplikasi ini memanfaatkan citra satelit/udara, mendeteksi batas atap secara otomatis, menganalisis area bayangan, lalu menghitung estimasi energi harian berdasarkan iradiasi lokasi.
+Sunsight adalah studio simulasi potensi PLTS atap. Pengguna memasukkan koordinat, sistem menampilkan
+citra satelit nadir lokasi itu, pengguna menempatkan dan mengubah persegi bidang atap, sistem menata
+modul surya di dalamnya, lalu menampilkan empat angka utama: **kapasitas terpasang, produksi tahunan,
+penghematan listrik bulanan, dan payback**.
 
-Proyek ini dikembangkan sebagai Tugas Akhir untuk mata kuliah **Pemrosesan Citra dan Visual Komputer Cerdas**.
+Proyek ini dikembangkan sebagai Tugas Akhir untuk mata kuliah **Pemrosesan Citra dan Visual Komputer
+Cerdas**.
 
 ## 🛠️ Tech Stack
 
-Repositori ini memakai arsitektur *monorepo* (Frontend dan Backend dalam satu repositori):
+Repositori ini memakai arsitektur *monorepo*:
 
 - **Frontend:** Next.js 16 (App Router), TypeScript, Tailwind CSS 4
 - **Backend:** Laravel 13, PHP 8.3, Laravel Sanctum
-- **Computer Vision:** Python 3.12 + OpenCV, dipanggil dari PHP sebagai proses terpisah
-- **Database:** PostgreSQL 16 dengan ekstensi PostGIS (data spasial)
+- **Database:** PostgreSQL 16 dengan ekstensi PostGIS (menyimpan poligon bidang atap sebagai geometri)
+- **Citra satelit:** Mapbox Static Images (`satellite-v9`)
+- **Iradiasi:** NASA POWER (klimatologi tahunan), dengan nilai cadangan bila sumber tidak dapat dihubungi
 - **Deployment:** VPS
 
 ## 📁 Struktur Direktori
 
-- `/fe` — antarmuka pengguna (Next.js).
-- `/be` — REST API, logika computer vision, dan database (Laravel).
-- `/be/scripts/cv` — skrip Python untuk pemrosesan citra.
+- `/fe` — antarmuka pengguna (Next.js). Halaman studio ada di `fe/src/app/studio`.
+- `/be` — REST API dan seluruh perhitungan (Laravel).
+- `/be/scripts/cv` — disiapkan untuk tahap usulan otomatis batas atap (lihat *Rencana Lanjutan*).
 - `/docs/plans` — plan implementasi.
-- `API CONTRACT.md` — **sumber kebenaran** bentuk request/response API. Baca ini sebelum menyentuh kode FE atau BE.
+- `/docs/CHECKLIST.md` — status fitur beserta cara pembuktiannya.
+- `API CONTRACT.md` — **sumber kebenaran** bentuk request/response. Baca ini sebelum menyentuh kode FE atau BE.
 - `commit-convention.md` — aturan penulisan pesan commit.
+
+## ⚠️ Satu Aturan yang Tidak Boleh Dilanggar
+
+**Seluruh angka hasil dihitung di server.** Klien hanya mengirim masukan: persegi bidang atap, parameter
+teknis, tarif, dan tagihan. Kapasitas, produksi, penghematan, dan payback tidak pernah diterima dari
+klien. Bila klien mengirim kunci hasil sekaligus, kunci itu diabaikan. Ini yang menjaga angka di layar
+sama dengan angka yang tersimpan, dan menjaga hasil tidak dapat dikarang.
 
 ## 🚀 Setup Lokal
 
@@ -31,7 +44,7 @@ Repositori ini memakai arsitektur *monorepo* (Frontend dan Backend dalam satu re
 - PHP 8.3+ dengan ekstensi `pdo_pgsql`, `pgsql`, dan `gd`
 - Composer 2
 - PostgreSQL 16 + PostGIS 3
-- Python 3.12
+- Akun Mapbox beserta access token
 
 ### 1. Database (PostgreSQL + PostGIS)
 
@@ -59,8 +72,8 @@ PGPASSWORD=sunsight psql -h 127.0.0.1 -U sunsight -d sunsight      -tAc "SELECT 
 PGPASSWORD=sunsight psql -h 127.0.0.1 -U sunsight -d sunsight_test -tAc "SELECT PostGIS_Version()"
 ```
 
-Basis data test terpisah karena `phpunit.xml` diarahkan ke `sunsight_test`. Ini bukan pilihan gaya: assertion
-`ST_IsValid` dan `ST_Area` tidak dapat dijalankan di SQLite.
+Basis data test terpisah karena `phpunit.xml` diarahkan ke `sunsight_test`. Ini bukan pilihan gaya:
+assertion `ST_IsValid` dan `ST_Area` tidak dapat dijalankan di SQLite.
 
 ### 2. Backend
 
@@ -73,20 +86,21 @@ php artisan storage:link   # membuat public/storage, wajib agar image_url dapat 
 php artisan migrate
 ```
 
-`.env.example` sudah menunjuk PostgreSQL, jadi tidak ada yang perlu diubah untuk setup standar.
+### 3. Token citra satelit
 
-Environment Python untuk computer vision:
+Isi `MAPBOX_ACCESS_TOKEN` di `be/.env` dengan token dari akun Mapbox. Tanpa token, endpoint lokasi
+mengembalikan pesan yang menyebut variabel itu — bukan citra kosong.
 
-```bash
-cd be
-python3 -m venv .venv
-.venv/bin/pip install -r scripts/cv/requirements.txt
-.venv/bin/python -c "import cv2; print(cv2.__version__)"
-```
+Bila ingin menjalankan alur tanpa jaringan atau tanpa token, set `IMAGERY_PROVIDER=sample` agar citra
+diambil dari fixture lokal. Fixture itu citra sintetis, **bukan citra satelit**, dan atribusinya
+menyatakan hal itu.
 
-Backend berjalan di http://localhost:8000.
+**Catatan lisensi.** ToS Mapbox mengizinkan penggunaan non-produksi (pengembangan, evaluasi, pengujian,
+dan demonstrasi) dengan atribusi tetap tampil, dan mensyaratkan lisensi komersial untuk penggunaan
+produksi pada aplikasi yang berkaitan dengan real estate atau analytics. Untuk tugas akhir dan demo,
+ketentuannya terpenuhi selama atribusi tidak dihapus.
 
-### 3. Frontend
+### 4. Frontend
 
 ```bash
 cd fe
@@ -95,18 +109,15 @@ npm install
 npm run dev
 ```
 
-Frontend berjalan di http://localhost:3000.
+Frontend berjalan di http://localhost:3000. Ia memanggil API di `http://localhost:8000/api` secara bawaan;
+untuk mengubahnya, salin `fe/.env.example` menjadi `fe/.env.local`.
 
-Frontend memanggil API di `http://localhost:8000/api` secara bawaan. Untuk mengubahnya, salin `fe/.env.example`
-menjadi `fe/.env.local` dan sesuaikan `NEXT_PUBLIC_API_URL`.
-
-Backend dan frontend harus berjalan bersamaan: halaman analisis dan riwayat tidak berguna tanpa backend hidup.
-CORS untuk `api/*` sudah ditangani bawaan Laravel, jadi tidak ada konfigurasi tambahan di sisi backend.
+Backend dan frontend harus berjalan bersamaan. CORS untuk `api/*` sudah ditangani bawaan Laravel.
 
 ## ✅ Verifikasi
 
 ```bash
-cd be && php artisan test              # memakai sunsight_test
+cd be && php artisan test              # memakai sunsight_test, tidak menyentuh jaringan
 cd be && ./vendor/bin/pint --test      # gaya kode PHP
 cd fe && npm run build                 # sekaligus menghasilkan tipe global Next
 cd fe && npx tsc --noEmit              # pemeriksaan tipe, jalankan setelah build
@@ -116,6 +127,19 @@ cd fe && npm run lint
 Pemeriksaan tipe di frontend harus dijalankan setelah `npm run build`, karena tipe global Next
 (`LayoutProps` dan sejenisnya) baru dihasilkan oleh build ke `fe/next-env.d.ts` dan `fe/.next/types`.
 Pada klon bersih, `npx tsc --noEmit` gagal sebelum build pertama.
+
+## 🔜 Rencana Lanjutan
+
+Deteksi batas atap secara otomatis dari citra: usulan persegi bidang atap dan pengecualian rintangan
+(HVAC, skylight, tandon) dengan OpenCV. Environment Python sudah disiapkan untuk itu:
+
+```bash
+cd be
+python3 -m venv .venv
+.venv/bin/pip install -r scripts/cv/requirements.txt
+```
+
+Selama tahap itu belum dikerjakan, persegi bidang atap ditempatkan pengguna.
 
 ## ⚠️ Masalah Lokal yang Diketahui
 
