@@ -7,6 +7,8 @@ use App\Services\Cv\ProcessCvClient;
 use App\Services\Imagery\ImageryProvider;
 use App\Services\Imagery\SampleImageryProvider;
 use App\Services\Imagery\TileImageryProvider;
+use App\Services\Irradiance\NasaPowerProvider;
+use App\Services\IrradianceProvider;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -22,6 +24,8 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->bind(CvClient::class, ProcessCvClient::class);
+
+        $this->app->bind(IrradianceProvider::class, NasaPowerProvider::class);
     }
 
     /**
