@@ -97,15 +97,25 @@ npm run dev
 
 Frontend berjalan di http://localhost:3000.
 
+Frontend memanggil API di `http://localhost:8000/api` secara bawaan. Untuk mengubahnya, salin `fe/.env.example`
+menjadi `fe/.env.local` dan sesuaikan `NEXT_PUBLIC_API_URL`.
+
+Backend dan frontend harus berjalan bersamaan: halaman analisis dan riwayat tidak berguna tanpa backend hidup.
+CORS untuk `api/*` sudah ditangani bawaan Laravel, jadi tidak ada konfigurasi tambahan di sisi backend.
+
 ## ✅ Verifikasi
 
 ```bash
 cd be && php artisan test              # memakai sunsight_test
 cd be && ./vendor/bin/pint --test      # gaya kode PHP
-cd fe && npx tsc --noEmit              # pemeriksaan tipe
+cd fe && npm run build                 # sekaligus menghasilkan tipe global Next
+cd fe && npx tsc --noEmit              # pemeriksaan tipe, jalankan setelah build
 cd fe && npm run lint
-cd fe && npm run build
 ```
+
+Pemeriksaan tipe di frontend harus dijalankan setelah `npm run build`, karena tipe global Next
+(`LayoutProps` dan sejenisnya) baru dihasilkan oleh build ke `fe/next-env.d.ts` dan `fe/.next/types`.
+Pada klon bersih, `npx tsc --noEmit` gagal sebelum build pertama.
 
 ## ⚠️ Masalah Lokal yang Diketahui
 
