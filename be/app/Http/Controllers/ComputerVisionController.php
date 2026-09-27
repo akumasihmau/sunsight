@@ -2,13 +2,34 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\FetchOsmRequest;
+use App\Services\Imagery\ImageryProvider;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ComputerVisionController extends Controller
 {
-    public function fetchOsm(Request $request)
+    public function __construct(
+        private readonly ImageryProvider $imagery,
+    ) {}
+
+    public function fetchOsm(FetchOsmRequest $request): JsonResponse
     {
-        // TODO: Validasi koordinat center/BBox, tembak API OSM, unduh & simpan gambar sementara, return URL
+        $result = $this->imagery->fetch(
+            lat: (float) $request->validated('lat'),
+            lng: (float) $request->validated('lng'),
+            zoom: $request->zoom(),
+            userId: (int) $request->user()->getKey(),
+        );
+
+        return response()->json([
+            'image_id' => $result->imageId,
+            'image_url' => $result->url,
+            'bbox' => $result->bbox,
+            'width' => $result->width,
+            'height' => $result->height,
+            'meters_per_pixel' => round($result->metersPerPixel, 4),
+        ]);
     }
 
     public function refinePolygon(Request $request)
