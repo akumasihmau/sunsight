@@ -16,13 +16,14 @@ class PanelLayout
 {
     /**
      * @param  array{length_m: float, width_m: float}  $module
+     * @param  int|null  $requestedCount  Null berarti isi seluruh slot yang muat.
      */
     public static function fit(
         RoofArea $area,
         array $module,
         string $orientation,
         float $clearanceM,
-        int $requestedCount,
+        ?int $requestedCount,
     ): LayoutResult {
         $portrait = $orientation !== 'landscape';
 
@@ -34,7 +35,9 @@ class PanelLayout
         $rows = self::countThatFits($area->effectiveWidthM, $alongWidth, $clearanceM);
 
         $maxSlots = $columns * $rows;
-        $installed = max(0, min($requestedCount, $maxSlots));
+        $installed = $requestedCount === null
+            ? $maxSlots
+            : max(0, min($requestedCount, $maxSlots));
 
         $moduleAreaSqm = $installed * $module['length_m'] * $module['width_m'];
 

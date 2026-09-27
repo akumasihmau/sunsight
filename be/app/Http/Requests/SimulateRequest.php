@@ -43,7 +43,10 @@ class SimulateRequest extends FormRequest
             'module_key' => ['required', 'string', Rule::in(SimulationCatalog::moduleKeys())],
             'orientation' => ['required', 'string', Rule::in(['portrait', 'landscape'])],
             'clearance_m' => ['required', 'numeric', 'between:0,1'],
-            'panel_count' => ['required', 'integer', 'min:0', 'max:5000'],
+            // Kosong berarti isi seluruh slot maksimum. Batas atas diberi untuk
+            // menjaga masukan yang ekstrem, bukan untuk memotong; pemotongan ke
+            // jumlah slot dilakukan mesin tata letak.
+            'panel_count' => ['present', 'nullable', 'integer', 'min:0', 'max:5000'],
             'inverter_type' => ['required', 'string', Rule::in(['string', 'micro'])],
 
             'monthly_bill_idr' => ['required', 'integer', 'min:0'],

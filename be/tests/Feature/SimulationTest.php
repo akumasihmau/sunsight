@@ -171,6 +171,56 @@ class SimulationTest extends TestCase
         $this->assertSame($response->json('layout.max_slots'), $response->json('layout.installed'));
     }
 
+    public function test_jumlah_panel_kosong_mengisi_seluruh_slot_yang_muat(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, ['panel_count' => null]))
+            ->assertOk();
+
+        $this->assertSame($response->json('layout.max_slots'), $response->json('layout.installed'));
+        $this->assertGreaterThan(0, $response->json('layout.installed'));
+    }
+
+    public function test_jumlah_panel_kosong_tersimpan_sebagai_kosong(): void
+    {
+        $user = User::factory()->create();
+
+        $id = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/analyses', $this->payload($user, ['panel_count' => null]))
+            ->assertStatus(201)
+            ->json('id');
+
+        // Maksud pengguna harus terbaca kembali, bukan tergantikan angka besar.
+        $this->assertNull(Simulation::query()->findOrFail($id)->panel_count);
+        $this->assertNull($this->actingAs($user, 'sanctum')->getJson("/api/analyses/{$id}")->json('input.panel_count'));
+    }
+
+    public function test_jumlah_panel_yang_tidak_masuk_akal_ditolak(): void
+    {
+        $user = User::factory()->create();
+
+        // 10000 pernah dipakai klien sebagai penanda "isi maksimum" dan ditolak di sini.
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, ['panel_count' => 10000]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('panel_count');
+    }
+
+    public function test_jumlah_panel_wajib_ada_walau_boleh_kosong(): void
+    {
+        $user = User::factory()->create();
+
+        $payload = $this->payload($user);
+        unset($payload['panel_count']);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('panel_count');
+    }
+
     public function test_menolak_preset_modul_atau_tarif_yang_tidak_dikenal(): void
     {
         $user = User::factory()->create();

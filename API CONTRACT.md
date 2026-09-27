@@ -154,7 +154,7 @@ Menghitung simulasi lengkap. **Tidak menyimpan apa pun.**
 | `module_key` | string | wajib, salah satu kunci dari `GET /options` |
 | `orientation` | string | wajib, `portrait` atau `landscape` |
 | `clearance_m` | number | wajib, 0 s.d. 1 |
-| `panel_count` | integer | wajib, ≥ 0; dipotong ke jumlah slot maksimum bila melebihi |
+| `panel_count` | integer \| null | wajib ada; `null` berarti isi seluruh slot yang muat; bila angka, 0 s.d. 5000 dan dipotong ke jumlah slot maksimum |
 | `inverter_type` | string | wajib, `string` atau `micro` |
 | `monthly_bill_idr` | integer | wajib, ≥ 0 |
 | `tariff_key` | string | wajib, salah satu kunci dari `GET /options` |
@@ -221,6 +221,7 @@ Aturan yang mengikat:
 
 - `effective_area_sqm` tidak pernah negatif dan tidak pernah melebihi `total_area_sqm`.
 - `installed` tidak pernah melebihi `max_slots`.
+- `panel_count: null` mengisi seluruh slot yang muat, dan pada riwayat tersimpan `input.panel_count` tetap `null` sehingga maksud pengguna terbaca kembali.
 - `monthly_saving_idr` **tidak pernah melebihi** `monthly_bill_idr`.
 - `payback_years` bernilai `null` bila penghematan tahunan nol.
 - `capacity_kwp = installed × power_w / 1000`.

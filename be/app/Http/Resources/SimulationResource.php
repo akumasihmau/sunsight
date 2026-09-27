@@ -46,7 +46,7 @@ class SimulationResource extends JsonResource
                 'module_key' => $simulation->module_key,
                 'orientation' => $simulation->orientation,
                 'clearance_m' => round((float) $simulation->clearance_m, 3),
-                'panel_count' => (int) $simulation->panel_count,
+                'panel_count' => $simulation->panel_count === null ? null : (int) $simulation->panel_count,
                 'inverter_type' => $simulation->inverter_type,
                 'monthly_bill_idr' => (int) $simulation->monthly_bill_idr,
                 'tariff_key' => $simulation->tariff_key,

@@ -43,7 +43,7 @@ class SimulationRunner
             module: $module,
             orientation: (string) $input['orientation'],
             clearanceM: (float) $input['clearance_m'],
-            requestedCount: (int) $input['panel_count'],
+            requestedCount: $input['panel_count'] === null ? null : (int) $input['panel_count'],
         );
 
         $capacityKwp = $layout->installed * (float) $module['power_w'] / 1000.0;
@@ -86,7 +86,7 @@ class SimulationRunner
             'orientation' => (string) $input['orientation'],
             'clearance_m' => (float) $input['clearance_m'],
             'inverter_type' => (string) $input['inverter_type'],
-            'panel_count' => (int) $input['panel_count'],
+            'panel_count' => $input['panel_count'] === null ? null : (int) $input['panel_count'],
             'monthly_bill_idr' => (int) $input['monthly_bill_idr'],
             'tariff_key' => (string) $input['tariff_key'],
             'total_area_sqm' => $area->totalAreaSqm,
