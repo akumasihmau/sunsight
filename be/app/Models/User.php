@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -29,5 +30,15 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Riwayat analisis atap milik user ini.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<RoofAnalysis, $this>
+     */
+    public function roofAnalyses(): HasMany
+    {
+        return $this->hasMany(RoofAnalysis::class);
     }
 }
