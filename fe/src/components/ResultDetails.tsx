@@ -18,17 +18,17 @@ export function CapexTable({ breakdown, total }: CapexTableProps) {
   ];
 
   return (
-    <table className="w-full text-sm">
-      <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+    <table className="data-table data-table--compact">
+      <tbody>
         {rows.map((row) => (
           <tr key={row.label}>
-            <td className="py-1.5 text-zinc-600 dark:text-zinc-400">{row.label}</td>
-            <td className="py-1.5 text-right font-mono">{idr.format(row.value)}</td>
+            <td>{row.label}</td>
+            <td>{idr.format(row.value)}</td>
           </tr>
         ))}
-        <tr>
-          <td className="py-1.5 font-semibold">Total CAPEX</td>
-          <td className="py-1.5 text-right font-mono font-semibold">{idr.format(total)}</td>
+        <tr className="is-total">
+          <td>Total CAPEX</td>
+          <td>{idr.format(total)}</td>
         </tr>
       </tbody>
     </table>
@@ -50,7 +50,10 @@ export function ResultDetails({ result }: Props) {
     { label: "Panjang atap", value: `${decimal.format(geometry.roof_length_m)} m` },
     { label: "Slot maksimum", value: integer.format(layout.max_slots) },
     { label: "Modul terpasang", value: integer.format(layout.installed) },
-    { label: "Kisi", value: `${integer.format(layout.rows)} baris × ${integer.format(layout.columns)} kolom` },
+    {
+      label: "Kisi",
+      value: `${integer.format(layout.rows)} baris × ${integer.format(layout.columns)} kolom`,
+    },
     { label: "Luas modul", value: `${decimal.format(layout.module_area_sqm)} m²` },
     { label: "Rasio kerapatan", value: decimal.format(layout.density_ratio) },
   ];
@@ -79,33 +82,42 @@ export function ResultDetails({ result }: Props) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="mb-2 text-sm font-semibold">Bidang dan tata letak</h2>
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <section className="card">
+        <div className="card__header">
+          <h2 className="card__title">Bidang dan tata letak</h2>
+          <p className="card__hint">Ukuran bidang yang ditandai, setelah setback, talang, dan kisi modul.</p>
+        </div>
+        <table className="data-table data-table--compact">
+          <tbody>
             {geometryRows.map((row) => (
               <tr key={row.label}>
-                <td className="py-1.5 text-zinc-600 dark:text-zinc-400">{row.label}</td>
-                <td className="py-1.5 text-right font-mono">{row.value}</td>
+                <td>{row.label}</td>
+                <td>{row.value}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="mb-2 text-sm font-semibold">Rincian CAPEX</h2>
+      <section className="card">
+        <div className="card__header">
+          <h2 className="card__title">Rincian CAPEX</h2>
+          <p className="card__hint">Biaya modal awal sebagai dasar perhitungan payback.</p>
+        </div>
         <CapexTable breakdown={finance.capex_breakdown} total={finance.capex_total_idr} />
       </section>
 
-      <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <h2 className="mb-2 text-sm font-semibold">Asumsi perhitungan</h2>
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <section className="card">
+        <div className="card__header">
+          <h2 className="card__title">Asumsi perhitungan</h2>
+          <p className="card__hint">Nilai yang dipakai server pada perhitungan terakhir.</p>
+        </div>
+        <table className="data-table data-table--compact">
+          <tbody>
             {assumptionRows.map((row) => (
               <tr key={row.label}>
-                <td className="py-1.5 text-zinc-600 dark:text-zinc-400">{row.label}</td>
-                <td className="py-1.5 text-right font-mono">{row.value}</td>
+                <td>{row.label}</td>
+                <td>{row.value}</td>
               </tr>
             ))}
           </tbody>

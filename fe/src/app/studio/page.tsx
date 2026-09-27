@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ImageIcon } from "@/components/icons";
 import { MetricStrip } from "@/components/MetricStrip";
 import { ParameterPanel } from "@/components/ParameterPanel";
 import { ResultDetails } from "@/components/ResultDetails";
@@ -286,76 +287,78 @@ export default function StudioPage() {
   const blocked = busy || simulating;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <h1 className="text-xl font-semibold">Studio simulasi PLTS atap</h1>
-        <button
-          type="button"
-          onClick={signOut}
-          className="ml-auto text-sm text-zinc-600 underline dark:text-zinc-400"
-        >
+    <>
+      <header className="flex flex-wrap items-center gap-3">
+        <div className="page-intro">
+          <p className="eyebrow">Studio</p>
+          <h1>Simulasi PLTS atap</h1>
+        </div>
+        <button type="button" onClick={signOut} className="secondary-button button--sm ml-auto">
           Keluar
         </button>
-      </div>
+      </header>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <label className="space-y-1">
-          <span className="block text-xs font-medium">Lintang</span>
-          <input
-            value={latitude}
-            disabled={busy}
-            onChange={(event) => setLatitude(event.target.value)}
-            className="w-28 rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs font-medium">Bujur</span>
-          <input
-            value={longitude}
-            disabled={busy}
-            onChange={(event) => setLongitude(event.target.value)}
-            className="w-28 rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs font-medium">Zoom (15–20)</span>
-          <input
-            value={zoom}
-            disabled={busy}
-            onChange={(event) => setZoom(event.target.value)}
-            className="w-20 rounded-lg border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={loadLocation}
-          disabled={blocked}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          {loadingLocation ? "Mengunduh citra…" : "Ambil citra"}
-        </button>
-      </div>
+      <section className="card">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="field">
+            <span className="field__label">Lintang</span>
+            <input
+              value={latitude}
+              disabled={busy}
+              onChange={(event) => setLatitude(event.target.value)}
+              className="input input--numeric w-32"
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Bujur</span>
+            <input
+              value={longitude}
+              disabled={busy}
+              onChange={(event) => setLongitude(event.target.value)}
+              className="input input--numeric w-32"
+            />
+          </label>
+          <label className="field">
+            <span className="field__label">Zoom (15–20)</span>
+            <input
+              value={zoom}
+              disabled={busy}
+              onChange={(event) => setZoom(event.target.value)}
+              className="input input--numeric w-24"
+            />
+          </label>
+          <button type="button" onClick={loadLocation} disabled={blocked} className="primary-button">
+            {loadingLocation ? "Mengunduh citra…" : "Ambil citra"}
+          </button>
+        </div>
+        <p className="card__hint">
+          Citra satelit diunduh sesuai koordinat dan zoom di atas; tanda kepemilikan penyedianya ikut
+          ditampilkan di kanvas dan tidak boleh dihapus.
+        </p>
+      </section>
 
       {error !== null && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm break-words text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
+        <p role="alert" className="notice-box notice-box--danger break-words">
           {error}
         </p>
       )}
 
       {imagery === null && (
-        <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-          Masukkan koordinat lalu tekan &ldquo;Ambil citra&rdquo;. Setelah citra muncul, atur persegi
-          bidang atap dan parameter di sebelah kanan; hasil simulasi dihitung ulang setiap ada
-          perubahan.
-        </p>
+        <div className="empty-state">
+          <span className="empty-state__mark">
+            <ImageIcon className="icon" />
+          </span>
+          <p className="empty-state__title">Belum ada citra satelit</p>
+          <p className="empty-state__body">
+            Masukkan koordinat lalu tekan &ldquo;Ambil citra&rdquo;. Setelah citra muncul, geser dan
+            ubah ukuran persegi bidang atap; hasil simulasinya dihitung ulang setiap ada perubahan.
+          </p>
+        </div>
       )}
 
       {imagery !== null && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="space-y-6">
+          <div className="grid gap-6">
             <RoofRectEditor
               imageUrl={imagery.image_url}
               imageWidth={imagery.width}
@@ -368,21 +371,26 @@ export default function StudioPage() {
             />
 
             {result === null ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="m-0 text-sm text-ink-secondary">
                 {simulating ? "Menghitung simulasi…" : "Menunggu hasil simulasi pertama."}
               </p>
             ) : (
               <>
-                {simulating && (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Menghitung ulang…</p>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="m-0">Hasil simulasi</h2>
+                  {simulating && (
+                    <span className="state-badge state-badge--accent">Menghitung ulang…</span>
+                  )}
+                </div>
                 <MetricStrip result={result} />
                 <ResultDetails result={result} />
               </>
             )}
           </div>
 
-          <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          {/* Kolom kanan melekat di bawah kepala halaman supaya parameter tetap
+              terjangkau saat rincian hasil digulir. */}
+          <div className="grid gap-4 lg:sticky lg:top-20 lg:self-start">
             <ParameterPanel
               options={options}
               value={parameters}
@@ -395,15 +403,15 @@ export default function StudioPage() {
               type="button"
               onClick={saveSimulation}
               disabled={payload === null || blocked}
-              className="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="primary-button button--lg button--block"
             >
               {saving ? "Menyimpan…" : "Simpan simulasi"}
             </button>
 
             {savedId !== null && (
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="notice-box m-0">
                 Tersimpan sebagai simulasi #{savedId}. Buka{" "}
-                <Link href="/history" className="text-sky-600 underline dark:text-sky-400">
+                <Link href="/history" className="link">
                   Riwayat
                 </Link>{" "}
                 untuk melihatnya.
@@ -412,6 +420,6 @@ export default function StudioPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

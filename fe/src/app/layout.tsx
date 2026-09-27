@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import Link from "next/link";
+
+import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/**
+ * Plus Jakarta Sans adalah huruf sistem desain, diambil dari Transense.
+ * Dimuat lewat pengoptimal huruf Next supaya berkasnya disajikan dari domain
+ * sendiri tanpa perlu menyimpan berkas huruf di repositori.
+ */
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta",
   subsets: ["latin"],
 });
 
+/** Huruf berspasi tetap untuk angka teknis: koordinat, ukuran, dan hasil hitung. */
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -20,37 +28,18 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="id"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="flex min-h-full flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-        <header className="border-b border-zinc-200 dark:border-zinc-800">
-          <nav className="mx-auto flex w-full max-w-5xl items-center gap-6 px-4 py-3 text-sm">
-            <Link href="/" className="font-semibold tracking-tight">
-              ☀️ Sunsight
+    <html lang="id" className={`${jakarta.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="app-shell">
+        <SiteHeader />
+        <main className="page-frame page-content flex-1">{children}</main>
+        <footer className="app-footer">
+          <div className="page-frame app-footer__inner">
+            <span>Sunsight — tugas akhir Pemrosesan Citra dan Visual Komputer Cerdas.</span>
+            <Link href="/design" className="ml-auto">
+              Sistem desain
             </Link>
-            <Link
-              href="/studio"
-              className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-            >
-              Studio
-            </Link>
-            <Link
-              href="/history"
-              className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-            >
-              Riwayat
-            </Link>
-            <Link
-              href="/login"
-              className="ml-auto text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-            >
-              Masuk
-            </Link>
-          </nav>
-        </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+          </div>
+        </footer>
       </body>
     </html>
   );

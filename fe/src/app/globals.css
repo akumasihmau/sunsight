@@ -1,26 +1,192 @@
-@import "tailwindcss";
+/*
+ * Berkas masuk gaya Sunsight.
+ *
+ * Tiga lapisan, urut dari yang paling dalam:
+ *   1. `styles/tokens.css`     — nilai mentah sistem desain (`--brand-*`),
+ *                                dipindahkan dari proyek Transense.
+ *   2. blok `@theme` di bawah  — peta token itu ke nama yang dimengerti
+ *                                Tailwind, sehingga `bg-accent`,
+ *                                `text-ink-secondary`, `rounded-xl`, dan
+ *                                `shadow-card` semuanya berasal dari token.
+ *   3. `styles/components.css` — komponen bernama (`.card`, `.input`, …) di
+ *                                dalam `@layer components`, selalu di bawah
+ *                                utilitas sehingga dapat ditimpa tanpa
+ *                                `!important`.
+ *
+ * Nilai mentah hanya boleh ditulis di `tokens.css`. Berkas ini tidak memuat
+ * satu pun warna atau ukuran harfiah.
+ */
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@import "tailwindcss";
+@import "../styles/tokens.css";
+@import "../styles/components.css";
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* === Latar dan teks === */
+  --color-canvas: var(--brand-color-background);
+  --color-ink: var(--brand-color-text);
+  --color-ink-secondary: var(--brand-color-text-secondary);
+  --color-ink-tertiary: var(--brand-color-text-tertiary);
+  --color-on-accent: var(--brand-color-text-on-accent);
+  --color-on-success: var(--brand-color-text-on-success);
+  --color-on-warning: var(--brand-color-text-on-warning);
+  --color-on-error: var(--brand-color-text-on-error);
+  --color-surface: var(--brand-color-surface);
+  --color-muted: var(--brand-color-muted);
+  --color-line: var(--brand-color-border);
+  --color-layout: var(--brand-color-bg-layout);
+  --color-container: var(--brand-color-bg-container);
+  --color-elevated: var(--brand-color-bg-elevated);
+  --color-subtle: var(--brand-color-bg-subtle);
+  --color-fill: var(--brand-color-fill);
+  --color-fill-secondary: var(--brand-color-fill-secondary);
+  --color-fill-tertiary: var(--brand-color-fill-tertiary);
+  --color-scrim: var(--brand-color-scrim);
+
+  /* === Aksen === */
+  --color-accent: var(--brand-color-accent);
+  --color-accent-hover: var(--brand-color-accent-hover);
+  --color-accent-active: var(--brand-color-accent-active);
+  --color-accent-soft: var(--brand-color-accent-bg);
+  --color-accent-soft-hover: var(--brand-color-accent-bg-hover);
+  --color-accent-line: var(--brand-color-accent-border);
+  --color-accent-line-hover: var(--brand-color-accent-border-hover);
+  --color-accent-ink: var(--brand-color-accent-text);
+
+  /* === Sukses, peringatan, galat === */
+  --color-success: var(--brand-color-success);
+  --color-success-hover: var(--brand-color-success-hover);
+  --color-success-active: var(--brand-color-success-active);
+  --color-success-soft: var(--brand-color-success-bg);
+  --color-success-line: var(--brand-color-success-border);
+  --color-success-ink: var(--brand-color-success-foreground);
+
+  --color-warning: var(--brand-color-warning);
+  --color-warning-hover: var(--brand-color-warning-hover);
+  --color-warning-active: var(--brand-color-warning-active);
+  --color-warning-soft: var(--brand-color-warning-bg);
+  --color-warning-line: var(--brand-color-warning-border);
+  --color-warning-ink: var(--brand-color-warning-foreground);
+
+  --color-error: var(--brand-color-error);
+  --color-error-hover: var(--brand-color-error-hover);
+  --color-error-active: var(--brand-color-error-active);
+  --color-error-soft: var(--brand-color-error-bg);
+  --color-error-line: var(--brand-color-error-border);
+
+  /* === Tipografi === */
+  --font-sans: var(--brand-font-family);
+  --font-mono: var(--brand-font-mono);
+  --default-font-family: var(--brand-font-family);
+  --default-mono-font-family: var(--brand-font-mono);
+
+  --text-2xs: var(--brand-font-size-2xs);
+  --text-2xs--line-height: 16px;
+  --text-xs: var(--brand-font-size-xs);
+  --text-xs--line-height: 18px;
+  --text-sm: var(--brand-font-size-sm);
+  --text-sm--line-height: 20px;
+  --text-base: var(--brand-font-size-base);
+  --text-base--line-height: 24px;
+  --text-lg: var(--brand-font-size-lg);
+  --text-lg--line-height: 26px;
+  --text-xl: var(--brand-font-size-xl);
+  --text-xl--line-height: 28px;
+  --text-2xl: var(--brand-font-size-2xl);
+  --text-2xl--line-height: 34px;
+
+  /* === Radius === */
+  --radius-xs: var(--brand-radius-xs);
+  --radius-sm: var(--brand-radius-sm);
+  --radius-md: var(--brand-radius-base);
+  --radius-lg: var(--brand-radius-lg);
+  --radius-xl: var(--brand-radius-xl);
+  --radius-2xl: var(--brand-radius-2xl);
+  --radius-pill: var(--brand-radius-pill);
+
+  /* === Bayangan === */
+  --shadow-card: var(--brand-shadow-card);
+  --shadow-card-hover: var(--brand-shadow-card-hover);
+  --shadow-accent: var(--brand-shadow-accent);
+  --shadow-accent-strong: var(--brand-shadow-accent-strong);
+  --shadow-accent-tile: var(--brand-shadow-accent-tile);
+  --shadow-elevated: var(--brand-shadow-elevated);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100%;
+    margin: 0;
+    color: var(--brand-color-text);
+    background: var(--brand-color-bg-layout);
+    font-family: var(--brand-font-family);
+    font-size: var(--brand-font-size-base);
+    font-weight: var(--brand-font-weight-normal);
+    line-height: var(--brand-line-height);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Transense berhenti di 22 px karena tingginya terbatas ponsel; di layar
+     lebar judul halaman naik satu langkah, dan jarak antarhurufnya dirapatkan
+     sedikit karena huruf besar pada Plus Jakarta Sans tampak renggang. */
+  h1,
+  h2,
+  h3 {
+    margin-top: 0;
+    margin-bottom: var(--brand-space-xs);
+    font-weight: var(--brand-font-weight-strong);
+    line-height: var(--brand-line-height-heading);
+    letter-spacing: -0.011em;
+  }
+
+  h1 {
+    font-size: var(--brand-font-size-2xl);
+  }
+
+  h2 {
+    font-size: var(--brand-font-size-xl);
+  }
+
+  h3 {
+    font-size: var(--brand-font-size-lg);
+  }
+
+  p {
+    margin-top: 0;
+    margin-bottom: var(--brand-space-sm);
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: var(--brand-border-width-strong) solid var(--brand-color-accent);
+    outline-offset: var(--brand-space-xxs);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Transense mematikan gerak lewat blok ini; disalin apa adanya agar perilaku
+   kedua proyek sama bagi pengguna yang meminta gerak dikurangi. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

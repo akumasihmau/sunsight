@@ -254,8 +254,8 @@ export function RoofRectEditor({
   const handleRadius = imageWidth / 56;
 
   return (
-    <div className="space-y-2">
-      <div className="relative overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="grid gap-2">
+      <div className="map-canvas">
         {/* Citra harus tampil apa adanya pada rasio aslinya: lapisan SVG di atasnya
             memetakan koordinat penunjuk ke piksel citra, dan pengoptimal Next tidak
             diperlukan untuk citra dari server yang sudah berukuran tetap. */}
@@ -285,10 +285,8 @@ export function RoofRectEditor({
               y={rect.y}
               width={rect.width}
               height={rect.height}
-              fill="rgba(14, 165, 233, 0.22)"
-              stroke="#0284c7"
               strokeWidth={strokeWidth}
-              className={disabled ? undefined : "cursor-move"}
+              className={disabled ? "roof-selection" : "roof-selection cursor-move"}
               onPointerDown={startMove}
             />
             {CORNERS.map((corner) => (
@@ -297,10 +295,8 @@ export function RoofRectEditor({
                 cx={centerX + (corner.x * rect.width) / 2}
                 cy={centerY + (corner.y * rect.height) / 2}
                 r={handleRadius}
-                fill="#0284c7"
-                stroke="#ffffff"
                 strokeWidth={strokeWidth}
-                className={disabled ? undefined : "cursor-crosshair"}
+                className={disabled ? "roof-handle" : "roof-handle cursor-crosshair"}
                 onPointerDown={(event) => startResize(event, corner)}
               />
             ))}
@@ -308,35 +304,37 @@ export function RoofRectEditor({
         </svg>
 
         {imageFailed && (
-          <p className="absolute inset-0 flex items-center justify-center bg-zinc-100/95 p-4 text-center text-sm text-red-700 dark:bg-zinc-900/95 dark:text-red-300">
+          <p className="map-canvas__failure">
             Citra tidak dapat dimuat. Coba ambil citra ulang atau periksa koneksi ke server.
           </p>
         )}
 
         {attribution !== "" && !imageFailed && (
-          <p className="pointer-events-none absolute right-1 bottom-1 rounded bg-zinc-900/70 px-1.5 py-0.5 text-[10px] text-zinc-100">
-            {attribution}
-          </p>
+          <p className="map-canvas__attribution">{attribution}</p>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+      <div className="map-toolbar">
         <span>
           Lebar atap:{" "}
-          <strong className="font-mono">{decimal.format(rect.width * metersPerPixel)} m</strong>
+          <span className="map-toolbar__value">
+            {decimal.format(rect.width * metersPerPixel)} m
+          </span>
         </span>
         <span>
           Panjang atap:{" "}
-          <strong className="font-mono">{decimal.format(rect.height * metersPerPixel)} m</strong>
+          <span className="map-toolbar__value">
+            {decimal.format(rect.height * metersPerPixel)} m
+          </span>
         </span>
-        <span className="text-zinc-500 dark:text-zinc-400">
+        <span className="text-ink-tertiary">
           Luas bidang:{" "}
-          <span className="font-mono">
+          <span className="map-toolbar__value">
             {decimal.format(rect.width * rect.height * metersPerPixel * metersPerPixel)} m²
           </span>
         </span>
-        <label className="ml-auto flex items-center gap-2 text-xs font-medium">
-          Putaran
+        <label className="field--inline ml-auto">
+          <span className="field__label">Putaran</span>
           <input
             type="range"
             min={-ROTATION_LIMIT_DEG}
@@ -345,11 +343,9 @@ export function RoofRectEditor({
             value={Math.round(rect.rotation_deg)}
             disabled={disabled}
             onChange={(event) => onChange({ ...rect, rotation_deg: Number(event.target.value) })}
-            className="w-40 accent-sky-600"
+            className="range-input w-40"
           />
-          <span className="w-10 font-mono text-zinc-500 dark:text-zinc-400">
-            {Math.round(rect.rotation_deg)}°
-          </span>
+          <span className="field__value w-8 text-right">{Math.round(rect.rotation_deg)}°</span>
         </label>
       </div>
     </div>

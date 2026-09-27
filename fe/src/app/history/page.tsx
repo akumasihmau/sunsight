@@ -206,14 +206,18 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Riwayat simulasi</h1>
+    <>
+      <header className="page-intro">
+        <p className="eyebrow">Riwayat</p>
+        <h1>Simulasi yang tersimpan</h1>
+        <p>
+          Setiap baris adalah hasil yang dihitung ulang server saat disimpan, lengkap dengan masukan
+          dan asumsi yang dipakai pada perhitungan itu.
+        </p>
+      </header>
 
       {error !== null && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm break-words text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
+        <p role="alert" className="notice-box notice-box--danger break-words">
           {error}
         </p>
       )}
@@ -227,23 +231,23 @@ export default function HistoryPage() {
       />
 
       {meta !== null && meta.last_page > 1 && (
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
           <button
             type="button"
             onClick={() => void run(() => load(Math.max(1, meta.current_page - 1)))}
             disabled={busy || meta.current_page <= 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 disabled:opacity-50 dark:border-zinc-700"
+            className="secondary-button button--sm"
           >
             Sebelumnya
           </button>
-          <span className="text-zinc-500 dark:text-zinc-400">
+          <span className="text-ink-secondary">
             Halaman {meta.current_page} dari {meta.last_page} · {meta.total} simulasi
           </span>
           <button
             type="button"
             onClick={() => void run(() => load(Math.min(meta.last_page, meta.current_page + 1)))}
             disabled={busy || meta.current_page >= meta.last_page}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 disabled:opacity-50 dark:border-zinc-700"
+            className="secondary-button button--sm"
           >
             Berikutnya
           </button>
@@ -251,156 +255,165 @@ export default function HistoryPage() {
       )}
 
       {detail !== null && (
-        <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold">Detail simulasi #{detail.id}</h2>
+        <section className="grid gap-4">
+          <div className="section-heading">
+            <h2>Detail simulasi #{detail.id}</h2>
+            <p>Masukan, hasil, dan asumsi yang tersimpan pada baris ini.</p>
+          </div>
 
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Kapasitas</dt>
-              <dd className="font-semibold">{decimal.format(detail.result.capacity_kwp)} kWp</dd>
-            </div>
-            <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Produksi tahunan</dt>
-              <dd className="font-semibold">
+          <div className="stat-grid">
+            <article className="stat">
+              <p className="stat__label">Kapasitas</p>
+              <p className="stat__value">{decimal.format(detail.result.capacity_kwp)} kWp</p>
+            </article>
+            <article className="stat">
+              <p className="stat__label">Produksi tahunan</p>
+              <p className="stat__value">
                 {integer.format(detail.result.annual_production_kwh)} kWh
-              </dd>
-            </div>
-            <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Hemat bulanan</dt>
-              <dd className="font-semibold">{idr.format(detail.result.monthly_saving_idr)}</dd>
-            </div>
-            <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Payback</dt>
-              <dd className="font-semibold">{paybackYearsText(detail.result.payback_years)}</dd>
-            </div>
-          </dl>
+              </p>
+            </article>
+            <article className="stat">
+              <p className="stat__label">Hemat bulanan</p>
+              <p className="stat__value">{idr.format(detail.result.monthly_saving_idr)}</p>
+            </article>
+            <article className="stat">
+              <p className="stat__label">Payback</p>
+              <p
+                className={
+                  detail.result.payback_years === null
+                    ? "stat__value stat__value--empty"
+                    : "stat__value"
+                }
+              >
+                {paybackYearsText(detail.result.payback_years)}
+              </p>
+            </article>
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <div>
-              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+            <section className="card">
+              <h3 className="card__title">
                 Masukan yang tersimpan
               </h3>
-              <table className="w-full text-xs">
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <table className="data-table data-table--compact">
+                <tbody>
                   {Object.entries(detail.input).map(([key, value]) => (
                     <tr key={key}>
-                      <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                      <td>
                         {INPUT_LABELS[key] ?? key}
                       </td>
-                      <td className="py-1 text-right font-mono">
+                      <td>
                         {inputValueText(key, value as string | number)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </section>
 
-            <div>
-              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+            <section className="card">
+              <h3 className="card__title">
                 Hasil dan tata letak
               </h3>
-              <table className="w-full text-xs">
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <table className="data-table data-table--compact">
+                <tbody>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Luas bidang</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Luas bidang</td>
+                    <td>
                       {decimal.format(detail.result.total_area_sqm)} m²
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Luas efektif</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Luas efektif</td>
+                    <td>
                       {decimal.format(detail.result.effective_area_sqm)} m²
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Kisi</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Kisi</td>
+                    <td>
                       {integer.format(detail.result.rows)} × {integer.format(detail.result.columns)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                    <td>
                       Modul terpasang
                     </td>
-                    <td className="py-1 text-right font-mono">
+                    <td>
                       {integer.format(detail.result.installed)} dari{" "}
                       {integer.format(detail.result.max_slots)} slot
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Hemat tahunan</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Hemat tahunan</td>
+                    <td>
                       {idr.format(detail.result.annual_saving_idr)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Reduksi CO₂</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Reduksi CO₂</td>
+                    <td>
                       {decimal.format(detail.result.co2_reduction_kg_per_year)} kg/tahun ·{" "}
                       {integer.format(detail.result.trees_equivalent)} pohon
                     </td>
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </section>
 
-            <div>
-              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+            <section className="card">
+              <h3 className="card__title">
                 Asumsi yang tersimpan
               </h3>
-              <table className="w-full text-xs">
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <table className="data-table data-table--compact">
+                <tbody>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Iradiasi harian</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Iradiasi harian</td>
+                    <td>
                       {decimal.format(detail.assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Sumber iradiasi</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Sumber iradiasi</td>
+                    <td>
                       {detail.assumptions.irradiance_source} · {detail.assumptions.irradiance_period}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Faktor datang</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Faktor datang</td>
+                    <td>
                       {decimal.format(detail.assumptions.incidence_factor)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                    <td>
                       Performance ratio
                     </td>
-                    <td className="py-1 text-right font-mono">
+                    <td>
                       {decimal.format(detail.assumptions.performance_ratio)}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Golongan tarif</td>
-                    <td className="py-1 text-right font-mono">
+                    <td>Golongan tarif</td>
+                    <td>
                       {detail.assumptions.tariff_label} ·{" "}
                       {idr.format(detail.assumptions.tariff_idr_per_kwh)}/kWh
                     </td>
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </section>
           </div>
 
-          <div className="max-w-md">
-            <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-              Rincian CAPEX yang tersimpan
-            </h3>
+          <section className="card lg:max-w-md">
+            <h3 className="card__title">Rincian CAPEX yang tersimpan</h3>
             <CapexTable
               breakdown={detail.assumptions.capex_breakdown}
               total={detail.result.capex_total_idr}
             />
-          </div>
+          </section>
         </section>
       )}
-    </div>
+    </>
   );
 }

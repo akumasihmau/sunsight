@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sunsight — Antarmuka
 
-## Getting Started
+Next.js 16 (App Router), TypeScript, dan Tailwind CSS 4 dengan sistem desain bertoken.
 
-First, run the development server:
+## Menjalankan
 
 ```bash
+nvm use
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Halaman tersedia di http://localhost:3000. Antarmuka memanggil API di `http://localhost:8000/api`
+secara bawaan; untuk mengubahnya, salin `.env.example` menjadi `.env.local` dan isi
+`NEXT_PUBLIC_API_URL`. **Backend harus berjalan bersamaan.**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Susunan
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Bagian | Isi |
+| :--- | :--- |
+| `src/app/` | Rute: `/` halaman depan, `/studio` simulasi, `/history` riwayat, `/login` dan `/register` akun, `/design` contoh sistem desain |
+| `src/components/` | Komponen produk: editor bidang atap, panel parameter, metrik, rincian hasil, tabel riwayat, kepala halaman, ikon |
+| `src/lib/api.ts` | Klien API beserta tipe payload dan penyimpanan token di `localStorage` |
+| `src/lib/format.ts` | Pemformatan angka, rupiah, dan satuan |
+| `src/styles/tokens.css` | Seluruh nilai mentah sistem desain (`--brand-*`) |
+| `src/styles/components.css` | Komponen sistem desain di dalam `@layer components` |
 
-## Learn More
+## Aturan gaya
 
-To learn more about Next.js, take a look at the following resources:
+Sistem desain di `src/styles/` dipindahkan dari proyek Transense; aturan pakainya ada di
+[`../docs/DESIGN.md`](../docs/DESIGN.md). Ringkasnya:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Nilai mentah (warna, ukuran huruf, jarak, radius, bayangan) hanya boleh ditulis di
+   `src/styles/tokens.css`.
+2. Permukaan, tipografi, dan kontrol memakai kelas komponen (`.card`, `.input`, `.primary-button`, …).
+   Tata letak memakai utilitas Tailwind langsung di halaman.
+3. Palet bawaan Tailwind (`bg-zinc-900`, `text-sky-600`) tidak dipakai; pakai `bg-accent`,
+   `text-ink-secondary`, `border-line`, dan seterusnya.
+4. Hanya ada satu tema, terang.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Halaman `/design` merender seluruh token dan komponen dengan kelas yang sama seperti halaman produk,
+jadi ia sekaligus menjadi tempat memeriksa komponen baru.
 
-## Deploy on Vercel
+## Verifikasi
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build
+npx tsc --noEmit   # jalankan setelah build, karena tipe global Next baru dihasilkan build
+npm run lint
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Belum ada runner test di frontend; pembuktiannya lewat build, pemeriksaan tipe, lint, dan penelusuran
+di peramban sungguhan.

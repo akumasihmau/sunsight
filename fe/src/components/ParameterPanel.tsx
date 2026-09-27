@@ -28,10 +28,10 @@ function SliderField({
   onChange,
 }: SliderFieldProps) {
   return (
-    <label className="block space-y-1">
-      <span className="flex items-baseline justify-between gap-2 text-xs font-medium">
+    <label className="field">
+      <span className="field__label">
         {label}
-        <span className="font-mono text-zinc-500 dark:text-zinc-400">
+        <span className="field__value">
           {decimal.format(value)}
           {unit}
         </span>
@@ -44,9 +44,9 @@ function SliderField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full accent-sky-600"
+        className="range-input"
       />
-      <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">{hint}</span>
+      <span className="field__hint">{hint}</span>
     </label>
   );
 }
@@ -63,11 +63,16 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
   const catalogMissing = options === null;
 
   return (
-    <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <h2 className="text-sm font-semibold">Parameter simulasi</h2>
+    <section className="card">
+      <div className="card__header">
+        <h2 className="card__title">Parameter simulasi</h2>
+        <p className="card__hint">
+          Setiap perubahan dihitung ulang server setelah jeda singkat.
+        </p>
+      </div>
 
       {catalogMissing && (
-        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+        <p className="notice-box notice-box--warning">
           Katalog modul dan tarif belum termuat, jadi pilihan di bawah masih kosong.
         </p>
       )}
@@ -132,13 +137,13 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
         onChange={(clearance_m) => onChange({ clearance_m })}
       />
 
-      <label className="block space-y-1">
-        <span className="text-xs font-medium">Preset modul</span>
+      <label className="field">
+        <span className="field__label">Preset modul</span>
         <select
           value={value.module_key}
           disabled={disabled || catalogMissing}
           onChange={(event) => onChange({ module_key: event.target.value })}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="select"
         >
           <option value="">Pilih modul…</option>
           {options?.modules.map((module) => (
@@ -150,30 +155,32 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="block space-y-1">
-          <span className="text-xs font-medium">Orientasi</span>
+        <label className="field">
+          <span className="field__label">Orientasi</span>
           <select
             value={value.orientation}
             disabled={disabled}
             onChange={(event) =>
-              onChange({ orientation: event.target.value === "landscape" ? "landscape" : "portrait" })
+              onChange({
+                orientation: event.target.value === "landscape" ? "landscape" : "portrait",
+              })
             }
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="select"
           >
             <option value="portrait">Potret</option>
             <option value="landscape">Lanskap</option>
           </select>
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-xs font-medium">Inverter</span>
+        <label className="field">
+          <span className="field__label">Inverter</span>
           <select
             value={value.inverter_type}
             disabled={disabled}
             onChange={(event) =>
               onChange({ inverter_type: event.target.value === "micro" ? "micro" : "string" })
             }
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="select"
           >
             <option value="string">String</option>
             <option value="micro">Micro</option>
@@ -181,13 +188,13 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
         </label>
       </div>
 
-      <label className="block space-y-1">
-        <span className="text-xs font-medium">Golongan tarif PLN</span>
+      <label className="field">
+        <span className="field__label">Golongan tarif PLN</span>
         <select
           value={value.tariff_key}
           disabled={disabled || catalogMissing}
           onChange={(event) => onChange({ tariff_key: event.target.value })}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="select"
         >
           <option value="">Pilih golongan…</option>
           {options?.tariffs.map((tariff) => (
@@ -198,11 +205,11 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
         </select>
       </label>
 
-      <div className="space-y-1">
-        <label htmlFor="panel-count" className="block text-xs font-medium">
+      <div className="field">
+        <label htmlFor="panel-count" className="field__label">
           Jumlah panel terpasang
         </label>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <input
             id="panel-count"
             type="number"
@@ -215,26 +222,26 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
             onChange={(event) =>
               onChange({ panel_count: Math.max(0, Math.round(Number(event.target.value) || 0)) })
             }
-            className="w-24 rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="input input--numeric w-24"
           />
           <button
             type="button"
             disabled={disabled}
             onClick={() => onChange({ panel_count: null })}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium disabled:opacity-50 dark:border-zinc-700"
+            className="secondary-button button--sm"
           >
             Isi maksimum
           </button>
         </div>
-        <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
+        <span className="field__hint">
           {maxSlots === null
             ? "Slot maksimum belum diketahui sampai simulasi pertama selesai."
             : `Slot maksimum untuk bidang ini: ${integer.format(maxSlots)}.`}
         </span>
       </div>
 
-      <label className="block space-y-1">
-        <span className="text-xs font-medium">Tagihan listrik bulanan (Rp)</span>
+      <label className="field">
+        <span className="field__label">Tagihan listrik bulanan (Rp)</span>
         <input
           type="number"
           min={0}
@@ -244,11 +251,9 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
           onChange={(event) =>
             onChange({ monthly_bill_idr: Math.max(0, Math.round(Number(event.target.value) || 0)) })
           }
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="input input--numeric"
         />
-        <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
-          Penghematan yang dilaporkan tidak pernah melebihi tagihan ini.
-        </span>
+        <span className="field__hint">Penghematan yang dilaporkan tidak pernah melebihi tagihan ini.</span>
       </label>
     </section>
   );

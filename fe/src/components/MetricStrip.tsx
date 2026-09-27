@@ -16,16 +16,19 @@ export function MetricStrip({ result }: Props) {
       label: "Kapasitas terpasang",
       value: `${decimal.format(energy.capacity_kwp)} kWp`,
       hint: `${integer.format(layout.installed)} modul terpasang dari ${integer.format(layout.max_slots)} slot`,
+      empty: false,
     },
     {
       label: "Produksi tahunan",
       value: `${integer.format(energy.annual_production_kwh)} kWh`,
       hint: `${decimal.format(energy.daily_irradiance_kwh_per_sqm)} kWh/m²/hari dari ${energy.irradiance_source}`,
+      empty: false,
     },
     {
       label: "Penghematan bulanan",
       value: idr.format(finance.monthly_saving_idr),
       hint: `${idr.format(finance.annual_saving_idr)} per tahun, dibatasi tagihan bulanan`,
+      empty: false,
     },
     {
       label: "Payback",
@@ -34,20 +37,22 @@ export function MetricStrip({ result }: Props) {
         finance.payback_years === null
           ? "Penghematan tahunan nol sehingga payback tidak dapat dihitung."
           : "CAPEX total dibagi penghematan tahunan.",
+      // Tanpa modul terpasang tidak ada yang bisa dibayar kembali; nilainya
+      // ditampilkan sebagai tanda pisah, bukan sebagai angka.
+      empty: finance.payback_years === null,
     },
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="stat-grid">
       {metrics.map((metric) => (
-        <div
-          key={metric.label}
-          className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
-        >
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{metric.label}</p>
-          <p className="mt-1 text-lg font-semibold text-sky-700 dark:text-sky-300">{metric.value}</p>
-          <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">{metric.hint}</p>
-        </div>
+        <article key={metric.label} className="stat">
+          <p className="stat__label">{metric.label}</p>
+          <p className={metric.empty ? "stat__value stat__value--empty" : "stat__value"}>
+            {metric.value}
+          </p>
+          <p className="stat__hint">{metric.hint}</p>
+        </article>
       ))}
     </div>
   );

@@ -38,57 +38,56 @@ export default function LoginPage() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mx-auto max-w-sm space-y-4">
-      <h1 className="text-xl font-semibold">Masuk</h1>
+    <form onSubmit={onSubmit} className="card mx-auto w-full max-w-md">
+      <div className="card__header">
+        <p className="eyebrow">Akun</p>
+        <h1>Masuk</h1>
+        <p className="card__hint">
+          Masuk untuk menyimpan simulasi ke riwayat dan membukanya kembali kapan saja.
+        </p>
+      </div>
 
       {message !== null && (
-        <p
-          role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
+        <p role="alert" className="notice-box notice-box--danger">
           {message}
         </p>
       )}
 
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">Email</span>
+      <label className="field">
+        <span className="field__label">Email</span>
         <input
           type="email"
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="input"
         />
         {fieldErrors.email !== undefined && (
-          <span className="block text-xs text-red-600 dark:text-red-400">{fieldErrors.email[0]}</span>
+          <span className="field__error">{fieldErrors.email[0]}</span>
         )}
       </label>
 
-      <label className="block space-y-1">
-        <span className="text-sm font-medium">Password</span>
+      <label className="field">
+        <span className="field__label">Password</span>
         <input
           type="password"
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="input"
         />
         {fieldErrors.password !== undefined && (
-          <span className="block text-xs text-red-600 dark:text-red-400">{fieldErrors.password[0]}</span>
+          <span className="field__error">{fieldErrors.password[0]}</span>
         )}
       </label>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-      >
+      <button type="submit" disabled={busy} className="primary-button button--lg button--block">
         {busy ? "Memproses…" : "Masuk"}
       </button>
 
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="m-0 text-sm text-ink-secondary">
         Belum punya akun?{" "}
-        <Link href="/register" className="text-sky-600 underline dark:text-sky-400">
+        <Link href="/register" className="link">
           Daftar
         </Link>
       </p>
