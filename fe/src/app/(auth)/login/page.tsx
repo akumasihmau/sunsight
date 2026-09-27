@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       const result = await api.login({ email, password });
       setToken(result.token);
-      router.push("/analysis");
+      router.push("/studio");
     } catch (caught) {
       if (caught instanceof ApiRequestError) {
         setMessage(caught.message);

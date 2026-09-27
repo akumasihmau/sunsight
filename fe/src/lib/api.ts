@@ -2,12 +2,19 @@
  * Satu-satunya tempat pemanggilan HTTP ke backend.
  *
  * Semua halaman memakai modul ini supaya penempelan token dan penerjemahan
- * amplop kesalahan backend hanya ditulis sekali.
+ * amplop kesalahan backend hanya ditulis sekali. Bentuk setiap permintaan dan
+ * respons mengikuti `API CONTRACT.md`; klien hanya mengirim masukan, tidak
+ * pernah angka hasil.
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
 const TOKEN_STORAGE_KEY = "sunsight.token";
+
+/**
+ * Batas putaran persegi bidang atap menurut kontrak, dalam derajat.
+ */
+export const ROTATION_LIMIT_DEG = 45;
 
 export type FieldErrors = Record<string, string[]>;
 
@@ -15,9 +22,12 @@ export type User = { id: number; name: string; email: string };
 
 export type AuthResponse = { token: string; user: User };
 
+/** Urutan selalu `[minLng, minLat, maxLng, maxLat]`. */
 export type BoundingBox = [number, number, number, number];
 
-export type Pixel = [number, number];
+export type Orientation = "portrait" | "landscape";
+
+export type InverterType = "string" | "micro";
 
 export type Imagery = {
   image_id: string;
@@ -26,70 +36,196 @@ export type Imagery = {
   width: number;
   height: number;
   meters_per_pixel: number;
+  attribution: string;
 };
 
-export type RefinedPolygon = {
-  refined_polygon: Pixel[];
-  mask_image_url: string;
+/** Persegi bidang atap dalam koordinat piksel citra; `rotation_deg` mengelilingi titik tengahnya. */
+export type RoofRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation_deg: number;
 };
 
-export type ShadowAnalysis = {
-  usable_area_sqm: number;
-  shadow_area_sqm: number;
-  total_area_sqm: number;
-  shadow_mask_url: string;
+export type ModulePreset = {
+  key: string;
+  label: string;
+  power_w: number;
+  length_m: number;
+  width_m: number;
+  efficiency: number;
+  price_idr: number;
 };
 
-export type Assumptions = {
-  module_efficiency: number;
-  performance_ratio: number;
+export type Tariff = {
+  key: string;
+  label: string;
+  idr_per_kwh: number;
+  year: number;
+};
+
+export type SimulationOptions = {
+  modules: ModulePreset[];
+  tariffs: Tariff[];
+  defaults: {
+    module_key: string;
+    tariff_key: string;
+    orientation: Orientation;
+    inverter_type: InverterType;
+  };
+};
+
+/**
+ * Masukan simulasi seperti yang dipegang formulir.
+ *
+ * `panel_count` bernilai `null` selama pengguna belum menentukan sendiri, yang
+ * berarti "isi sampai slot maksimum"; bentuk kiriman ke server memakai
+ * `SimulationInput` di bawah.
+ */
+export type SimulationParameters = {
+  setback_m: number;
+  gutter_m: number;
   tilt_deg: number;
-  tilt_factor: number;
-  irradiance_source: string;
-  irradiance_period: string;
-  irradiance_kwh_per_sqm_day: number;
+  azimuth_deg: number;
+  module_key: string;
+  orientation: Orientation;
+  clearance_m: number;
+  panel_count: number | null;
+  inverter_type: InverterType;
+  monthly_bill_idr: number;
+  tariff_key: string;
 };
 
-export type Calculation = {
-  usable_area_sqm: number;
-  daily_ghi_kwh_per_sqm: number;
-  estimated_energy_kwh_per_day: number;
-  roof_orientation_deg: number;
-  recommended_azimuth_deg: number;
-  assumptions: Assumptions;
+/** Payload `POST /simulate` dan `POST /analyses`; hanya berisi masukan. */
+export type SimulationInput = SimulationParameters & {
+  image_id: string;
+  roof_rect: RoofRect;
 };
 
-export type AnalysisSummary = {
+export type CapexBreakdown = {
+  modules_idr: number;
+  inverter_idr: number;
+  racking_idr: number;
+  installation_idr: number;
+};
+
+export type SimulationResult = {
+  geometry: {
+    roof_width_m: number;
+    roof_length_m: number;
+    total_area_sqm: number;
+    effective_area_sqm: number;
+  };
+  layout: {
+    max_slots: number;
+    installed: number;
+    rows: number;
+    columns: number;
+    module_area_sqm: number;
+    density_ratio: number;
+  };
+  energy: {
+    capacity_kwp: number;
+    annual_production_kwh: number;
+    daily_irradiance_kwh_per_sqm: number;
+    incidence_factor: number;
+    performance_ratio: number;
+    irradiance_source: string;
+    irradiance_period: string;
+  };
+  finance: {
+    capex_total_idr: number;
+    capex_breakdown: CapexBreakdown;
+    monthly_saving_idr: number;
+    annual_saving_idr: number;
+    payback_years: number | null;
+    tariff_key: string;
+    tariff_label: string;
+    tariff_idr_per_kwh: number;
+    monthly_bill_idr: number;
+    co2_reduction_kg_per_year: number;
+    trees_equivalent: number;
+  };
+};
+
+export type SaveSimulationResponse = {
+  message: string;
+  id: number;
+  capacity_kwp: number;
+  payback_years: number | null;
+};
+
+export type SimulationSummary = {
   id: number;
   center_point: { lat: number; lng: number };
-  usable_area_sqm: number;
-  shadow_area_sqm: number;
-  estimated_energy_kwh_per_day: number;
-  roof_orientation_deg: number;
+  capacity_kwp: number;
+  annual_production_kwh: number;
+  monthly_saving_idr: number;
+  payback_years: number | null;
   created_at: string;
 };
 
-export type AnalysisDetail = AnalysisSummary & {
-  roof_polygon: { type: "Polygon"; coordinates: Pixel[][] };
-  recommended_azimuth_deg: number;
-  assumptions: Assumptions;
+/** Masukan yang tersimpan pada detail simulasi; dimensi sudah dalam meter. */
+export type StoredSimulationInput = {
+  roof_width_m: number;
+  roof_length_m: number;
+  rotation_deg: number;
+  setback_m: number;
+  gutter_m: number;
+  tilt_deg: number;
+  azimuth_deg: number;
+  module_key: string;
+  orientation: Orientation;
+  clearance_m: number;
+  panel_count: number | null;
+  inverter_type: InverterType;
+  monthly_bill_idr: number;
+  tariff_key: string;
+};
+
+export type StoredSimulationResult = {
+  total_area_sqm: number;
+  effective_area_sqm: number;
+  max_slots: number;
+  installed: number;
+  rows: number;
+  columns: number;
+  capacity_kwp: number;
+  annual_production_kwh: number;
+  capex_total_idr: number;
+  monthly_saving_idr: number;
+  annual_saving_idr: number;
+  payback_years: number | null;
+  co2_reduction_kg_per_year: number;
+  trees_equivalent: number;
+};
+
+export type SimulationAssumptions = {
+  daily_irradiance_kwh_per_sqm: number;
+  irradiance_source: string;
+  irradiance_period: string;
+  incidence_factor: number;
+  performance_ratio: number;
+  tariff_label: string;
+  tariff_idr_per_kwh: number;
+  capex_breakdown: CapexBreakdown;
+};
+
+export type SimulationDetail = {
+  id: number;
+  center_point: { lat: number; lng: number };
+  roof_polygon: { type: "Polygon"; coordinates: number[][][] };
+  input: StoredSimulationInput;
+  result: StoredSimulationResult;
+  assumptions: SimulationAssumptions;
+  created_at: string;
 };
 
 export type Paginated<T> = {
   data: T[];
   meta: { current_page: number; per_page: number; total: number; last_page: number };
   links: Record<string, string | null>;
-};
-
-export type SaveAnalysisPayload = {
-  usable_area_sqm: number;
-  shadow_area_sqm: number;
-  center_point: { lat: number; lng: number };
-  polygon: Pixel[];
-  estimated_energy_kwh_per_day: number;
-  roof_orientation_deg: number;
-  recommended_azimuth_deg: number;
-  assumptions: Assumptions;
 };
 
 /** Kegagalan yang sudah diterjemahkan dari amplop kesalahan backend. */
@@ -103,11 +239,6 @@ export class ApiRequestError extends Error {
     this.name = "ApiRequestError";
     this.status = status;
     this.fieldErrors = fieldErrors;
-  }
-
-  /** Pesan validasi untuk satu field, bila ada. */
-  fieldError(field: string): string | undefined {
-    return this.fieldErrors[field]?.[0];
   }
 }
 
@@ -137,10 +268,6 @@ type RequestOptions = {
   body?: unknown;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function parseJson(text: string): unknown {
   if (text === "") {
     return null;
@@ -153,14 +280,34 @@ function parseJson(text: string): unknown {
   }
 }
 
-function fieldErrorsFrom(value: unknown): FieldErrors {
-  if (!isRecord(value)) {
+/** Pesan dari amplop kesalahan backend, dengan cadangan bila bentuknya tak terduga. */
+function errorMessageFrom(payload: unknown, status: number): string {
+  if (typeof payload === "object" && payload !== null && "message" in payload) {
+    const { message } = payload;
+
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return `Permintaan gagal (${status}).`;
+}
+
+/** Validasi per-field dari amplop `422`, bila ada. */
+function fieldErrorsFrom(payload: unknown): FieldErrors {
+  if (typeof payload !== "object" || payload === null || !("errors" in payload)) {
+    return {};
+  }
+
+  const { errors } = payload;
+
+  if (typeof errors !== "object" || errors === null) {
     return {};
   }
 
   const result: FieldErrors = {};
 
-  for (const [field, messages] of Object.entries(value)) {
+  for (const [field, messages] of Object.entries(errors)) {
     if (Array.isArray(messages)) {
       result[field] = messages.map((message) => String(message));
     }
@@ -197,13 +344,12 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   const payload = parseJson(await response.text());
 
   if (!response.ok) {
-    const message = isRecord(payload) && typeof payload.message === "string"
-      ? payload.message
-      : `Permintaan gagal (${response.status}).`;
-
-    const errors = isRecord(payload) ? fieldErrorsFrom(payload.errors) : {};
-
-    throw new ApiRequestError(response.status, message, errors);
+    // Pesan backend ditampilkan apa adanya, termasuk pesan konfigurasi penyedia citra.
+    throw new ApiRequestError(
+      response.status,
+      errorMessageFrom(payload, response.status),
+      fieldErrorsFrom(payload),
+    );
   }
 
   return payload as T;
@@ -224,29 +370,22 @@ export const api = {
 
   currentUser: () => apiRequest<User>("/user"),
 
-  fetchImagery: (body: { lat: number; lng: number; zoom: number }) =>
-    apiRequest<Imagery>("/cv/fetch-osm", { method: "POST", body }),
+  fetchLocation: (body: { lat: number; lng: number; zoom: number }) =>
+    apiRequest<Imagery>("/location", { method: "POST", body }),
 
-  refinePolygon: (body: { image_id: string; rough_polygon: Pixel[] }) =>
-    apiRequest<RefinedPolygon>("/cv/refine-polygon", { method: "POST", body }),
+  fetchOptions: () => apiRequest<SimulationOptions>("/options"),
 
-  detectShadow: (body: { image_id: string; refined_polygon: Pixel[] }) =>
-    apiRequest<ShadowAnalysis>("/cv/detect-shadow", { method: "POST", body }),
+  simulate: (body: SimulationInput) =>
+    apiRequest<SimulationResult>("/simulate", { method: "POST", body }),
 
-  calculate: (body: {
-    usable_area_sqm: number;
-    center_point: { lat: number; lng: number };
-    polygon: Pixel[];
-  }) => apiRequest<Calculation>("/solar/calculate", { method: "POST", body }),
+  saveSimulation: (body: SimulationInput) =>
+    apiRequest<SaveSimulationResponse>("/analyses", { method: "POST", body }),
 
-  saveAnalysis: (body: SaveAnalysisPayload) =>
-    apiRequest<{ message: string; id: number }>("/analyses", { method: "POST", body }),
+  listSimulations: (page = 1, perPage = 10) =>
+    apiRequest<Paginated<SimulationSummary>>(`/analyses?page=${page}&per_page=${perPage}`),
 
-  listAnalyses: (page = 1, perPage = 10) =>
-    apiRequest<Paginated<AnalysisSummary>>(`/analyses?page=${page}&per_page=${perPage}`),
+  getSimulation: (id: number) => apiRequest<SimulationDetail>(`/analyses/${id}`),
 
-  getAnalysis: (id: number) => apiRequest<AnalysisDetail>(`/analyses/${id}`),
-
-  deleteAnalysis: (id: number) =>
+  deleteSimulation: (id: number) =>
     apiRequest<{ message: string }>(`/analyses/${id}`, { method: "DELETE" }),
 };

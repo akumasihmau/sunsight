@@ -3,31 +3,96 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { CapexTable } from "@/components/ResultDetails";
 import { HistoryTable } from "@/components/HistoryTable";
 import {
   ApiRequestError,
   api,
   getToken,
   setToken,
-  type AnalysisDetail,
-  type AnalysisSummary,
+  type SimulationDetail,
+  type SimulationSummary,
 } from "@/lib/api";
+import { decimal, idr, integer, paybackYearsText } from "@/lib/format";
 
 type PageMeta = { current_page: number; per_page: number; total: number; last_page: number };
 
+/** Label Indonesia untuk masukan yang tersimpan, urut sesuai alur pengisian. */
+const INPUT_LABELS: Record<string, string> = {
+  roof_width_m: "Lebar atap",
+  roof_length_m: "Panjang atap",
+  rotation_deg: "Putaran persegi",
+  setback_m: "Setback tepi",
+  gutter_m: "Jalur talang",
+  tilt_deg: "Kemiringan bidang",
+  azimuth_deg: "Azimuth",
+  module_key: "Preset modul",
+  orientation: "Orientasi modul",
+  clearance_m: "Jarak antar panel",
+  panel_count: "Jumlah panel",
+  inverter_type: "Tipe inverter",
+  monthly_bill_idr: "Tagihan listrik bulanan",
+  tariff_key: "Golongan tarif",
+};
+
+/** Satuan tampilan untuk masukan yang tersimpan. */
+const INPUT_UNITS: Record<string, string> = {
+  roof_width_m: " m",
+  roof_length_m: " m",
+  rotation_deg: "°",
+  setback_m: " m",
+  gutter_m: " m",
+  tilt_deg: "°",
+  azimuth_deg: "°",
+  clearance_m: " m",
+};
+
+const ORIENTATION_LABELS: Record<string, string> = {
+  portrait: "Potret",
+  landscape: "Lanskap",
+};
+
+const INVERTER_LABELS: Record<string, string> = {
+  string: "String",
+  micro: "Micro",
+};
+
+/** Nilai satu masukan tersimpan sebagai teks yang bisa dibaca. */
+function inputValueText(key: string, value: string | number): string {
+  if (key === "monthly_bill_idr" && typeof value === "number") {
+    return idr.format(value);
+  }
+
+  if (key === "orientation") {
+    return ORIENTATION_LABELS[String(value)] ?? String(value);
+  }
+
+  if (key === "inverter_type") {
+    return INVERTER_LABELS[String(value)] ?? String(value);
+  }
+
+  if (typeof value === "number") {
+    return `${decimal.format(value)}${INPUT_UNITS[key] ?? ""}`;
+  }
+
+  return String(value);
+}
+
 /** Pesan yang ditampilkan untuk sebuah kegagalan permintaan. */
 function messageFor(caught: unknown): string {
-  return caught instanceof ApiRequestError
-    ? caught.message
-    : "Terjadi kesalahan yang tidak terduga.";
+  if (caught instanceof ApiRequestError) {
+    return caught.message;
+  }
+
+  return "Terjadi kesalahan yang tidak terduga.";
 }
 
 export default function HistoryPage() {
   const router = useRouter();
 
-  const [items, setItems] = useState<AnalysisSummary[]>([]);
+  const [items, setItems] = useState<SimulationSummary[]>([]);
   const [meta, setMeta] = useState<PageMeta | null>(null);
-  const [detail, setDetail] = useState<AnalysisDetail | null>(null);
+  const [detail, setDetail] = useState<SimulationDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +105,7 @@ export default function HistoryPage() {
   const load = useCallback(
     async (page: number) => {
       try {
-        const result = await api.listAnalyses(page);
+        const result = await api.listSimulations(page);
         setItems(result.data);
         setMeta(result.meta);
         setError(null);
@@ -69,7 +134,7 @@ export default function HistoryPage() {
     let cancelled = false;
 
     api
-      .listAnalyses(1)
+      .listSimulations(1)
       .then((result) => {
         if (cancelled) {
           return;
@@ -112,7 +177,7 @@ export default function HistoryPage() {
   async function openDetail(id: number) {
     await run(async () => {
       try {
-        setDetail(await api.getAnalysis(id));
+        setDetail(await api.getSimulation(id));
       } catch (caught) {
         setError(messageFor(caught));
       }
@@ -120,13 +185,13 @@ export default function HistoryPage() {
   }
 
   async function remove(id: number) {
-    if (!window.confirm(`Hapus analisis #${id}?`)) {
+    if (!window.confirm(`Hapus simulasi #${id}?`)) {
       return;
     }
 
     await run(async () => {
       try {
-        await api.deleteAnalysis(id);
+        await api.deleteSimulation(id);
 
         if (detail?.id === id) {
           setDetail(null);
@@ -142,12 +207,12 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Riwayat analisis</h1>
+      <h1 className="text-xl font-semibold">Riwayat simulasi</h1>
 
       {error !== null && (
         <p
           role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+          className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm break-words text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
         >
           {error}
         </p>
@@ -172,7 +237,7 @@ export default function HistoryPage() {
             Sebelumnya
           </button>
           <span className="text-zinc-500 dark:text-zinc-400">
-            Halaman {meta.current_page} dari {meta.last_page} · {meta.total} analisis
+            Halaman {meta.current_page} dari {meta.last_page} · {meta.total} simulasi
           </span>
           <button
             type="button"
@@ -186,44 +251,154 @@ export default function HistoryPage() {
       )}
 
       {detail !== null && (
-        <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 className="mb-3 text-sm font-semibold">Detail analisis #{detail.id}</h2>
+        <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h2 className="text-sm font-semibold">Detail simulasi #{detail.id}</h2>
+
           <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Terpakai</dt>
-              <dd className="font-semibold">{detail.usable_area_sqm.toFixed(2)} m²</dd>
+              <dt className="text-zinc-500 dark:text-zinc-400">Kapasitas</dt>
+              <dd className="font-semibold">{decimal.format(detail.result.capacity_kwp)} kWp</dd>
             </div>
             <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Berbayang</dt>
-              <dd className="font-semibold">{detail.shadow_area_sqm.toFixed(2)} m²</dd>
+              <dt className="text-zinc-500 dark:text-zinc-400">Produksi tahunan</dt>
+              <dd className="font-semibold">
+                {integer.format(detail.result.annual_production_kwh)} kWh
+              </dd>
             </div>
             <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Energi harian</dt>
-              <dd className="font-semibold">{detail.estimated_energy_kwh_per_day.toFixed(2)} kWh</dd>
+              <dt className="text-zinc-500 dark:text-zinc-400">Hemat bulanan</dt>
+              <dd className="font-semibold">{idr.format(detail.result.monthly_saving_idr)}</dd>
             </div>
             <div>
-              <dt className="text-zinc-500 dark:text-zinc-400">Orientasi atap</dt>
-              <dd className="font-semibold">{detail.roof_orientation_deg.toFixed(2)}°</dd>
+              <dt className="text-zinc-500 dark:text-zinc-400">Payback</dt>
+              <dd className="font-semibold">{paybackYearsText(detail.result.payback_years)}</dd>
             </div>
           </dl>
 
-          <h3 className="mt-4 mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-            Asumsi yang tersimpan
-          </h3>
-          <table className="w-full text-xs">
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {Object.entries(detail.assumptions).map(([key, value]) => (
-                <tr key={key}>
-                  <td className="py-1 pr-4 font-mono text-zinc-500 dark:text-zinc-400">{key}</td>
-                  <td className="py-1">{String(value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div>
+              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                Masukan yang tersimpan
+              </h3>
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {Object.entries(detail.input).map(([key, value]) => (
+                    <tr key={key}>
+                      <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                        {INPUT_LABELS[key] ?? key}
+                      </td>
+                      <td className="py-1 text-right font-mono">
+                        {inputValueText(key, value as string | number)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            Poligon tersimpan memuat {detail.roof_polygon.coordinates[0]?.length ?? 0} titik.
-          </p>
+            <div>
+              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                Hasil dan tata letak
+              </h3>
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Luas bidang</td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.result.total_area_sqm)} m²
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Luas efektif</td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.result.effective_area_sqm)} m²
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Kisi</td>
+                    <td className="py-1 text-right font-mono">
+                      {integer.format(detail.result.rows)} × {integer.format(detail.result.columns)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                      Modul terpasang
+                    </td>
+                    <td className="py-1 text-right font-mono">
+                      {integer.format(detail.result.installed)} dari{" "}
+                      {integer.format(detail.result.max_slots)} slot
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Hemat tahunan</td>
+                    <td className="py-1 text-right font-mono">
+                      {idr.format(detail.result.annual_saving_idr)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Reduksi CO₂</td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.result.co2_reduction_kg_per_year)} kg/tahun ·{" "}
+                      {integer.format(detail.result.trees_equivalent)} pohon
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                Asumsi yang tersimpan
+              </h3>
+              <table className="w-full text-xs">
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Iradiasi harian</td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Sumber iradiasi</td>
+                    <td className="py-1 text-right font-mono">
+                      {detail.assumptions.irradiance_source} · {detail.assumptions.irradiance_period}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Faktor datang</td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.assumptions.incidence_factor)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">
+                      Performance ratio
+                    </td>
+                    <td className="py-1 text-right font-mono">
+                      {decimal.format(detail.assumptions.performance_ratio)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-3 text-zinc-600 dark:text-zinc-400">Golongan tarif</td>
+                    <td className="py-1 text-right font-mono">
+                      {detail.assumptions.tariff_label} ·{" "}
+                      {idr.format(detail.assumptions.tariff_idr_per_kwh)}/kWh
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="max-w-md">
+            <h3 className="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+              Rincian CAPEX yang tersimpan
+            </h3>
+            <CapexTable
+              breakdown={detail.assumptions.capex_breakdown}
+              total={detail.result.capex_total_idr}
+            />
+          </div>
         </section>
       )}
     </div>

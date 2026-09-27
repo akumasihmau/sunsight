@@ -31,7 +31,7 @@ export default function RegisterPage() {
         password_confirmation: confirmation,
       });
       setToken(result.token);
-      router.push("/analysis");
+      router.push("/studio");
     } catch (caught) {
       if (caught instanceof ApiRequestError) {
         setMessage(caught.message);

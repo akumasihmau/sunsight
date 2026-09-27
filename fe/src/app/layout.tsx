@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Sunsight",
-  description: "Estimasi efektivitas pemasangan panel surya pada atap bangunan",
+  description: "Simulasi kelayakan PLTS atap: kapasitas, produksi tahunan, penghematan, dan payback",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -31,10 +31,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               ☀️ Sunsight
             </Link>
             <Link
-              href="/analysis"
+              href="/studio"
               className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
             >
-              Analisis
+              Studio
             </Link>
             <Link
               href="/history"
