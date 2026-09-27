@@ -24,6 +24,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/solar/calculate', [SolarAnalysisController::class, 'calculate']);
     Route::get('/analyses', [SolarAnalysisController::class, 'index']);
     Route::post('/analyses', [SolarAnalysisController::class, 'store']);
-    Route::get('/analyses/{id}', [SolarAnalysisController::class, 'show']);
-    Route::delete('/analyses/{id}', [SolarAnalysisController::class, 'destroy']);
+    Route::get('/analyses/{id}', [SolarAnalysisController::class, 'show'])->whereNumber('id');
+    Route::delete('/analyses/{id}', [SolarAnalysisController::class, 'destroy'])->whereNumber('id');
 });

@@ -7,10 +7,12 @@ use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Dasar untuk request yang membawa poligon koordinat piksel.
+ * Dasar untuk request yang membawa poligon.
  *
- * Pemeriksaan jumlah titik unik tidak dapat dilakukan oleh aturan bawaan, sehingga
- * dijalankan sebagai pemeriksaan tambahan setelah validasi bentuk.
+ * Dipakai baik oleh poligon koordinat piksel (pipeline CV) maupun poligon
+ * geografis (kalkulasi dan penyimpanan riwayat). Pemeriksaan jumlah titik unik
+ * tidak dapat dilakukan oleh aturan bawaan, sehingga dijalankan sebagai
+ * pemeriksaan tambahan setelah validasi bentuk.
  */
 abstract class PolygonRequest extends FormRequest
 {
