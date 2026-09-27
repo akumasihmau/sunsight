@@ -2,16 +2,17 @@
 
 namespace App\Services\Imagery;
 
+use App\Models\ImageryAsset;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Satu-satunya tempat yang mengetahui tata letak berkas citra di disk.
+ * Satu-satunya tempat yang mengetahui tata letak berkas citra dan metadatanya.
  *
- * Aset selalu ditulis sebagai PNG agar ekstensinya tidak pernah menjadi tebakan
+ * Aset selalu ditulis sebagai PNG sehingga ekstensinya tidak pernah menjadi tebakan
  * saat dibaca kembali, dan selalu berada di bawah direktori pemiliknya. Kepemilikan
- * karena itu ditegakkan oleh letak berkas, bukan oleh kolom di basis data.
+ * ditegakkan dua kali: oleh kueri atas user_id, dan oleh letak berkasnya.
  */
 class ImageryAssetStore
 {
@@ -22,32 +23,34 @@ class ImageryAssetStore
     private const EXTENSION = 'png';
 
     /**
-     * @return array{imageId: string, path: string, url: string}
+     * Menyimpan citra dasar beserta georeferensinya.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox
      */
-    public function store(int $userId, string $pngBinary): array
-    {
-        $imageId = (string) Str::uuid();
-        $path = $this->path($userId, $imageId);
-
-        if (! Storage::disk(self::DISK)->put($path, $pngBinary)) {
-            throw new RuntimeException("Gagal menulis aset citra ke {$path}.");
-        }
-
-        return [
-            'imageId' => $imageId,
-            'path' => $path,
-            'url' => $this->url($path),
-        ];
+    public function storeImagery(
+        int $userId,
+        string $pngBinary,
+        float $lat,
+        float $lng,
+        int $zoom,
+        array $bbox,
+        float $metersPerPixel,
+    ): ImageryAsset {
+        return $this->persist($userId, $pngBinary, ImageryAsset::KIND_RAW, [
+            'center_lat' => $lat,
+            'center_lng' => $lng,
+            'zoom' => $zoom,
+            'bbox' => $bbox,
+            'meters_per_pixel' => $metersPerPixel,
+        ]);
     }
 
-    public function path(int $userId, string $imageId): string
+    /**
+     * Menyimpan mask turunan yang tidak punya georeferensi.
+     */
+    public function storeDerived(int $userId, string $pngBinary, string $kind): ImageryAsset
     {
-        return sprintf('%s/%d/%s.%s', self::DIRECTORY, $userId, $imageId, self::EXTENSION);
-    }
-
-    public function url(string $path): string
-    {
-        return Storage::disk(self::DISK)->url($path);
+        return $this->persist($userId, $pngBinary, $kind, []);
     }
 
     /**
@@ -56,14 +59,45 @@ class ImageryAssetStore
      * Mengembalikan null baik ketika aset tidak ada maupun ketika aset itu milik
      * user lain, sehingga keberadaan aset orang lain tidak dapat dibedakan.
      */
-    public function findFor(int $userId, string $imageId): ?string
+    public function findFor(int $userId, string $imageId, string $kind = ImageryAsset::KIND_RAW): ?ImageryAsset
     {
         if (! Str::isUuid($imageId)) {
             return null;
         }
 
-        $path = $this->path($userId, $imageId);
+        return ImageryAsset::query()
+            ->where('user_id', $userId)
+            ->where('image_id', $imageId)
+            ->where('kind', $kind)
+            ->first();
+    }
 
-        return Storage::disk(self::DISK)->exists($path) ? $path : null;
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function persist(int $userId, string $pngBinary, string $kind, array $attributes): ImageryAsset
+    {
+        $size = getimagesizefromstring($pngBinary);
+
+        if ($size === false) {
+            throw new RuntimeException('Aset citra bukan PNG yang dikenali.');
+        }
+
+        $imageId = (string) Str::uuid();
+        $path = sprintf('%s/%d/%s.%s', self::DIRECTORY, $userId, $imageId, self::EXTENSION);
+
+        if (! Storage::disk(self::DISK)->put($path, $pngBinary)) {
+            throw new RuntimeException("Gagal menulis aset citra ke {$path}.");
+        }
+
+        return ImageryAsset::create([
+            'image_id' => $imageId,
+            'user_id' => $userId,
+            'kind' => $kind,
+            'path' => $path,
+            'width' => $size[0],
+            'height' => $size[1],
+            ...$attributes,
+        ]);
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Services\Imagery;
 
+use App\Models\ImageryAsset;
+
 interface ImageryProvider
 {
     /**
@@ -12,5 +14,5 @@ interface ImageryProvider
      * @param  int  $zoom  Tingkat perbesaran.
      * @param  int  $userId  Pemilik aset; menentukan direktori penyimpanan.
      */
-    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryResult;
+    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryAsset;
 }

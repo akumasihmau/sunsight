@@ -2,6 +2,7 @@
 
 namespace App\Services\Imagery;
 
+use App\Models\ImageryAsset;
 use GdImage;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -21,7 +22,7 @@ class TileImageryProvider implements ImageryProvider
         private readonly ImageryAssetStore $store,
     ) {}
 
-    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryResult
+    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryAsset
     {
         $template = (string) config('imagery.tile.url');
 
@@ -65,15 +66,13 @@ class TileImageryProvider implements ImageryProvider
         imagedestroy($canvas);
         imagedestroy($cropped);
 
-        $asset = $this->store->store($userId, $binary);
-
-        return new ImageryResult(
-            imageId: $asset['imageId'],
-            path: $asset['path'],
-            url: $asset['url'],
+        return $this->store->storeImagery(
+            userId: $userId,
+            pngBinary: $binary,
+            lat: $lat,
+            lng: $lng,
+            zoom: $zoom,
             bbox: ImageryBoundingBox::forPoint($lat, $lng, $size, $zoom),
-            width: $size,
-            height: $size,
             metersPerPixel: ImageryBoundingBox::metersPerPixel($lat, $zoom),
         );
     }

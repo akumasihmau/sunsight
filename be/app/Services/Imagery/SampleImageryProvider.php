@@ -2,6 +2,7 @@
 
 namespace App\Services\Imagery;
 
+use App\Models\ImageryAsset;
 use RuntimeException;
 
 /**
@@ -15,7 +16,7 @@ class SampleImageryProvider implements ImageryProvider
         private readonly ImageryAssetStore $store,
     ) {}
 
-    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryResult
+    public function fetch(float $lat, float $lng, int $zoom, int $userId): ImageryAsset
     {
         $fixture = $this->fixtureFor($lat, $lng);
 
@@ -31,15 +32,13 @@ class SampleImageryProvider implements ImageryProvider
             throw new RuntimeException("Fixture citra tidak dikenali: {$fixture}");
         }
 
-        $asset = $this->store->store($userId, $binary);
-
-        return new ImageryResult(
-            imageId: $asset['imageId'],
-            path: $asset['path'],
-            url: $asset['url'],
+        return $this->store->storeImagery(
+            userId: $userId,
+            pngBinary: $binary,
+            lat: $lat,
+            lng: $lng,
+            zoom: $zoom,
             bbox: ImageryBoundingBox::forPoint($lat, $lng, $size[0], $zoom),
-            width: $size[0],
-            height: $size[1],
             metersPerPixel: ImageryBoundingBox::metersPerPixel($lat, $zoom),
         );
     }
