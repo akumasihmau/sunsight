@@ -226,7 +226,7 @@ Tidak menyimpan apa pun. Penyimpanan hanya terjadi lewat `POST /analyses`.
 {
   "usable_area_sqm": 45.5,
   "daily_ghi_kwh_per_sqm": 5.2,
-  "estimated_energy_kwh_per_day": 36.9,
+  "estimated_energy_kwh_per_day": 38.76,
   "roof_orientation_deg": 15.5,
   "recommended_azimuth_deg": 0.0,
   "assumptions": {
@@ -247,6 +247,9 @@ Aturan yang mengikat:
   dilaporkan kembali di blok `assumptions`.
 - `assumptions` selalu ada pada respons ini. Nilainya yang menjelaskan angka energi, sehingga Frontend
   wajib menyimpannya saat menyimpan analisis, dan Backend wajib menuliskannya ke basis data.
+- `assumptions.irradiance_source` memuat penanda `(cadangan)` bila sumber iradiasi tidak dapat dihubungi
+  dan nilai dari konfigurasi backend yang dipakai. Estimasi tetap dihasilkan, tetapi nilai cadangan tidak
+  boleh diperlakukan sebagai data pengukuran.
 - `estimated_energy_kwh_per_day = usable_area_sqm * module_efficiency * irradiance_kwh_per_sqm_day * performance_ratio * tilt_factor`.
 
 ## 6. Riwayat Analisis
@@ -270,7 +273,7 @@ Semua endpoint di sini hanya menyentuh data milik user pemanggil.
       "center_point": { "lat": -6.5955, "lng": 106.7995 },
       "usable_area_sqm": 45.5,
       "shadow_area_sqm": 5.0,
-      "estimated_energy_kwh_per_day": 36.9,
+      "estimated_energy_kwh_per_day": 38.76,
       "roof_orientation_deg": 15.5,
       "created_at": "2026-09-27T10:15:30.000000Z"
     }
@@ -313,7 +316,7 @@ Menyimpan satu hasil kalkulasi lengkap beserta poligon dan asumsinya.
   },
   "usable_area_sqm": 45.5,
   "shadow_area_sqm": 5.0,
-  "estimated_energy_kwh_per_day": 36.9,
+  "estimated_energy_kwh_per_day": 38.76,
   "roof_orientation_deg": 15.5,
   "recommended_azimuth_deg": 0.0,
   "assumptions": { "module_efficiency": 0.2, "performance_ratio": 0.78, "tilt_deg": 10.0, "tilt_factor": 1.05, "irradiance_source": "NASA POWER", "irradiance_period": "climatology", "irradiance_kwh_per_sqm_day": 5.2 },
