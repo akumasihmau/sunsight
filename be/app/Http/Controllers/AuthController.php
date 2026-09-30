@@ -9,6 +9,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
+use Illuminate\Support\Facades\Password;
+use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Str;
+
 class AuthController extends Controller
 {
     public function register(RegisterRequest $request): JsonResponse
@@ -45,6 +49,50 @@ class AuthController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out']);
+    }
+
+    public function forgotPassword(Request $request) 
+    {
+        // 1. Validasi email
+        $request->validate(['email' => 'required|email|exists:users,email']);
+
+        // 2. Kirim email reset password bawaan Laravel
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        return $status === Password::RESET_LINK_SENT
+            ? response()->json(['message' => 'Email berisi tautan reset password telah dikirim.'])
+            : response()->json(['message' => 'Gagal mengirim email reset password.'], 400);
+    }
+
+    public function resetPassword(Request $request) 
+    {
+        // 1. Validasi kelengkapan data dari Next.js
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        // 2. Proses reset password
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                // Karena di model User teman Anda sudah ada cast 'hashed', 
+                // kita cukup masukkan password mentahnya, Laravel akan nge-hash otomatis.
+                $user->forceFill([
+                    'password' => $password
+                ])->setRememberToken(Str::random(60));
+
+                $user->save();
+                event(new PasswordReset($user));
+            }
+        );
+
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Password berhasil diubah. Silakan login.'])
+            : response()->json(['message' => 'Token reset password tidak valid atau kedaluwarsa.'], 400);
     }
 
     public function user(Request $request): JsonResponse
