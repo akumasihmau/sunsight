@@ -368,6 +368,12 @@ export const api = {
 
   logout: () => apiRequest<{ message: string }>("/logout", { method: "POST" }),
 
+  forgotPassword: (body: { email: string}) =>
+    apiRequest<AuthResponse>("/forgot-password", { method: "POST", body }),
+
+  resetPassword: (body: { email: string; password: string; token: string }) =>
+    apiRequest<AuthResponse>("/reset-password", { method: "POST", body }),
+
   currentUser: () => apiRequest<User>("/user"),
 
   fetchLocation: (body: { lat: number; lng: number; zoom: number }) =>

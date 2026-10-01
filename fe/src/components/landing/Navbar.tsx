@@ -27,7 +27,7 @@ export default function Navbar() {
             onClick={() => router.push('/studio')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-900 hover:bg-slate-800 text-white transition shadow-sm cursor-pointer"
           >
-            <span>Buka Studio CAD</span>
+            <span>Masuk</span>
             <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
           </button>
         </div>
