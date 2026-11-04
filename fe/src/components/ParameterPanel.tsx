@@ -1,5 +1,6 @@
 "use client";
 
+import { AzimuthCompass } from "@/components/studio/AzimuthCompass";
 import type { SimulationOptions, SimulationParameters } from "@/lib/api";
 import { decimal, idr, integer } from "@/lib/format";
 
@@ -15,7 +16,6 @@ type SliderFieldProps = {
   onChange: (value: number) => void;
 };
 
-/** Satu parameter berupa penggeser dengan nilai terkininya terlihat. */
 function SliderField({
   label,
   hint,
@@ -76,6 +76,14 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
           Katalog modul dan tarif belum termuat, jadi pilihan di bawah masih kosong.
         </p>
       )}
+
+      {/* Kompas Navigasi Azimuth Interaktif */}
+      <AzimuthCompass
+        azimuthDeg={value.azimuth_deg}
+        tiltDeg={value.tilt_deg}
+        disabled={disabled}
+        onChangeAzimuth={(azimuth_deg) => onChange({ azimuth_deg })}
+      />
 
       <SliderField
         label="Kemiringan bidang"
@@ -216,7 +224,6 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
             min={0}
             max={maxSlots ?? undefined}
             step={1}
-            // Kosong berarti pengguna belum menentukan sendiri: server mengisi sampai slot maksimum.
             value={value.panel_count ?? maxSlots ?? ""}
             disabled={disabled}
             onChange={(event) =>
@@ -240,9 +247,12 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
         </span>
       </div>
 
-      <label className="field">
-        <span className="field__label">Tagihan listrik bulanan (Rp)</span>
+      <div className="field">
+        <label htmlFor="monthly-bill-input" className="field__label">
+          Tagihan listrik bulanan (Rp)
+        </label>
         <input
+          id="monthly-bill-input"
           type="number"
           min={0}
           step={50000}
@@ -253,8 +263,27 @@ export function ParameterPanel({ options, value, maxSlots, disabled, onChange }:
           }
           className="input input--numeric"
         />
-        <span className="field__hint">Penghematan yang dilaporkan tidak pernah melebihi tagihan ini.</span>
-      </label>
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {[1_500_000, 2_800_000, 5_000_000].map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange({ monthly_bill_idr: preset })}
+              className={`px-2 py-0.5 rounded-md text-[10.5px] font-semibold border transition cursor-pointer ${
+                value.monthly_bill_idr === preset
+                  ? "bg-amber-100 border-amber-300 text-amber-900"
+                  : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Rp {(preset / 1_000_000).toLocaleString("id-ID")} Jt
+            </button>
+          ))}
+        </div>
+        <span className="field__hint">
+          Penghematan yang dilaporkan tidak pernah melebihi tagihan ini.
+        </span>
+      </div>
     </section>
   );
 }

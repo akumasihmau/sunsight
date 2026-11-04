@@ -7,7 +7,11 @@
  * pernah angka hasil.
  */
 
+import { mockApi } from "./mock";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+
+export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 
 const TOKEN_STORAGE_KEY = "sunsight.token";
 
@@ -247,7 +251,14 @@ export function getToken(): string | null {
     return null;
   }
 
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!token && USE_MOCK && window.sessionStorage.getItem("sunsight.explicit_logout") !== "true") {
+    const defaultToken = "sunsight_mock_token";
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, defaultToken);
+    return defaultToken;
+  }
+
+  return token;
 }
 
 export function setToken(token: string | null): void {
@@ -257,10 +268,14 @@ export function setToken(token: string | null): void {
 
   if (token === null) {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    window.sessionStorage.setItem("sunsight.explicit_logout", "true");
+    window.dispatchEvent(new Event("sunsight:storage"));
     return;
   }
 
+  window.sessionStorage.removeItem("sunsight.explicit_logout");
   window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  window.dispatchEvent(new Event("sunsight:storage"));
 }
 
 type RequestOptions = {
@@ -344,7 +359,6 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   const payload = parseJson(await response.text());
 
   if (!response.ok) {
-    // Pesan backend ditampilkan apa adanya, termasuk pesan konfigurasi penyedia citra.
     throw new ApiRequestError(
       response.status,
       errorMessageFrom(payload, response.status),
@@ -361,37 +375,53 @@ export const api = {
     email: string;
     password: string;
     password_confirmation: string;
-  }) => apiRequest<AuthResponse>("/register", { method: "POST", body }),
+  }) => (USE_MOCK ? mockApi.register(body) : apiRequest<AuthResponse>("/register", { method: "POST", body })),
 
   login: (body: { email: string; password: string }) =>
-    apiRequest<AuthResponse>("/login", { method: "POST", body }),
+    USE_MOCK ? mockApi.login(body) : apiRequest<AuthResponse>("/login", { method: "POST", body }),
 
-  logout: () => apiRequest<{ message: string }>("/logout", { method: "POST" }),
+  logout: () => (USE_MOCK ? mockApi.logout() : apiRequest<{ message: string }>("/logout", { method: "POST" })),
 
-  forgotPassword: (body: { email: string}) =>
-    apiRequest<AuthResponse>("/forgot-password", { method: "POST", body }),
+  forgotPassword: (body: { email: string }) =>
+    USE_MOCK
+      ? mockApi.forgotPassword()
+      : apiRequest<{ message: string }>("/forgot-password", { method: "POST", body }),
 
-  resetPassword: (body: { email: string; password: string; token: string }) =>
-    apiRequest<AuthResponse>("/reset-password", { method: "POST", body }),
+  resetPassword: (body: {
+    email: string;
+    password: string;
+    password_confirmation: string;
+    token: string;
+  }) =>
+    USE_MOCK
+      ? mockApi.resetPassword()
+      : apiRequest<{ message: string }>("/reset-password", { method: "POST", body }),
 
-  currentUser: () => apiRequest<User>("/user"),
+  currentUser: () => (USE_MOCK ? mockApi.currentUser() : apiRequest<User>("/user")),
 
   fetchLocation: (body: { lat: number; lng: number; zoom: number }) =>
-    apiRequest<Imagery>("/location", { method: "POST", body }),
+    USE_MOCK
+      ? mockApi.fetchLocation(body)
+      : apiRequest<Imagery>("/location", { method: "POST", body }),
 
-  fetchOptions: () => apiRequest<SimulationOptions>("/options"),
+  fetchOptions: () => (USE_MOCK ? mockApi.fetchOptions() : apiRequest<SimulationOptions>("/options")),
 
   simulate: (body: SimulationInput) =>
-    apiRequest<SimulationResult>("/simulate", { method: "POST", body }),
+    USE_MOCK ? mockApi.simulate(body) : apiRequest<SimulationResult>("/simulate", { method: "POST", body }),
 
   saveSimulation: (body: SimulationInput) =>
-    apiRequest<SaveSimulationResponse>("/analyses", { method: "POST", body }),
+    USE_MOCK
+      ? mockApi.saveSimulation(body)
+      : apiRequest<SaveSimulationResponse>("/analyses", { method: "POST", body }),
 
   listSimulations: (page = 1, perPage = 10) =>
-    apiRequest<Paginated<SimulationSummary>>(`/analyses?page=${page}&per_page=${perPage}`),
+    USE_MOCK
+      ? mockApi.listSimulations(page, perPage)
+      : apiRequest<Paginated<SimulationSummary>>(`/analyses?page=${page}&per_page=${perPage}`),
 
-  getSimulation: (id: number) => apiRequest<SimulationDetail>(`/analyses/${id}`),
+  getSimulation: (id: number) =>
+    USE_MOCK ? mockApi.getSimulation(id) : apiRequest<SimulationDetail>(`/analyses/${id}`),
 
   deleteSimulation: (id: number) =>
-    apiRequest<{ message: string }>(`/analyses/${id}`, { method: "DELETE" }),
+    USE_MOCK ? mockApi.deleteSimulation(id) : apiRequest<{ message: string }>(`/analyses/${id}`, { method: "DELETE" }),
 };

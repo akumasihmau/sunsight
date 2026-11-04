@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 
+import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
 import { ApiRequestError, api } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  // Tambahan state status untuk membedakan alert sukses dan error
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -21,12 +21,12 @@ export default function ForgotPasswordPage() {
     setFieldErrors({});
 
     try {
-      // Catatan: Pastikan Anda sudah menambahkan metode forgotPassword di src/lib/api.ts
       await api.forgotPassword({ email });
-      
       setStatus("success");
-      setMessage("Tautan atur ulang password telah dikirim. Silakan periksa kotak masuk atau folder spam email Anda.");
-      setEmail(""); // Kosongkan input setelah sukses
+      setMessage(
+        "Tautan atur ulang password telah dikirim. Silakan periksa kotak masuk atau folder spam email Anda.",
+      );
+      setEmail("");
     } catch (caught) {
       setStatus("error");
       if (caught instanceof ApiRequestError) {
@@ -41,102 +41,73 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="bg-slate-50 font-body-md text-on-surface antialiased selection:bg-amber-100 selection:text-amber-900 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6">
-      
-      {/* Tautan Kembali */}
-      <div className="w-full max-w-md mb-6 flex justify-start">
-        <Link 
-          href="/login" 
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+    <AuthSplitShell
+      title="Lupa password?"
+      subtitle="Masukkan email terdaftar untuk menerima tautan pemulihan"
+      backHref="/login"
+      backLabel="Kembali ke Masuk"
+      bottomSlot={
+        <>
+          Ingat password Anda?{" "}
+          <Link href="/login" className="font-bold text-[#18191C] hover:underline ml-0.5">
+            Masuk
+          </Link>
+        </>
+      }
+    >
+      {status === "error" && message !== null && (
+        <div
+          role="alert"
+          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-red-50 text-red-700 border border-red-200/80"
         >
-          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-          Kembali ke Halaman Masuk
-        </Link>
-      </div>
-
-      <form 
-        onSubmit={onSubmit} 
-        className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 sm:p-10 space-y-6"
-      >
-        {/* Header Form */}
-        <div className="text-center space-y-3 mb-2">
-          <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold uppercase tracking-wider">
-            Pemulihan
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-headline-lg">
-            Lupa Password?
-          </h1>
-          <p className="text-sm text-slate-600 leading-relaxed">
-            Masukkan alamat email yang terdaftar pada akun Anda. Kami akan mengirimkan tautan untuk mengatur ulang password.
-          </p>
+          {message}
         </div>
+      )}
 
-        {/* Alert Box (Error) */}
-        {status === "error" && message !== null && (
-          <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 font-medium flex items-start gap-2.5 animate-fadeIn">
-            <span className="material-symbols-outlined text-[20px] shrink-0 mt-0.5">error</span>
-            <p>{message}</p>
-          </div>
-        )}
+      {status === "success" && message !== null && (
+        <div
+          role="alert"
+          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200/80"
+        >
+          {message}
+        </div>
+      )}
 
-        {/* Alert Box (Success) */}
-        {status === "success" && message !== null && (
-          <div role="alert" className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-start gap-2.5 animate-fadeIn">
-            <span className="material-symbols-outlined text-[20px] shrink-0 mt-0.5">mark_email_read</span>
-            <p>{message}</p>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          {/* Input Email */}
-          <label className="block">
-            <span className="block text-xs font-semibold text-slate-700 mb-1.5">Alamat Email</span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="nama@email.com"
-              disabled={busy}
-              className={`w-full px-4 py-3 rounded-xl border text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-all disabled:opacity-50 disabled:bg-slate-100 ${
-                fieldErrors.email 
-                  ? 'border-rose-300 bg-rose-50/50 focus:border-rose-500 focus:ring-rose-500/20' 
-                  : 'border-slate-200 bg-slate-50 focus:bg-white focus:border-amber-500 focus:ring-amber-500/20'
-              }`}
-            />
-            {fieldErrors.email !== undefined && (
-              <span className="mt-1.5 text-[11px] font-semibold text-rose-600 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">warning</span>
-                {fieldErrors.email[0]}
-              </span>
-            )}
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        <div className="space-y-1 text-left">
+          <label htmlFor="forgot-email" className="block text-xs font-semibold text-slate-700">
+            Alamat Email
           </label>
+          <input
+            id="forgot-email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="nama@email.com"
+            disabled={busy || status === "success"}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
+              fieldErrors.email ? "border-red-400 bg-red-50/30" : "border-slate-200"
+            }`}
+          />
+          {fieldErrors.email !== undefined && (
+            <span className="text-[11px] font-medium text-red-600 block">
+              {fieldErrors.email[0]}
+            </span>
+          )}
         </div>
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={busy || status === "success"}
-          className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-title text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100"
-        >
-          {busy ? (
-            <>
-              <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-              <span>Mengirim Tautan...</span>
-            </>
-          ) : status === "success" ? (
-            <>
-              <span className="material-symbols-outlined text-[18px]">check</span>
-              <span>Tautan Terkirim</span>
-            </>
-          ) : (
-            <>
-              <span>Kirim Tautan Atur Ulang</span>
-              <span className="material-symbols-outlined text-[18px]">send</span>
-            </>
-          )}
-        </button>
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={busy || status === "success"}
+            className="w-full py-3 px-4 rounded-full bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.99] text-amber-950 font-title font-bold text-xs sm:text-[13px] transition cursor-pointer shadow-[0_3px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {busy ? "Mengirim Tautan..." : status === "success" ? "Tautan Terkirim" : "Kirim Tautan Pemulihan"}
+          </button>
+        </div>
       </form>
-    </div>
+    </AuthSplitShell>
   );
 }

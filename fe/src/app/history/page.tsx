@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { CapexTable } from "@/components/ResultDetails";
 import { HistoryTable } from "@/components/HistoryTable";
+import { CapexTable } from "@/components/ResultDetails";
+import { SiteHeader } from "@/components/SiteHeader";
 import {
   ApiRequestError,
   api,
@@ -17,25 +19,23 @@ import { decimal, idr, integer, paybackYearsText } from "@/lib/format";
 
 type PageMeta = { current_page: number; per_page: number; total: number; last_page: number };
 
-/** Label Indonesia untuk masukan yang tersimpan, urut sesuai alur pengisian. */
 const INPUT_LABELS: Record<string, string> = {
-  roof_width_m: "Lebar atap",
-  roof_length_m: "Panjang atap",
-  rotation_deg: "Putaran persegi",
-  setback_m: "Setback tepi",
-  gutter_m: "Jalur talang",
-  tilt_deg: "Kemiringan bidang",
-  azimuth_deg: "Azimuth",
-  module_key: "Preset modul",
-  orientation: "Orientasi modul",
-  clearance_m: "Jarak antar panel",
-  panel_count: "Jumlah panel",
-  inverter_type: "Tipe inverter",
-  monthly_bill_idr: "Tagihan listrik bulanan",
-  tariff_key: "Golongan tarif",
+  roof_width_m: "Lebar Atap",
+  roof_length_m: "Panjang Atap",
+  rotation_deg: "Rotasi Orientasi",
+  setback_m: "Setback Tepi",
+  gutter_m: "Jalur Talang",
+  tilt_deg: "Kemiringan Bidang",
+  azimuth_deg: "Azimuth Sinar",
+  module_key: "Preset Modul",
+  orientation: "Orientasi Modul",
+  clearance_m: "Jarak Antar Panel",
+  panel_count: "Jumlah Panel Terpasang",
+  inverter_type: "Tipe Inverter",
+  monthly_bill_idr: "Tagihan Listrik Bulanan",
+  tariff_key: "Golongan Tarif PLN",
 };
 
-/** Satuan tampilan untuk masukan yang tersimpan. */
 const INPUT_UNITS: Record<string, string> = {
   roof_width_m: " m",
   roof_length_m: " m",
@@ -53,12 +53,15 @@ const ORIENTATION_LABELS: Record<string, string> = {
 };
 
 const INVERTER_LABELS: Record<string, string> = {
-  string: "String",
-  micro: "Micro",
+  string: "String Inverter",
+  micro: "Micro Inverter",
 };
 
-/** Nilai satu masukan tersimpan sebagai teks yang bisa dibaca. */
-function inputValueText(key: string, value: string | number): string {
+function inputValueText(key: string, value: string | number | null): string {
+  if (value === null) {
+    return "Slot Maksimum";
+  }
+
   if (key === "monthly_bill_idr" && typeof value === "number") {
     return idr.format(value);
   }
@@ -78,7 +81,6 @@ function inputValueText(key: string, value: string | number): string {
   return String(value);
 }
 
-/** Pesan yang ditampilkan untuk sebuah kegagalan permintaan. */
 function messageFor(caught: unknown): string {
   if (caught instanceof ApiRequestError) {
     return caught.message;
@@ -96,12 +98,6 @@ export default function HistoryPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Memuat satu halaman daftar riwayat.
-   *
-   * Sengaja tidak menyetel status apa pun sebelum permintaan dikirim, supaya
-   * pemanggilan dari dalam effect tidak memicu render berantai.
-   */
   const load = useCallback(
     async (page: number) => {
       try {
@@ -128,9 +124,6 @@ export default function HistoryPage() {
       return;
     }
 
-    // Pemuatan awal memakai rantai promise, bukan pemanggilan fungsi yang menyetel
-    // status, supaya tidak ada render berantai saat mount. Penanda `cancelled`
-    // mencegah hasil yang datang terlambat menimpa keadaan setelah unmount.
     let cancelled = false;
 
     api
@@ -162,7 +155,6 @@ export default function HistoryPage() {
     };
   }, [router]);
 
-  /** Membungkus aksi yang dipicu pengguna dengan indikator sibuk. */
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -197,7 +189,6 @@ export default function HistoryPage() {
           setDetail(null);
         }
 
-        // Dimuat ulang dari server supaya tampilan tidak menyimpang dari data.
         await load(meta?.current_page ?? 1);
       } catch (caught) {
         setError(messageFor(caught));
@@ -206,214 +197,244 @@ export default function HistoryPage() {
   }
 
   return (
-    <>
-      <header className="page-intro">
-        <p className="eyebrow">Riwayat</p>
-        <h1>Simulasi yang tersimpan</h1>
-        <p>
-          Setiap baris adalah hasil yang dihitung ulang server saat disimpan, lengkap dengan masukan
-          dan asumsi yang dipakai pada perhitungan itu.
-        </p>
-      </header>
+    <div className="min-h-screen w-full bg-[#f8fafc] text-slate-800 flex flex-col font-sans antialiased selection:bg-sky-100 selection:text-sky-900">
+      <SiteHeader />
 
-      {error !== null && (
-        <p role="alert" className="notice-box notice-box--danger break-words">
-          {error}
-        </p>
-      )}
-
-      <HistoryTable
-        items={items}
-        activeId={detail?.id ?? null}
-        busy={busy}
-        onOpen={(id) => void openDetail(id)}
-        onDelete={(id) => void remove(id)}
-      />
-
-      {meta !== null && meta.last_page > 1 && (
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <button
-            type="button"
-            onClick={() => void run(() => load(Math.max(1, meta.current_page - 1)))}
-            disabled={busy || meta.current_page <= 1}
-            className="secondary-button button--sm"
-          >
-            Sebelumnya
-          </button>
-          <span className="text-ink-secondary">
-            Halaman {meta.current_page} dari {meta.last_page} · {meta.total} simulasi
-          </span>
-          <button
-            type="button"
-            onClick={() => void run(() => load(Math.min(meta.last_page, meta.current_page + 1)))}
-            disabled={busy || meta.current_page >= meta.last_page}
-            className="secondary-button button--sm"
-          >
-            Berikutnya
-          </button>
-        </div>
-      )}
-
-      {detail !== null && (
-        <section className="grid gap-4">
-          <div className="section-heading">
-            <h2>Detail simulasi #{detail.id}</h2>
-            <p>Masukan, hasil, dan asumsi yang tersimpan pada baris ini.</p>
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+              Riwayat Simulasi
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              Daftar kalkulasi PLTS atap yang tersimpan beserta rincian biaya dan produksinya.
+            </p>
           </div>
 
-          <div className="stat-grid">
-            <article className="stat">
-              <p className="stat__label">Kapasitas</p>
-              <p className="stat__value">{decimal.format(detail.result.capacity_kwp)} kWp</p>
-            </article>
-            <article className="stat">
-              <p className="stat__label">Produksi tahunan</p>
-              <p className="stat__value">
-                {integer.format(detail.result.annual_production_kwh)} kWh
-              </p>
-            </article>
-            <article className="stat">
-              <p className="stat__label">Hemat bulanan</p>
-              <p className="stat__value">{idr.format(detail.result.monthly_saving_idr)}</p>
-            </article>
-            <article className="stat">
-              <p className="stat__label">Payback</p>
-              <p
-                className={
-                  detail.result.payback_years === null
-                    ? "stat__value stat__value--empty"
-                    : "stat__value"
-                }
+          <Link
+            href="/studio"
+            className="self-start sm:self-auto px-4 py-2 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 active:scale-95 text-amber-950 font-bold text-xs flex items-center gap-1.5 transition shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px] text-amber-950">add</span>
+            <span>Buka Studio</span>
+          </Link>
+        </header>
+
+        {error !== null && (
+          <div
+            role="alert"
+            className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <HistoryTable
+          items={items}
+          activeId={detail?.id ?? null}
+          busy={busy}
+          onOpen={(id) => void openDetail(id)}
+          onDelete={(id) => void remove(id)}
+        />
+
+        {meta !== null && meta.last_page > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+            <span className="text-slate-500 font-medium">
+              Halaman <strong className="text-slate-900">{meta.current_page}</strong> dari{" "}
+              <strong className="text-slate-900">{meta.last_page}</strong> · Total {meta.total} simulasi
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void run(() => load(Math.max(1, meta.current_page - 1)))}
+                disabled={busy || meta.current_page <= 1}
+                className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition cursor-pointer"
               >
-                {paybackYearsText(detail.result.payback_years)}
-              </p>
-            </article>
+                Sebelumnya
+              </button>
+              <button
+                type="button"
+                onClick={() => void run(() => load(Math.min(meta.last_page, meta.current_page + 1)))}
+                disabled={busy || meta.current_page >= meta.last_page}
+                className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition cursor-pointer"
+              >
+                Berikutnya
+              </button>
+            </div>
           </div>
+        )}
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <section className="card">
-              <h3 className="card__title">
-                Masukan yang tersimpan
-              </h3>
-              <table className="data-table data-table--compact">
-                <tbody>
+        {/* Detail Panel */}
+        {detail !== null && (
+          <section className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-7 space-y-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] animate-fadeIn">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span>Detail Simulasi #{detail.id}</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-900 border border-sky-200 text-[10px] font-bold">
+                    Tersimpan
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Rincian masukan geometri, hasil kalkulasi teknis, dan proyeksi finansial
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDetail(null)}
+                className="self-start sm:self-auto px-3 py-1 rounded-full border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 transition"
+              >
+                Tutup Rincian
+              </button>
+            </div>
+
+            {/* 4 Stat Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Kapasitas Sistem
+                </span>
+                <span className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 mt-1 block">
+                  {decimal.format(detail.result.capacity_kwp)} kWp
+                </span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-sky-50/50 border border-sky-100">
+                <span className="text-[10px] font-bold text-sky-900 uppercase tracking-wider block">
+                  Produksi Tahunan
+                </span>
+                <span className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 mt-1 block">
+                  {integer.format(detail.result.annual_production_kwh)} kWh
+                </span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100">
+                <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider block">
+                  Hemat Bulanan
+                </span>
+                <span className="text-lg sm:text-xl font-bold tracking-tight text-emerald-700 mt-1 block">
+                  {idr.format(detail.result.monthly_saving_idr)}
+                </span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Titik Impas (BEP)
+                </span>
+                <span className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 mt-1 block">
+                  {paybackYearsText(detail.result.payback_years)}
+                </span>
+              </div>
+            </div>
+
+            {/* 3 Detail Columns */}
+            <div className="grid gap-5 lg:grid-cols-3">
+              {/* Card 1: Masukan */}
+              <div className="p-5 rounded-2xl bg-slate-50/60 border border-slate-100 space-y-3">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Masukan Geometri
+                </h3>
+                <div className="divide-y divide-slate-100 text-xs">
                   {Object.entries(detail.input).map(([key, value]) => (
-                    <tr key={key}>
-                      <td>
-                        {INPUT_LABELS[key] ?? key}
-                      </td>
-                      <td>
-                        {inputValueText(key, value as string | number)}
-                      </td>
-                    </tr>
+                    <div key={key} className="py-2 flex items-center justify-between">
+                      <span className="text-slate-500">{INPUT_LABELS[key] ?? key}</span>
+                      <span className="font-semibold text-slate-800 tracking-tight">
+                        {inputValueText(key, value as string | number | null)}
+                      </span>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </section>
+                </div>
+              </div>
 
-            <section className="card">
-              <h3 className="card__title">
-                Hasil dan tata letak
+              {/* Card 2: Tata Letak & Hasil */}
+              <div className="p-5 rounded-2xl bg-slate-50/60 border border-slate-100 space-y-3">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Hasil &amp; Tata Letak
+                </h3>
+                <div className="divide-y divide-slate-100 text-xs">
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Luas Bidang Atap</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.result.total_area_sqm)} m²</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Luas Efektif Panel</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.result.effective_area_sqm)} m²</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Susunan Grid Modul</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{integer.format(detail.result.rows)} × {integer.format(detail.result.columns)}</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Modul Terpasang</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{integer.format(detail.result.installed)} / {integer.format(detail.result.max_slots)} slot</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Hemat Tahunan</span>
+                    <span className="font-bold text-emerald-700 tracking-tight">{idr.format(detail.result.annual_saving_idr)}</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Reduksi Karbon</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.result.co2_reduction_kg_per_year)} kg/thn</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Asumsi & Lingkungan */}
+              <div className="p-5 rounded-2xl bg-slate-50/60 border border-slate-100 space-y-3">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Asumsi Radiasi &amp; Tarif
+                </h3>
+                <div className="divide-y divide-slate-100 text-xs">
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Iradiasi Harian</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Sumber Data</span>
+                    <span className="font-medium text-slate-700 truncate max-w-[150px]">{detail.assumptions.irradiance_source}</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Faktor Sudut Datang</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.assumptions.incidence_factor)}</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Performance Ratio</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.assumptions.performance_ratio)}</span>
+                  </div>
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Tarif Listrik</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{idr.format(detail.assumptions.tariff_idr_per_kwh)}/kWh</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Capex Card */}
+            <div className="p-5 rounded-2xl bg-slate-50/60 border border-slate-100 space-y-3 max-w-xl">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Rincian Biaya Investasi Awal (CAPEX)
               </h3>
-              <table className="data-table data-table--compact">
-                <tbody>
-                  <tr>
-                    <td>Luas bidang</td>
-                    <td>
-                      {decimal.format(detail.result.total_area_sqm)} m²
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Luas efektif</td>
-                    <td>
-                      {decimal.format(detail.result.effective_area_sqm)} m²
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Kisi</td>
-                    <td>
-                      {integer.format(detail.result.rows)} × {integer.format(detail.result.columns)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      Modul terpasang
-                    </td>
-                    <td>
-                      {integer.format(detail.result.installed)} dari{" "}
-                      {integer.format(detail.result.max_slots)} slot
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Hemat tahunan</td>
-                    <td>
-                      {idr.format(detail.result.annual_saving_idr)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Reduksi CO₂</td>
-                    <td>
-                      {decimal.format(detail.result.co2_reduction_kg_per_year)} kg/tahun ·{" "}
-                      {integer.format(detail.result.trees_equivalent)} pohon
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </section>
-
-            <section className="card">
-              <h3 className="card__title">
-                Asumsi yang tersimpan
-              </h3>
-              <table className="data-table data-table--compact">
-                <tbody>
-                  <tr>
-                    <td>Iradiasi harian</td>
-                    <td>
-                      {decimal.format(detail.assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Sumber iradiasi</td>
-                    <td>
-                      {detail.assumptions.irradiance_source} · {detail.assumptions.irradiance_period}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Faktor datang</td>
-                    <td>
-                      {decimal.format(detail.assumptions.incidence_factor)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      Performance ratio
-                    </td>
-                    <td>
-                      {decimal.format(detail.assumptions.performance_ratio)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Golongan tarif</td>
-                    <td>
-                      {detail.assumptions.tariff_label} ·{" "}
-                      {idr.format(detail.assumptions.tariff_idr_per_kwh)}/kWh
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </section>
-          </div>
-
-          <section className="card lg:max-w-md">
-            <h3 className="card__title">Rincian CAPEX yang tersimpan</h3>
-            <CapexTable
-              breakdown={detail.assumptions.capex_breakdown}
-              total={detail.result.capex_total_idr}
-            />
+              <CapexTable
+                breakdown={detail.assumptions.capex_breakdown}
+                total={detail.result.capex_total_idr}
+              />
+            </div>
           </section>
-        </section>
-      )}
-    </>
+        )}
+      </main>
+
+      <footer className="w-full bg-white border-t border-slate-200/80 py-6 text-center text-xs text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-slate-600 font-semibold">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="SunSight" className="h-4.5 w-auto" />
+          </div>
+          <p>© 2026 SunSight. Fokus Regional: Kota Bogor, Jawa Barat.</p>
+        </div>
+      </footer>
+    </div>
   );
 }

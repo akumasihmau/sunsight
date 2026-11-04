@@ -20,6 +20,10 @@ export const integer = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+export function formatRp(value: number): string {
+  return "Rp " + Math.round(value).toLocaleString("id-ID");
+}
+
 /** Payback dalam tahun; `null` berarti penghematan nol sehingga tidak dapat dihitung. */
 export function paybackYearsText(value: number | null): string {
   if (value === null) {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { SiteHeader } from "@/components/SiteHeader";
 import { ChartIcon, MapPinIcon, RoofFrameIcon, SlidersIcon, SunIcon } from "@/components/icons";
 
 export const metadata: Metadata = {
@@ -109,7 +110,9 @@ function Swatch({ token }: { token: string }) {
 
 export default function DesignPage() {
   return (
-    <>
+    <div className="app-shell">
+      <SiteHeader />
+      <main className="page-frame page-content flex-1">
       <header className="page-intro">
         <p className="eyebrow">Sistem desain</p>
         <h1>Token dan komponen Sunsight</h1>
@@ -578,6 +581,7 @@ export default function DesignPage() {
           kontrol, serta utilitas Tailwind hanya untuk tata letak.
         </p>
       </div>
-    </>
+      </main>
+    </div>
   );
 }

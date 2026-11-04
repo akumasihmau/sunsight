@@ -1,22 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 
+import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
 import { ApiRequestError, api } from "@/lib/api";
 
-// Memisahkan komponen form agar bisa dibungkus dengan Suspense
-function ResetPasswordForm() {
-  const router = useRouter();
+function ResetPasswordContent() {
   const searchParams = useSearchParams();
-  
-  // Mengambil token dan email dari URL bawaan link Laravel
   const token = searchParams.get("token") || "";
   const emailParam = searchParams.get("email") || "";
 
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
@@ -30,7 +28,6 @@ function ResetPasswordForm() {
     setFieldErrors({});
 
     try {
-      // Pastikan fungsi ini sudah ada di src/lib/api.ts
       await api.resetPassword({
         token,
         email: emailParam,
@@ -39,7 +36,7 @@ function ResetPasswordForm() {
       });
 
       setStatus("success");
-      setMessage("Password Anda berhasil diatur ulang! Silakan masuk menggunakan password baru Anda.");
+      setMessage("Password berhasil diperbarui! Silakan masuk dengan password baru Anda.");
       setPassword("");
       setConfirmation("");
     } catch (caught) {
@@ -48,7 +45,7 @@ function ResetPasswordForm() {
         setMessage(caught.message);
         setFieldErrors(caught.fieldErrors);
       } else {
-        setMessage("Terjadi kesalahan atau tautan kadaluarsa.");
+        setMessage("Terjadi kesalahan atau tautan kedaluwarsa.");
       }
     } finally {
       setBusy(false);
@@ -56,148 +53,150 @@ function ResetPasswordForm() {
   }
 
   return (
-    <div className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200 p-8 sm:p-10 space-y-6">
-      {/* Header Form */}
-      <div className="text-center space-y-3 mb-2">
-        <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold uppercase tracking-wider">
-          Keamanan
-        </span>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-headline-lg">
-          Atur Ulang Password
-        </h1>
-        <p className="text-sm text-slate-600 leading-relaxed">
-          Silakan masukkan password baru untuk akun Anda.
-        </p>
-      </div>
-
-      {/* Alert Box (Error) */}
+    <AuthSplitShell
+      title="Atur ulang password"
+      subtitle="Masukkan password baru untuk akun SunSight Anda"
+      backHref="/login"
+      backLabel="Kembali ke Masuk"
+      bottomSlot={
+        <>
+          Kembali ke halaman{" "}
+          <Link href="/login" className="font-bold text-[#18191C] hover:underline ml-0.5">
+            Masuk
+          </Link>
+        </>
+      }
+    >
       {status === "error" && message !== null && (
-        <div role="alert" className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 font-medium flex items-start gap-2.5 animate-fadeIn">
-          <span className="material-symbols-outlined text-[20px] shrink-0 mt-0.5">error</span>
-          <p>{message}</p>
+        <div
+          role="alert"
+          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-red-50 text-red-700 border border-red-200/80"
+        >
+          {message}
         </div>
       )}
 
-      {/* Alert Box (Success) */}
       {status === "success" && message !== null && (
-        <div role="alert" className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-start gap-2.5 animate-fadeIn">
-          <span className="material-symbols-outlined text-[20px] shrink-0 mt-0.5">check_circle</span>
-          <p>{message}</p>
+        <div
+          role="alert"
+          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200/80"
+        >
+          {message}
         </div>
       )}
 
       {status === "success" ? (
-        // Jika sukses, sembunyikan form dan tampilkan tombol untuk ke halaman login
         <div className="pt-2">
           <Link
             href="/login"
-            className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-title text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2"
+            className="w-full py-3.5 px-4 rounded-full bg-[#18191C] hover:bg-[#27292E] text-white font-title font-bold text-xs sm:text-[13px] transition flex items-center justify-center shadow-xs"
           >
-            <span>Pergi ke Halaman Masuk</span>
-            <span className="material-symbols-outlined text-[18px]">login</span>
+            Pergi ke Halaman Masuk
           </Link>
         </div>
       ) : (
-        // Jika belum sukses, tampilkan form pengisian password baru
-        <form onSubmit={onSubmit} className="space-y-4">
-          
-          {/* Input Email (Read Only - Sebagai Informasi Saja) */}
-          <label className="block">
-            <span className="block text-xs font-semibold text-slate-700 mb-1.5">Email Akun</span>
+        <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1 text-left">
+            <label htmlFor="reset-email" className="block text-xs font-semibold text-slate-700">
+              Email Akun
+            </label>
             <input
+              id="reset-email"
               type="email"
               readOnly
               value={emailParam}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-sm text-slate-500 cursor-not-allowed"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs text-slate-600 cursor-not-allowed"
             />
-          </label>
+          </div>
 
-          {/* Input Password Baru */}
-          <label className="block">
-            <span className="block text-xs font-semibold text-slate-700 mb-1.5">Password Baru</span>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="••••••••"
-              disabled={busy}
-              className={`w-full px-4 py-3 rounded-xl border text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-all disabled:opacity-50 disabled:bg-slate-100 ${
-                fieldErrors.password 
-                  ? 'border-rose-300 bg-rose-50/50 focus:border-rose-500 focus:ring-rose-500/20' 
-                  : 'border-slate-200 bg-slate-50 focus:bg-white focus:border-amber-500 focus:ring-amber-500/20'
-              }`}
-            />
+          <div className="space-y-1 text-left">
+            <label htmlFor="reset-password" className="block text-xs font-semibold text-slate-700">
+              Password Baru
+            </label>
+            <div className="relative">
+              <input
+                id="reset-password"
+                type={showPassword ? "text" : "password"}
+                required
+                placeholder="Minimal 8 karakter"
+                data-mascot-password="true"
+                disabled={busy}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
+                  fieldErrors.password ? "border-red-400 bg-red-50/30" : "border-slate-200"
+                }`}
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition cursor-pointer p-0.5"
+                title="Tampilkan / Sembunyikan Password"
+              >
+                <span className="material-symbols-outlined text-[17px] leading-none block">
+                  {showPassword ? "visibility_off" : "visibility"}
+                </span>
+              </button>
+            </div>
             {fieldErrors.password !== undefined && (
-              <span className="mt-1.5 text-[11px] font-semibold text-rose-600 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">warning</span>
+              <span className="text-[11px] font-medium text-red-600 block">
                 {fieldErrors.password[0]}
               </span>
             )}
-          </label>
+          </div>
 
-          {/* Input Konfirmasi Password Baru */}
-          <label className="block">
-            <span className="block text-xs font-semibold text-slate-700 mb-1.5">Konfirmasi Password Baru</span>
-            <input
-              type="password"
-              required
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              placeholder="••••••••"
-              disabled={busy}
-              className={`w-full px-4 py-3 rounded-xl border text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 transition-all disabled:opacity-50 disabled:bg-slate-100 ${
-                fieldErrors.password_confirmation 
-                  ? 'border-rose-300 bg-rose-50/50 focus:border-rose-500 focus:ring-rose-500/20' 
-                  : 'border-slate-200 bg-slate-50 focus:bg-white focus:border-amber-500 focus:ring-amber-500/20'
-              }`}
-            />
+          <div className="space-y-1 text-left">
+            <label htmlFor="reset-confirm" className="block text-xs font-semibold text-slate-700">
+              Konfirmasi Password Baru
+            </label>
+            <div className="relative">
+              <input
+                id="reset-confirm"
+                type={showPassword ? "text" : "password"}
+                required
+                placeholder="Ulangi password baru"
+                data-mascot-password="true"
+                disabled={busy}
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                className={`w-full px-3.5 py-2.5 pr-10 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
+                  fieldErrors.password_confirmation ? "border-red-400 bg-red-50/30" : "border-slate-200"
+                }`}
+              />
+            </div>
             {fieldErrors.password_confirmation !== undefined && (
-              <span className="mt-1.5 text-[11px] font-semibold text-rose-600 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">warning</span>
+              <span className="text-[11px] font-medium text-red-600 block">
                 {fieldErrors.password_confirmation[0]}
               </span>
             )}
-          </label>
+          </div>
 
-          {/* Submit Button */}
           <div className="pt-2">
             <button
               type="submit"
               disabled={busy}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 active:scale-[0.98] text-white font-title text-sm font-bold shadow-md shadow-amber-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="w-full py-3 px-4 rounded-full bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.99] text-amber-950 font-title font-bold text-xs sm:text-[13px] transition cursor-pointer shadow-[0_3px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 disabled:opacity-60"
             >
-              {busy ? (
-                <>
-                  <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-                  <span>Menyimpan...</span>
-                </>
-              ) : (
-                <>
-                  <span>Simpan Password Baru</span>
-                  <span className="material-symbols-outlined text-[18px]">save</span>
-                </>
-              )}
+              {busy ? "Menyimpan..." : "Simpan Password Baru"}
             </button>
           </div>
         </form>
       )}
-    </div>
+    </AuthSplitShell>
   );
 }
 
-// Komponen Utama Page yang diekspor (membungkus form dengan Suspense)
 export default function ResetPasswordPage() {
   return (
-    <div className="bg-slate-50 font-body-md text-on-surface antialiased selection:bg-amber-100 selection:text-amber-900 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6">
-      <Suspense fallback={
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-200 p-10 flex flex-col items-center justify-center space-y-4">
-          <span className="material-symbols-outlined text-4xl text-amber-500 animate-spin">progress_activity</span>
-          <p className="text-sm font-semibold text-slate-500">Memuat data tautan...</p>
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full bg-[#ECECEE] flex items-center justify-center p-6 text-xs font-semibold text-zinc-500">
+          Memuat halaman pemulihan...
         </div>
-      }>
-        <ResetPasswordForm />
-      </Suspense>
-    </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

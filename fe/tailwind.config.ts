@@ -61,8 +61,9 @@ const config: Config = {
         "error-container": "#fee2e2"
       },
       fontFamily: {
-        "title": ["Plus Jakarta Sans", "sans-serif"],
-        "body-md": ["Inter", "sans-serif"],
+        "sans": ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+        "title": ["Plus Jakarta Sans", "Inter", "sans-serif"],
+        "body-md": ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
         "code-metric": ["Inter", "monospace"],
       }
     },
