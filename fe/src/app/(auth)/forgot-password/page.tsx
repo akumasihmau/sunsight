@@ -136,12 +136,6 @@ export default function ForgotPasswordPage() {
           >
             {busy ? "Mengirim Tautan..." : status === "success" ? "Tautan Terkirim" : "Kirim Tautan Pemulihan Kata Sandi"}
           </button>
-
-          {/* Micro Trust & Security Assurance */}
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
-            <span className="material-symbols-outlined text-[13px] text-emerald-600">verified_user</span>
-            <span>Tautan verifikasi dikirim secara rahasia & aman</span>
-          </div>
         </div>
       </form>
     </AuthSplitShell>

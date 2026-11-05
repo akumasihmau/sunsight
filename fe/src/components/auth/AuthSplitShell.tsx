@@ -16,10 +16,8 @@ type AuthSplitShellProps = {
 type MascotState =
   | "idle"
   | "kepo"
-  | "pwd_hidden"
-  | "pwd_peek"
-  | "pwd_approve"
-  | "pwd_retreat";
+  | "pwd_away"
+  | "pwd_peek";
 
 export function AuthSplitShell({
   title,
@@ -34,12 +32,10 @@ export function AuthSplitShell({
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Mascot interaction states:
-  // "idle": shines happily alone, buoyant hover, tracks cursor gaze & blinks naturally
-  // "kepo": leans curiously toward form when typing name/email/phone
-  // "pwd_hidden": cloud slides in to cover sun; sun ducks down behind cloud with closed sleepy eyes (◡ ◡)
-  // "pwd_peek": sun tilts head & pops up over the cloud crest with cute little paws holding the cloud rim!
-  // "pwd_approve": sun nods up & down happily (^‿^) approving the password with sparkles & green check!
-  // "pwd_retreat": sun ducks back down into the cloud, paws retract, and closes eyes again
+  // "idle": serene buoyant hover, tracks cursor gaze smoothly, natural blink
+  // "kepo": leans curiously towards the form when typing regular inputs (email, name, etc.)
+  // "pwd_away": turns head away to the left and closes both eyes shyly/respectfully
+  // "pwd_peek": sneaks a peek! Left eye stays closed, but right eye pops open looking sideways at password!
   const [mascotState, setMascotState] = useState<MascotState>("idle");
   const [isBlinking, setIsBlinking] = useState(false);
   const [gaze, setGaze] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -51,31 +47,29 @@ export function AuthSplitShell({
     mascotStateRef.current = mascotState;
   }, [mascotState]);
 
-  // Interactive password hide-and-seek loop (Smooth, cute & playful!)
+  type IdleAction = "none" | "look_left" | "look_right" | "daydream" | "happy";
+  const [idleAction, setIdleAction] = useState<IdleAction>("none");
+  const idleActionRef = useRef<IdleAction>("none");
+  useEffect(() => {
+    idleActionRef.current = idleAction;
+  }, [idleAction]);
+
+  // Interactive password sneak-peek loop (Smooth, cute & playful!)
   const startPasswordCycle = useCallback(() => {
     if (pwdCycleTimerRef.current) clearTimeout(pwdCycleTimerRef.current);
+    setIdleAction("none");
 
-    const stepHidden = () => {
-      setMascotState("pwd_hidden");
-      pwdCycleTimerRef.current = setTimeout(stepPeek, 1400);
+    const stepAway = () => {
+      setMascotState("pwd_away");
+      pwdCycleTimerRef.current = setTimeout(stepPeek, 3600);
     };
 
     const stepPeek = () => {
       setMascotState("pwd_peek");
-      pwdCycleTimerRef.current = setTimeout(stepApprove, 1100);
+      pwdCycleTimerRef.current = setTimeout(stepAway, 1300);
     };
 
-    const stepApprove = () => {
-      setMascotState("pwd_approve");
-      pwdCycleTimerRef.current = setTimeout(stepRetreat, 1300);
-    };
-
-    const stepRetreat = () => {
-      setMascotState("pwd_retreat");
-      pwdCycleTimerRef.current = setTimeout(stepHidden, 650);
-    };
-
-    stepHidden();
+    stepAway();
   }, []);
 
   const stopPasswordCycle = useCallback(() => {
@@ -86,17 +80,85 @@ export function AuthSplitShell({
     setMascotState("idle");
   }, []);
 
+  // Idle micro-actions director (Activates when mouse is still for 3s)
+  useEffect(() => {
+    let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+    let sequenceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearTimers = () => {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      if (sequenceTimer) clearTimeout(sequenceTimer);
+    };
+
+    const runIdleSequence = () => {
+      if (mascotStateRef.current !== "idle") return;
+
+      const steps: Array<{
+        action: IdleAction;
+        gaze: { x: number; y: number };
+        duration: number;
+      }> = [
+        { action: "look_left", gaze: { x: -4.5, y: 0.5 }, duration: 2200 },
+        { action: "look_right", gaze: { x: 4.5, y: -0.5 }, duration: 2200 },
+        { action: "daydream", gaze: { x: 0, y: -4.2 }, duration: 2600 },
+        { action: "happy", gaze: { x: 0, y: 0 }, duration: 2400 },
+      ];
+
+      let idx = 0;
+      const nextStep = () => {
+        if (mascotStateRef.current !== "idle") {
+          setIdleAction("none");
+          return;
+        }
+
+        const cur = steps[idx % steps.length];
+        setIdleAction(cur.action);
+        setGaze(cur.gaze);
+        idx++;
+
+        sequenceTimer = setTimeout(nextStep, cur.duration);
+      };
+
+      nextStep();
+    };
+
+    const resetInactivity = () => {
+      clearTimers();
+      if (idleActionRef.current !== "none") {
+        setIdleAction("none");
+      }
+      if (mascotStateRef.current === "idle") {
+        inactivityTimer = setTimeout(runIdleSequence, 3200);
+      }
+    };
+
+    const onActivity = () => {
+      resetInactivity();
+    };
+
+    window.addEventListener("mousemove", onActivity, { passive: true });
+    window.addEventListener("keydown", onActivity, { passive: true });
+
+    inactivityTimer = setTimeout(runIdleSequence, 3200);
+
+    return () => {
+      clearTimers();
+      window.removeEventListener("mousemove", onActivity);
+      window.removeEventListener("keydown", onActivity);
+    };
+  }, []);
+
   // Mouse gaze tracking in idle mode
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const current = mascotStateRef.current;
-      if (
-        current === "pwd_hidden" ||
-        current === "pwd_peek" ||
-        current === "pwd_approve" ||
-        current === "pwd_retreat"
-      ) {
-        return; // Password loop handles pupil positions
+      if (current === "pwd_away" || current === "pwd_peek" || current === "kepo") {
+        return; // Fixed gaze for password and kepo modes
+      }
+
+      // If user moved mouse while in idle action, cancel idle action immediately
+      if (idleActionRef.current !== "none") {
+        setIdleAction("none");
       }
 
       const svg = svgRef.current;
@@ -105,14 +167,14 @@ export function AuthSplitShell({
       if (rect.width === 0 || rect.height === 0) return;
 
       const mascotCenterX = rect.left + rect.width * 0.5;
-      const mascotCenterY = rect.top + rect.height * 0.45;
+      const mascotCenterY = rect.top + rect.height * 0.5;
 
       const dx = e.clientX - mascotCenterX;
       const dy = e.clientY - mascotCenterY;
       const angle = Math.atan2(dy, dx);
       const distRatio = Math.min(1, Math.hypot(dx, dy) / 240);
 
-      const maxPupilOffset = 4.2;
+      const maxPupilOffset = 4.5;
       const targetX = Math.cos(angle) * maxPupilOffset * distRatio;
       const targetY = Math.sin(angle) * (maxPupilOffset * 0.75) * distRatio;
 
@@ -143,7 +205,7 @@ export function AuthSplitShell({
       } else if (el.tagName === "INPUT" || el.tagName === "SELECT") {
         stopPasswordCycle();
         setMascotState("kepo");
-        setGaze({ x: 4.2, y: 0.8 });
+        setGaze({ x: 4.8, y: 1.2 });
       }
     };
 
@@ -160,7 +222,7 @@ export function AuthSplitShell({
         } else if (stillInInput) {
           stopPasswordCycle();
           setMascotState("kepo");
-          setGaze({ x: 4.2, y: 0.8 });
+          setGaze({ x: 4.8, y: 1.2 });
         } else {
           stopPasswordCycle();
           setMascotState("idle");
@@ -178,19 +240,14 @@ export function AuthSplitShell({
 
       if (isPassword) {
         const cur = mascotStateRef.current;
-        if (
-          cur !== "pwd_hidden" &&
-          cur !== "pwd_peek" &&
-          cur !== "pwd_approve" &&
-          cur !== "pwd_retreat"
-        ) {
+        if (cur !== "pwd_away" && cur !== "pwd_peek") {
           startPasswordCycle();
         }
       } else if (el.tagName === "INPUT") {
         if (mascotStateRef.current !== "kepo") {
           setMascotState("kepo");
         }
-        setGaze({ x: 4.2, y: 0.8 });
+        setGaze({ x: 4.8, y: 1.2 });
       }
     };
 
@@ -211,7 +268,7 @@ export function AuthSplitShell({
           unblinkTimer = setTimeout(() => {
             setIsBlinking(false);
             runBlink();
-          }, 140);
+          }, 130);
         } else {
           runBlink();
         }
@@ -231,56 +288,52 @@ export function AuthSplitShell({
 
   // Mascot state flags
   const isKepo = mascotState === "kepo";
-  const isPwdHidden = mascotState === "pwd_hidden";
+  const isPwdAway = mascotState === "pwd_away";
   const isPwdPeek = mascotState === "pwd_peek";
-  const isPwdApprove = mascotState === "pwd_approve";
-  const isPwdRetreat = mascotState === "pwd_retreat";
-  const isPasswordMode = isPwdHidden || isPwdPeek || isPwdApprove || isPwdRetreat;
-  const isSleeping = isPwdHidden || isPwdRetreat;
-  const isPeekingOrApproving = isPwdPeek || isPwdApprove;
 
-  // Sun transforms:
-  // - idle: cheerful buoyant tilt (-14deg) matching reference photo
-  // - kepo: leans forward towards form (rotate 4deg)
-  // - hidden: ducked down behind cloud
-  // - peek: pops up with head tilted (rotate 5deg)
-  // - approve: happy upright nod
-  // - retreat: slides back down into the cloud
-  const sunTransform = isPwdHidden
-    ? "translate(0px, 58px) scale(0.95)"
+  // Body transformation (Subtle, strictly upright at idle)
+  const sunTransform = isPwdAway
+    ? "translate(-14px, 0px) rotate(-6deg)"
     : isPwdPeek
-    ? "translate(8px, 12px) rotate(5deg)"
-    : isPwdApprove
-    ? "translate(0px, 8px) rotate(0deg)"
-    : isPwdRetreat
-    ? "translate(0px, 55px) scale(0.95)"
+    ? "translate(-6px, 0px) rotate(-2deg)"
     : isKepo
-    ? "translate(14px, -4px) rotate(4deg)"
+    ? "translate(8px, 0px) rotate(2.5deg)"
     : isExcited
-    ? "translateY(-14px) rotate(-14deg) scale(1.06)"
-    : "translate(0px, 0px) rotate(-14deg)";
+    ? "translateY(-12px) scale(1.05)"
+    : "translate(0px, 0px) rotate(0deg)";
 
-  // Cloud ONLY appears in password mode! In idle / kepo it stays hidden down below with opacity 0.
-  const cloudTransform = isPasswordMode ? "translateY(0px) scale(1)" : "translateY(80px) scale(0.85)";
+  // 3D Rotating Face Feature Slide (Creating genuine head rotation across sphere)
+  const faceTransform = isPwdAway
+    ? "translate(-34px, -2px)"
+    : isPwdPeek
+    ? "translate(-14px, 0px)"
+    : isKepo
+    ? "translate(28px, 2px)"
+    : isExcited
+    ? "translate(0px, -4px)"
+    : "translate(0px, 0px)";
 
-  // Pupil offsets: in peeking, looks warmly right towards the password field
-  const currentPupilX = isPwdPeek ? 4.8 : isKepo ? 4.2 : gaze.x;
-  const currentPupilY = isPwdPeek ? 0.8 : isKepo ? 0.8 : gaze.y;
+  // Pupil offsets:
+  // - in peek mode: right pupil looks strongly right towards the password field
+  // - in kepo mode: both pupils look towards the form
+  // - in idle mode: smooth mouse cursor tracking
+  const currentPupilX = isPwdPeek ? 6.0 : isKepo ? 5.5 : gaze.x;
+  const currentPupilY = isPwdPeek ? 0.0 : isKepo ? 0.5 : gaze.y;
 
   return (
     <section
       ref={containerRef}
-      className="min-h-screen w-full bg-gradient-to-br from-[#FAF5EC] via-[#F6F0E4] to-[#FAF4EB] p-4 sm:p-6 lg:p-8 flex flex-col justify-between select-none relative overflow-x-hidden font-sans text-slate-800"
+      className="min-h-screen w-full bg-[#EFF1F4] p-4 sm:p-6 lg:p-8 flex flex-col justify-between select-none relative overflow-x-hidden font-sans text-slate-800"
     >
-      {/* Soft Ambient Warm Sunlight Glows in Background */}
-      <div className="absolute top-1/4 left-10 w-96 h-96 bg-amber-200/25 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-20 w-80 h-80 bg-orange-100/25 rounded-full blur-3xl pointer-events-none" />
+      {/* Soft Ambient Radiant Glow behind Mascot (Matching Beranda's clean aesthetic) */}
+      <div className="absolute top-1/3 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-amber-200/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-10 right-10 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Split Layout: Stretches corner to corner across full screen */}
+      {/* Main Split Layout */}
       <div className="w-full flex-1 flex flex-col lg:flex-row items-stretch justify-between gap-6 lg:gap-10 relative z-10">
         
         {/* =====================================================
-            LEFT: ADORABLE CHIBI SUN & CLOUD MASCOT
+            LEFT: MINIMALIST RADIANT SUN MASCOT
             ===================================================== */}
         <div className="flex-1 flex flex-col justify-between relative min-h-[400px] lg:min-h-0">
           
@@ -288,298 +341,273 @@ export function AuthSplitShell({
           <div className="w-full flex items-center justify-start pt-1 px-1">
             <Link
               href={backHref}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition py-1.5 px-3.5 rounded-full bg-white/70 hover:bg-white backdrop-blur-md border border-amber-200/60 shadow-2xs cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition py-1.5 px-3.5 rounded-full bg-white/80 hover:bg-white backdrop-blur-md border border-slate-200/70 shadow-2xs cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
               <span>{backLabel}</span>
             </Link>
           </div>
 
-          {/* Center Stage: Frosted Glass Mascot Canvas */}
+          {/* Center Stage: Minimalist Frosted Glass Mascot Canvas */}
           <div className="my-auto w-full flex items-center justify-center p-2 sm:p-6">
-            <div className="w-full max-w-[500px] p-6 sm:p-8 rounded-[36px] bg-white/50 backdrop-blur-xl border border-white/80 shadow-[0_12px_40px_rgba(235,94,40,0.05)] flex items-center justify-center">
+            <div className="w-full max-w-[480px] p-6 sm:p-8 rounded-[32px] bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_16px_40px_rgba(15,23,42,0.04)] flex items-center justify-center">
               
               <svg
                 ref={svgRef}
-                viewBox="0 0 500 370"
+                viewBox="0 0 460 360"
                 className="w-full h-auto overflow-visible select-none"
                 aria-label="Maskot Matahari SunSight"
               >
                 <defs>
-                  {/* Soft Warm Radial Aura behind Sun */}
-                  <radialGradient id="sunAura" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#FB923C" stopOpacity="0.28" />
-                    <stop offset="60%" stopColor="#FDBA74" stopOpacity="0.10" />
-                    <stop offset="100%" stopColor="#FED7AA" stopOpacity="0" />
+                  {/* Soft Radial Glow for Wavy Circles (Pendaran Lingkaran Bergelombang) */}
+                  <radialGradient id="wavyOuterGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.28" />
+                    <stop offset="50%" stopColor="#FBBF24" stopOpacity="0.18" />
+                    <stop offset="80%" stopColor="#FDE047" stopOpacity="0.08" />
+                    <stop offset="100%" stopColor="#FEF08A" stopOpacity="0.02" />
+                  </radialGradient>
+                  
+                  <radialGradient id="wavyInnerGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#FBBF24" stopOpacity="0.42" />
+                    <stop offset="60%" stopColor="#F59E0B" stopOpacity="0.20" />
+                    <stop offset="100%" stopColor="#D97706" stopOpacity="0.05" />
+                  </radialGradient>
+                  
+                  <radialGradient id="softAmbientAura" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#FDE047" stopOpacity="0.25" />
+                    <stop offset="60%" stopColor="#FBBF24" stopOpacity="0.10" />
+                    <stop offset="100%" stopColor="#EFF1F4" stopOpacity="0" />
+                  </radialGradient>
+
+                  {/* Rich Warm Solar Sun Body Gradient */}
+                  <linearGradient id="sunBodyGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+                    <stop offset="0%" stopColor="#FDE047" />
+                    <stop offset="35%" stopColor="#FBBF24" />
+                    <stop offset="100%" stopColor="#F59E0B" />
+                  </linearGradient>
+
+                  {/* Inner Rim Sunlight Highlight */}
+                  <radialGradient id="sunRimGlow" cx="42%" cy="38%" r="55%">
+                    <stop offset="0%" stopColor="#FFFBEB" stopOpacity="0.35" />
+                    <stop offset="55%" stopColor="#FDE047" stopOpacity="0.08" />
+                    <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
                   </radialGradient>
                 </defs>
 
-                {/* Soft Warm Radial Aura behind Sun */}
-                <circle cx="250" cy="160" r="145" fill="url(#sunAura)" />
+                {/* Layer 1: Soft Ambient Background Glow */}
+                <circle cx="230" cy="180" r="165" fill="url(#softAmbientAura)" className="sun-wavy-breathe" />
+
+                {/* Layer 2: Lingkaran Semi-Transparan Bergelombang Luar (Outer Organic Wavy Halo) */}
+                <g className="sun-wavy-spin-slow">
+                  <path
+                    d="M 388.00 180.00 C 388.00 207.30, 356.56 198.23, 349.83 218.94 C 343.11 239.64, 373.87 250.78, 357.82 272.87 C 341.78 294.96, 321.67 269.14, 304.06 281.94 C 286.45 294.73, 304.79 321.83, 278.82 330.27 C 252.86 338.70, 251.77 306.00, 230.00 306.00 C 208.23 306.00, 207.14 338.70, 181.18 330.27 C 155.21 321.83, 173.55 294.73, 155.94 281.94 C 138.33 269.14, 118.22 294.96, 102.18 272.87 C 86.13 250.78, 116.89 239.64, 110.17 218.94 C 103.44 198.23, 72.00 207.30, 72.00 180.00 C 72.00 152.70, 103.44 161.77, 110.17 141.06 C 116.89 120.36, 86.13 109.22, 102.18 87.13 C 118.22 65.04, 138.33 90.86, 155.94 78.06 C 173.55 65.27, 155.21 38.17, 181.18 29.73 C 207.14 21.30, 208.23 54.00, 230.00 54.00 C 251.77 54.00, 252.86 21.30, 278.82 29.73 C 304.79 38.17, 286.45 65.27, 304.06 78.06 C 321.67 90.86, 341.78 65.04, 357.82 87.13 C 373.87 109.22, 343.11 120.36, 349.83 141.06 C 356.56 161.77, 388.00 152.70, 388.00 180.00 Z"
+                    fill="url(#wavyOuterGlow)"
+                  />
+                </g>
+
+                {/* Layer 3: Lingkaran Semi-Transparan Bergelombang Dalam (Inner Organic Wavy Halo) */}
+                <g className="sun-wavy-spin-reverse">
+                  <path
+                    d="M 362.00 180.00 C 362.00 199.01, 338.34 192.93, 334.32 207.95 C 330.30 222.97, 353.82 229.54, 344.32 246.00 C 334.81 262.46, 317.36 245.37, 306.37 256.37 C 295.37 267.36, 312.46 284.81, 296.00 294.32 C 279.54 303.82, 272.97 280.30, 257.95 284.32 C 242.93 288.34, 249.01 312.00, 230.00 312.00 C 210.99 312.00, 217.07 288.34, 202.05 284.32 C 187.03 280.30, 180.46 303.82, 164.00 294.32 C 147.54 284.81, 164.63 267.36, 153.63 256.37 C 142.64 245.37, 125.19 262.46, 115.68 246.00 C 106.18 229.54, 129.70 222.97, 125.68 207.95 C 121.66 192.93, 98.00 199.01, 98.00 180.00 C 98.00 160.99, 121.66 167.07, 125.68 152.05 C 129.70 137.03, 106.18 130.46, 115.68 114.00 C 125.19 97.54, 142.64 114.63, 153.63 103.63 C 164.63 92.64, 147.54 75.19, 164.00 65.68 C 180.46 56.18, 187.03 79.70, 202.05 75.68 C 217.07 71.66, 210.99 48.00, 230.00 48.00 C 249.01 48.00, 242.93 71.66, 257.95 75.68 C 272.97 79.70, 279.54 56.18, 296.00 65.68 C 312.46 75.19, 295.37 92.64, 306.37 103.63 C 317.36 114.63, 334.81 97.54, 344.32 114.00 C 353.82 130.46, 330.30 137.03, 334.32 152.05 C 338.34 167.07, 362.00 160.99, 362.00 180.00 Z"
+                    fill="url(#wavyInnerGlow)"
+                  />
+                </g>
 
                 {/* ===================================================
-                    FLUFFY CARTOON CLOUDS (BACKGROUND)
+                    THE ADORABLE SUN MASCOT (Clean Circle, Expressive Eyes & Tiny Dot Mouth)
                     =================================================== */}
-                {/* Top Left Cloud */}
-                <g className="cloud-puffy-1" opacity="0.95">
-                  <path
-                    d="M 40 65 
-                       C 25 65 15 50 25 38 
-                       C 25 24 40 18 52 25 
-                       C 62 14 80 16 88 28 
-                       C 98 28 106 36 104 46 
-                       C 112 55 106 65 92 65 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
-
-                {/* Top Right Cloud */}
-                <g className="cloud-puffy-2" opacity="0.95">
-                  <path
-                    d="M 390 68 
-                       C 375 68 368 54 376 44 
-                       C 376 30 392 24 404 30 
-                       C 414 18 434 20 442 32 
-                       C 452 32 462 42 458 52 
-                       C 466 60 460 68 446 68 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
-
-                {/* Mid-Left Fluffy Cloud */}
-                <g className="cloud-puffy-3" opacity="0.88">
-                  <path
-                    d="M 25 240 
-                       C 12 240 5 228 14 218 
-                       C 14 206 28 200 38 206 
-                       C 46 196 64 198 70 208 
-                       C 80 208 86 216 84 224 
-                       C 90 232 84 240 72 240 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
-
-                {/* Mid-Right Fluffy Cloud */}
-                <g className="cloud-puffy-2" opacity="0.88">
-                  <path
-                    d="M 410 245 
-                       C 398 245 390 234 398 225 
-                       C 398 214 410 208 420 214 
-                       C 428 204 444 206 450 215 
-                       C 458 215 464 222 462 230 
-                       C 468 237 462 245 450 245 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
-
-                {/* Whimsical Ambient Sparkle Stars */}
-                <path
-                  d="M 115 80 Q 115 88 107 88 Q 115 88 115 96 Q 115 88 123 88 Q 115 88 115 80 Z"
-                  fill="#FBBF24"
-                  opacity="0.45"
-                />
-                <path
-                  d="M 390 95 Q 390 103 382 103 Q 390 103 390 111 Q 390 103 398 103 Q 390 103 390 95 Z"
-                  fill="#FBBF24"
-                  opacity="0.45"
-                />
-
-                {/* ===================================================
-                    1. THE ADORABLE SUN MASCOT (Starburst Corona & Smiling Face)
-                    =================================================== */}
-                <g className={mascotState === "idle" ? "sun-gentle-hover" : isPwdApprove ? "sun-gentle-nod" : ""}>
+                <g
+                  className={
+                    mascotState === "idle"
+                      ? idleAction === "happy"
+                        ? "mascot-idle-hum"
+                        : "sun-gentle-hover"
+                      : isKepo
+                      ? "mascot-kepo-nod"
+                      : ""
+                  }
+                >
                   <g
                     className="mascot-smooth-transition"
                     style={{
                       transform: sunTransform,
-                      transformOrigin: "250px 160px",
+                      transformOrigin: "230px 180px",
                     }}
                   >
-                    {/* 8-Pointed Starburst Corona with Smooth Inward Curved Scoops */}
-                    <path
-                      d="M 250.0 54.0 A 60 60 0 0 0 325.0 85.0 A 60 60 0 0 0 356.0 160.0 A 60 60 0 0 0 325.0 235.0 A 60 60 0 0 0 250.0 266.0 A 60 60 0 0 0 175.0 235.0 A 60 60 0 0 0 144.0 160.0 A 60 60 0 0 0 175.0 85.0 A 60 60 0 0 0 250.0 54.0 Z"
-                      fill="#FA8223"
-                      className="sun-corona-breathe"
-                    />
-
-                    {/* Concentric Sunshine Yellow Face Circle */}
-                    <circle cx="250" cy="160" r="70" fill="#FFDA27" />
+                    {/* Warm Radiant Sun Body (Spherical Sun Gradient) */}
+                    <circle cx="230" cy="180" r="95" fill="url(#sunBodyGrad)" />
+                    {/* Soft Sunlit Highlight Sheen */}
+                    <circle cx="230" cy="180" r="95" fill="url(#sunRimGlow)" />
 
                     {/* =================================================
-                        FACE ELEMENTS (Cute, Expressive & Lively)
+                        EXPRESSIVE 3D ROTATING FACE FEATURES
                         ================================================= */}
-                    <g>
-                      {/* Big Warm Orange Round Blush Cheeks */}
-                      <circle cx="206" cy="168" r="13" fill="#FA8223" />
-                      <circle cx="294" cy="168" r="13" fill="#FA8223" />
-
-                      {/* EYES */}
-                      {isSleeping ? (
-                        /* Sleepy Closed Arcs (◡ ◡) while hidden behind cloud */
-                        <g>
-                          <path
-                            d="M 215 150 Q 222 157 229 150"
-                            fill="none"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d="M 271 150 Q 278 157 285 150"
-                            fill="none"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                        </g>
+                    <g
+                      className="face-smooth-transition"
+                      style={{
+                        transform: faceTransform,
+                        transformOrigin: "230px 180px",
+                      }}
+                    >
+                      {/* LEFT EYE (Horizontal Center 210, 172) */}
+                      {isPwdAway || isPwdPeek ? (
+                        /* Squeezed > Eye in Password Mode (Kawaii >.<) */
+                        <path
+                          d="M 203 164 L 215 172 L 203 180"
+                          fill="none"
+                          stroke="#18181B"
+                          strokeWidth="3.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ) : idleAction === "happy" ? (
+                        /* Cheerful curved eye ⌒ when humming */
+                        <path
+                          d="M 198 174 Q 210 166 222 174"
+                          fill="none"
+                          stroke="#18181B"
+                          strokeWidth="3.2"
+                          strokeLinecap="round"
+                        />
                       ) : isBlinking ? (
-                        /* Natural Quick Blink Slits */
-                        <g>
-                          <line
-                            x1="215"
-                            y1="150"
-                            x2="229"
-                            y2="150"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                          <line
-                            x1="271"
-                            y1="150"
-                            x2="285"
-                            y2="150"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                        </g>
-                      ) : isPwdApprove ? (
-                        /* Joyful squint happy curves (^‿^) */
-                        <g>
-                          <path
-                            d="M 215 150 Q 222 143 229 150"
-                            fill="none"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d="M 271 150 Q 278 143 285 150"
-                            fill="none"
-                            stroke="#1F1D1A"
-                            strokeWidth="3.2"
-                            strokeLinecap="round"
-                          />
-                        </g>
+                        /* Quick natural blink slit */
+                        <line
+                          x1="198"
+                          y1="172"
+                          x2="222"
+                          y2="172"
+                          stroke="#18181B"
+                          strokeWidth="3.2"
+                          strokeLinecap="round"
+                        />
                       ) : (
-                        /* Open Cute Round Black Bead Eyes with Smooth Gaze Tracking */
-                        <g
-                          className="pupil-smooth-transition"
-                          style={{
-                            transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
-                          }}
-                        >
-                          <circle cx="222" cy="150" r="6.5" fill="#1F1D1A" />
-                          <circle cx="278" cy="150" r="6.5" fill="#1F1D1A" />
+                        /* Open Big Cartoon Sclera + Tracking Pupil */
+                        <g>
+                          <ellipse cx="210" cy="172" rx="14.5" ry="15.5" fill="#FFFFFF" />
+                          <circle
+                            cx="210"
+                            cy="174"
+                            r="7.5"
+                            fill="#18181B"
+                            className="pupil-smooth-transition"
+                            style={{
+                              transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
+                            }}
+                          />
                         </g>
                       )}
 
-                      {/* MOUTH */}
-                      {isSleeping ? (
+                      {/* RIGHT EYE (Horizontal Center 250, 172 - Level with Left Eye!) */}
+                      {isPwdAway ? (
+                        /* Squeezed < Eye in Password Mode (Completes >.<) */
                         <path
-                          d="M 244 168 Q 250 171 256 168"
+                          d="M 257 164 L 245 172 L 257 180"
                           fill="none"
-                          stroke="#1F1D1A"
-                          strokeWidth="2.5"
+                          stroke="#18181B"
+                          strokeWidth="3.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ) : isPwdPeek ? (
+                        /* In pwd_peek: RIGHT EYE POPS OPEN TO PEEK AT PASSWORD! 👀 */
+                        <g>
+                          <ellipse cx="250" cy="172" rx="14.5" ry="15.5" fill="#FFFFFF" />
+                          <circle
+                            cx="250"
+                            cy="174"
+                            r="7.5"
+                            fill="#18181B"
+                            className="pupil-smooth-transition"
+                            style={{
+                              transform: "translate(6px, 0px)",
+                            }}
+                          />
+                        </g>
+                      ) : idleAction === "happy" ? (
+                        /* Cheerful curved eye ⌒ when humming */
+                        <path
+                          d="M 238 174 Q 250 166 262 174"
+                          fill="none"
+                          stroke="#18181B"
+                          strokeWidth="3.2"
                           strokeLinecap="round"
                         />
-                      ) : isPwdApprove ? (
-                        <path
-                          d="M 235 165 Q 250 184 265 165"
-                          fill="none"
-                          stroke="#1F1D1A"
-                          strokeWidth="4.2"
+                      ) : isBlinking ? (
+                        /* Quick natural blink slit */
+                        <line
+                          x1="238"
+                          y1="172"
+                          x2="262"
+                          y2="172"
+                          stroke="#18181B"
+                          strokeWidth="3.2"
                           strokeLinecap="round"
                         />
                       ) : (
-                        /* Sweet Clean Curved Line Smile (◡) */
+                        /* Open Big Cartoon Sclera + Tracking Pupil */
+                        <g>
+                          <ellipse cx="250" cy="172" rx="14.5" ry="15.5" fill="#FFFFFF" />
+                          <circle
+                            cx="250"
+                            cy="174"
+                            r="7.5"
+                            fill="#18181B"
+                            className="pupil-smooth-transition"
+                            style={{
+                              transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
+                            }}
+                          />
+                        </g>
+                      )}
+
+                      {/* ADORABLE DYNAMIC MOUTH SHAPES */}
+                      {isPwdAway ? (
+                        /* Cute shy / flustered squiggly mouth ~ */
                         <path
-                          d="M 235 165 Q 250 182 265 165"
+                          d="M 224 194 Q 227 191 230 194 Q 233 197 236 194"
                           fill="none"
-                          stroke="#1F1D1A"
-                          strokeWidth="4.2"
+                          stroke="#18181B"
+                          strokeWidth="2.8"
                           strokeLinecap="round"
+                        />
+                      ) : isPwdPeek ? (
+                        /* Caught-in-the-act tiny guilty oval :o */
+                        <ellipse cx="230" cy="195" rx="3.2" ry="4.2" fill="#18181B" />
+                      ) : isKepo ? (
+                        /* Curious open oval mouth */
+                        <ellipse cx="230" cy="195" rx="3.6" ry="4.6" fill="#18181B" />
+                      ) : idleAction === "daydream" ? (
+                        /* Daydreaming thoughtful mouth */
+                        <ellipse cx="230" cy="195" rx="3.0" ry="3.8" fill="#18181B" />
+                      ) : idleAction === "happy" ? (
+                        /* Playful whistling / cat-mouth :3 */
+                        <path
+                          d="M 224 193 Q 227 197 230 193 Q 233 197 236 193"
+                          fill="none"
+                          stroke="#18181B"
+                          strokeWidth="2.8"
+                          strokeLinecap="round"
+                        />
+                      ) : (
+                        /* Gentle relaxed cute smile */
+                        <path
+                          d="M 224 193 Q 230 197 236 193"
+                          fill="none"
+                          stroke="#18181B"
+                          strokeWidth="2.8"
+                          strokeLinecap="round"
+                        />
+                      )}
+
+                      {/* Smooth Anime Sweat Drop in >.< Mode (Smooth drip slide, no bouncing) */}
+                      {isPwdAway && (
+                        <path
+                          d="M 258 150 C 258 150 263 155 263 158 C 263 160.8 260.8 163 258 163 C 255.2 163 253 160.8 253 158 C 253 155 258 150 258 150 Z"
+                          fill="#60A5FA"
+                          className="mascot-sweat-slide"
                         />
                       )}
                     </g>
-
-                    {/* Celebratory sparkles when password is approved */}
-                    {isPwdApprove && (
-                      <g className="sparkle-pop">
-                        <path
-                          d="M 210 110 Q 210 118 202 118 Q 210 118 210 126 Q 210 118 218 118 Q 210 118 210 110 Z"
-                          fill="#F59E0B"
-                        />
-                        <path
-                          d="M 290 110 Q 290 118 282 118 Q 290 118 290 126 Q 290 118 298 118 Q 290 118 290 110 Z"
-                          fill="#F59E0B"
-                        />
-                      </g>
-                    )}
-                  </g>
-                </g>
-
-                {/* ===================================================
-                    2. FLUFFY CARTOON CLOUD (ACTIVE IN PASSWORD MODE)
-                    =================================================== */}
-                <g
-                  className="cloud-spring-transition"
-                  style={{
-                    transform: cloudTransform,
-                    opacity: isPasswordMode ? 1 : 0,
-                    pointerEvents: "none",
-                  }}
-                >
-                  {/* Soft Warm Ground Shadow */}
-                  <ellipse cx="250" cy="315" rx="145" ry="9" fill="#FA8223" opacity="0.1" />
-
-                  {/* Fluffy Bubbly Puffy Cloud Body */}
-                  <path
-                    d="M 130 285
-                       C 105 285 90 262 105 242
-                       C 105 220 126 205 148 214
-                       C 162 190 196 182 220 196
-                       C 235 186 265 186 280 196
-                       C 304 182 338 190 352 214
-                       C 374 205 395 220 395 242
-                       C 410 262 395 285 370 285 Z"
-                    fill="#FFFFFF"
-                    stroke="#FDE68A"
-                    strokeWidth="2.5"
-                    strokeLinejoin="round"
-                  />
-
-                  {/* Soft Tactile Cloud Puffs Highlights */}
-                  <path d="M 195 194 C 205 188 220 190 228 196" fill="none" stroke="#FEF3C7" strokeWidth="3" strokeLinecap="round" />
-                  <path d="M 272 196 C 280 190 295 188 305 194" fill="none" stroke="#FEF3C7" strokeWidth="3" strokeLinecap="round" />
-
-                  {/* Soft Pink Blush on the Cloud */}
-                  <ellipse cx="150" cy="250" rx="10" ry="6" fill="#FDA4AF" opacity="0.5" />
-                  <ellipse cx="350" cy="250" rx="10" ry="6" fill="#FDA4AF" opacity="0.5" />
-
-                  {/* Cute Yellow Paws Resting on Cloud Rim */}
-                  <g
-                    className={`mascot-smooth-transition ${isPwdPeek ? "paws-wiggle" : ""}`}
-                    style={{
-                      opacity: isPwdPeek ? 1 : 0,
-                      transform: isPwdPeek ? "translateY(0px)" : "translateY(12px)",
-                    }}
-                  >
-                    {/* Left Paw */}
-                    <ellipse cx="204" cy="198" rx="12" ry="8.5" fill="#FFDA27" stroke="#FA8223" strokeWidth="2.5" />
-                    {/* Right Paw */}
-                    <ellipse cx="296" cy="198" rx="12" ry="8.5" fill="#FFDA27" stroke="#FA8223" strokeWidth="2.5" />
                   </g>
                 </g>
               </svg>
@@ -591,9 +619,9 @@ export function AuthSplitShell({
         </div>
 
         {/* =====================================================
-            RIGHT: MODERN CRISP AUTH CARD (Compact, Balanced & Centered)
+            RIGHT: MODERN CRISP AUTH CARD
             ===================================================== */}
-        <div className="w-full lg:w-[450px] xl:w-[480px] self-center my-auto bg-white/95 backdrop-blur-2xl rounded-[32px] border border-white/90 shadow-[0_16px_48px_rgba(245,158,11,0.06)] px-6 sm:px-9 py-7 sm:py-8 flex flex-col justify-center shrink-0">
+        <div className="w-full lg:w-[450px] xl:w-[480px] self-center my-auto bg-white/95 backdrop-blur-2xl rounded-[32px] border border-white/90 shadow-[0_16px_48px_rgba(15,23,42,0.04)] px-6 sm:px-9 py-7 sm:py-8 flex flex-col justify-center shrink-0">
           
           {/* Header with SunSight Brand */}
           <div className="text-center pb-2">

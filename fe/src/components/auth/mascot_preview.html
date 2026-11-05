@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>SunSight Wavy Radiant Sun Mascot Preview</title>
+  <style>
+    body {
+      background: #EFF1F4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .card {
+      width: 480px;
+      height: 380px;
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      border-radius: 32px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .controls {
+      margin-top: 24px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 720px;
+    }
+    button {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #f3f4f6;
+    }
+    .active {
+      background: #f59e0b;
+      color: #fff;
+      border-color: #f59e0b;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* 1. Organic Wavy Aura Animations */
+    @keyframes wavySpinSlow {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    .sun-wavy-spin-slow {
+      transform-origin: 230px 180px;
+      animation: wavySpinSlow 54s linear infinite;
+    }
+
+    @keyframes wavySpinReverse {
+      from {
+        transform: rotate(360deg);
+      }
+      to {
+        transform: rotate(0deg);
+      }
+    }
+    .sun-wavy-spin-reverse {
+      transform-origin: 230px 180px;
+      animation: wavySpinReverse 42s linear infinite;
+    }
+
+    @keyframes wavyBreathe {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 0.85;
+      }
+      50% {
+        transform: scale(1.04);
+        opacity: 1;
+      }
+    }
+    .sun-wavy-breathe {
+      transform-origin: 230px 180px;
+      animation: wavyBreathe 5.2s ease-in-out infinite;
+    }
+
+    /* 2. Smooth Transitions */
+    .mascot-body-trans {
+      transition: transform 0.5s cubic-bezier(0.34, 1.35, 0.64, 1);
+    }
+    .face-slide-trans {
+      transition: transform 0.5s cubic-bezier(0.34, 1.35, 0.64, 1);
+    }
+    .pupil-trans {
+      transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    /* 3. Sweat drop smoothly sliding down */
+    @keyframes sweatSlide {
+      0% {
+        transform: translateY(-2px);
+        opacity: 0;
+      }
+      20% {
+        transform: translateY(0px);
+        opacity: 0.95;
+      }
+      80% {
+        transform: translateY(3.5px);
+        opacity: 0.95;
+      }
+      100% {
+        transform: translateY(6px);
+        opacity: 0;
+      }
+    }
+    .mascot-sweat-slide {
+      transform-origin: 258px 158px;
+      animation: sweatSlide 2s ease-in-out infinite;
+    }
+
+    /* 4. Kepo Nodding (Relaxed 2.8s) */
+    @keyframes kepoNod {
+      0%, 100% {
+        transform: translateY(0px) rotate(0deg);
+      }
+      45% {
+        transform: translateY(3.5px) rotate(0.6deg);
+      }
+    }
+    .mascot-kepo-nod {
+      transform-origin: 230px 180px;
+      animation: kepoNod 2.8s ease-in-out infinite;
+    }
+
+    /* 5. Idle Float */
+    @keyframes sunGentleHover {
+      0%, 100% {
+        transform: translateY(0px);
+      }
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+    .sun-gentle-hover {
+      animation: sunGentleHover 4.6s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <svg id="mascotSvg" viewBox="0 0 460 360">
+      <defs>
+        <!-- Soft Radial Glow for Wavy Circles -->
+        <radialGradient id="wavyOuterGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.28" />
+          <stop offset="50%" stopColor="#FBBF24" stopOpacity="0.18" />
+          <stop offset="80%" stopColor="#FDE047" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#FEF08A" stopOpacity="0.02" />
+        </radialGradient>
+        
+        <radialGradient id="wavyInnerGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FBBF24" stopOpacity="0.42" />
+          <stop offset="60%" stopColor="#F59E0B" stopOpacity="0.20" />
+          <stop offset="100%" stopColor="#D97706" stopOpacity="0.05" />
+        </radialGradient>
+        
+        <radialGradient id="softAmbientAura" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FDE047" stopOpacity="0.25" />
+          <stop offset="60%" stopColor="#FBBF24" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="#EFF1F4" stopOpacity="0" />
+        </radialGradient>
+
+        <!-- Rich Solar Sun Body Gradient -->
+        <linearGradient id="sunBodyGrad" x1="20%" y1="0%" x2="80%" y2="100%">
+          <stop offset="0%" stopColor="#FDE047" />
+          <stop offset="35%" stopColor="#FBBF24" />
+          <stop offset="100%" stopColor="#F59E0B" />
+        </linearGradient>
+
+        <!-- Inner Rim Sunlight Highlight -->
+        <radialGradient id="sunRimGlow" cx="42%" cy="38%" r="55%">
+          <stop offset="0%" stopColor="#FFFBEB" stopOpacity="0.35" />
+          <stop offset="55%" stopColor="#FDE047" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <!-- Soft Ambient Background Glow -->
+      <circle cx="230" cy="180" r="165" fill="url(#softAmbientAura)" class="sun-wavy-breathe" />
+
+      <!-- LAYER 1: Lingkaran Semi-Transparan Bergelombang Luar (Outer Organic Wavy Halo) -->
+      <g class="sun-wavy-spin-slow">
+        <path
+          d="M 388.00 180.00 C 388.00 207.30, 356.56 198.23, 349.83 218.94 C 343.11 239.64, 373.87 250.78, 357.82 272.87 C 341.78 294.96, 321.67 269.14, 304.06 281.94 C 286.45 294.73, 304.79 321.83, 278.82 330.27 C 252.86 338.70, 251.77 306.00, 230.00 306.00 C 208.23 306.00, 207.14 338.70, 181.18 330.27 C 155.21 321.83, 173.55 294.73, 155.94 281.94 C 138.33 269.14, 118.22 294.96, 102.18 272.87 C 86.13 250.78, 116.89 239.64, 110.17 218.94 C 103.44 198.23, 72.00 207.30, 72.00 180.00 C 72.00 152.70, 103.44 161.77, 110.17 141.06 C 116.89 120.36, 86.13 109.22, 102.18 87.13 C 118.22 65.04, 138.33 90.86, 155.94 78.06 C 173.55 65.27, 155.21 38.17, 181.18 29.73 C 207.14 21.30, 208.23 54.00, 230.00 54.00 C 251.77 54.00, 252.86 21.30, 278.82 29.73 C 304.79 38.17, 286.45 65.27, 304.06 78.06 C 321.67 90.86, 341.78 65.04, 357.82 87.13 C 373.87 109.22, 343.11 120.36, 349.83 141.06 C 356.56 161.77, 388.00 152.70, 388.00 180.00 Z"
+          fill="url(#wavyOuterGlow)"
+        />
+      </g>
+
+      <!-- LAYER 2: Lingkaran Semi-Transparan Bergelombang Dalam (Inner Organic Wavy Halo) -->
+      <g class="sun-wavy-spin-reverse">
+        <path
+          d="M 362.00 180.00 C 362.00 199.01, 338.34 192.93, 334.32 207.95 C 330.30 222.97, 353.82 229.54, 344.32 246.00 C 334.81 262.46, 317.36 245.37, 306.37 256.37 C 295.37 267.36, 312.46 284.81, 296.00 294.32 C 279.54 303.82, 272.97 280.30, 257.95 284.32 C 242.93 288.34, 249.01 312.00, 230.00 312.00 C 210.99 312.00, 217.07 288.34, 202.05 284.32 C 187.03 280.30, 180.46 303.82, 164.00 294.32 C 147.54 284.81, 164.63 267.36, 153.63 256.37 C 142.64 245.37, 125.19 262.46, 115.68 246.00 C 106.18 229.54, 129.70 222.97, 125.68 207.95 C 121.66 192.93, 98.00 199.01, 98.00 180.00 C 98.00 160.99, 121.66 167.07, 125.68 152.05 C 129.70 137.03, 106.18 130.46, 115.68 114.00 C 125.19 97.54, 142.64 114.63, 153.63 103.63 C 164.63 92.64, 147.54 75.19, 164.00 65.68 C 180.46 56.18, 187.03 79.70, 202.05 75.68 C 217.07 71.66, 210.99 48.00, 230.00 48.00 C 249.01 48.00, 242.93 71.66, 257.95 75.68 C 272.97 79.70, 279.54 56.18, 296.00 65.68 C 312.46 75.19, 295.37 92.64, 306.37 103.63 C 317.36 114.63, 334.81 97.54, 344.32 114.00 C 353.82 130.46, 330.30 137.03, 334.32 152.05 C 338.34 167.07, 362.00 160.99, 362.00 180.00 Z"
+          fill="url(#wavyInnerGlow)"
+        />
+      </g>
+
+      <!-- The Adorable Sun Mascot -->
+      <g id="mascotHover" class="sun-gentle-hover">
+        <g id="mascotRoot" class="mascot-body-trans" style="transform-origin: 230px 180px;">
+          <!-- Warm Radiant Sun Body (Spherical Sun Gradient) -->
+          <circle cx="230" cy="180" r="95" fill="url(#sunBodyGrad)" />
+          <!-- Soft Sunlit Highlight Sheen -->
+          <circle cx="230" cy="180" r="95" fill="url(#sunRimGlow)" />
+
+          <!-- 3D Rotating Face Feature Group -->
+          <g id="faceGroup" class="face-slide-trans" style="transform-origin: 230px 180px;">
+            
+            <!-- LEFT EYE (center 210, 172) -->
+            <g id="leftEye">
+              <g id="leftEyeOpen">
+                <ellipse cx="210" cy="172" rx="14.5" ry="15.5" fill="#FFFFFF" />
+                <circle id="leftPupil" class="pupil-trans" cx="210" cy="174" r="7.5" fill="#18181B" />
+              </g>
+              <path id="leftEyeSquint" d="M 203 164 L 215 172 L 203 180" fill="none" stroke="#18181B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="display: none;" />
+              <path id="leftEyeHappy" d="M 198 174 Q 210 166 222 174" fill="none" stroke="#18181B" stroke-width="3.2" stroke-linecap="round" style="display: none;" />
+              <line id="leftEyeBlink" x1="198" y1="172" x2="222" y2="172" stroke="#18181B" stroke-width="3.2" stroke-linecap="round" style="display: none;" />
+            </g>
+
+            <!-- RIGHT EYE (center 250, 172) -->
+            <g id="rightEye">
+              <g id="rightEyeOpen">
+                <ellipse cx="250" cy="172" rx="14.5" ry="15.5" fill="#FFFFFF" />
+                <circle id="rightPupil" class="pupil-trans" cx="250" cy="174" r="7.5" fill="#18181B" />
+              </g>
+              <path id="rightEyeSquint" d="M 257 164 L 245 172 L 257 180" fill="none" stroke="#18181B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" style="display: none;" />
+              <path id="rightEyeHappy" d="M 238 174 Q 250 166 262 174" fill="none" stroke="#18181B" stroke-width="3.2" stroke-linecap="round" style="display: none;" />
+              <line id="rightEyeBlink" x1="238" y1="172" x2="262" y2="172" stroke="#18181B" stroke-width="3.2" stroke-linecap="round" style="display: none;" />
+            </g>
+
+            <!-- MOUTH SHAPES -->
+            <path id="mouthSmile" d="M 224 193 Q 230 197 236 193" fill="none" stroke="#18181B" stroke-width="2.8" stroke-linecap="round" />
+            <ellipse id="mouthKepo" cx="230" cy="195" rx="3.6" ry="4.6" fill="#18181B" style="display: none;" />
+            <path id="mouthWavy" d="M 224 194 Q 227 191 230 194 Q 233 197 236 194" fill="none" stroke="#18181B" stroke-width="2.8" stroke-linecap="round" style="display: none;" />
+            <ellipse id="mouthPeek" cx="230" cy="195" rx="3.2" ry="4.2" fill="#18181B" style="display: none;" />
+
+            <!-- Smooth Anime Sweat Drop in >.< Mode -->
+            <path id="sweatDrop" class="mascot-sweat-slide" d="M 258 150 C 258 150 263 155 263 158 C 263 160.8 260.8 163 258 163 C 255.2 163 253 160.8 253 158 C 253 155 258 150 258 150 Z" fill="#60A5FA" style="display: none;" />
+          </g>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <div class="controls">
+    <button class="active" onclick="setState('idle')">1. Idle (Tegak & Lirik Kursor)</button>
+    <button onclick="setState('kepo')">2. Kepo (Nodding Kalem & Noleh Form)</button>
+    <button onclick="setState('pwd_loop')">3. Test Password Cycle (3.6s Away + 1.3s Peek)</button>
+  </div>
+
+  <script>
+    let loopTimer = null;
+    function clearLoop() {
+      if (loopTimer) {
+        clearTimeout(loopTimer);
+        loopTimer = null;
+      }
+    }
+
+    function setState(state) {
+      document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      clearLoop();
+
+      if (state === 'pwd_loop') {
+        const runAway = () => {
+          applyState('pwd_away');
+          loopTimer = setTimeout(runPeek, 3600);
+        };
+        const runPeek = () => {
+          applyState('pwd_peek');
+          loopTimer = setTimeout(runAway, 1300);
+        };
+        runAway();
+      } else {
+        applyState(state);
+      }
+    }
+
+    function applyState(state) {
+      const root = document.getElementById('mascotRoot');
+      const face = document.getElementById('faceGroup');
+
+      const leftOpen = document.getElementById('leftEyeOpen');
+      const leftSquint = document.getElementById('leftEyeSquint');
+      const leftPupil = document.getElementById('leftPupil');
+
+      const rightOpen = document.getElementById('rightEyeOpen');
+      const rightSquint = document.getElementById('rightEyeSquint');
+      const rightPupil = document.getElementById('rightPupil');
+
+      const mouthSmile = document.getElementById('mouthSmile');
+      const mouthKepo = document.getElementById('mouthKepo');
+      const mouthWavy = document.getElementById('mouthWavy');
+      const mouthPeek = document.getElementById('mouthPeek');
+      const sweat = document.getElementById('sweatDrop');
+
+      const setMouth = (which) => {
+        mouthSmile.style.display = which === 'smile' ? 'block' : 'none';
+        mouthKepo.style.display = which === 'kepo' ? 'block' : 'none';
+        mouthWavy.style.display = which === 'wavy' ? 'block' : 'none';
+        mouthPeek.style.display = which === 'peek' ? 'block' : 'none';
+      };
+
+      const resetEyes = () => {
+        leftOpen.style.display = 'block';
+        leftSquint.style.display = 'none';
+        rightOpen.style.display = 'block';
+        rightSquint.style.display = 'none';
+      };
+
+      root.classList.remove('mascot-kepo-nod');
+      sweat.style.display = 'none';
+
+      if (state === 'idle') {
+        root.style.transform = 'translate(0px, 0px) rotate(0deg)';
+        face.style.transform = 'translate(0px, 0px)';
+        resetEyes();
+        leftPupil.style.transform = 'translate(0px, 0px)';
+        rightPupil.style.transform = 'translate(0px, 0px)';
+        setMouth('smile');
+
+      } else if (state === 'kepo') {
+        root.classList.add('mascot-kepo-nod');
+        face.style.transform = 'translate(28px, 2px)';
+        resetEyes();
+        leftPupil.style.transform = 'translate(5.5px, 0.5px)';
+        rightPupil.style.transform = 'translate(5.5px, 0.5px)';
+        setMouth('kepo');
+
+      } else if (state === 'pwd_away') {
+        root.style.transform = 'translate(-14px, 0px) rotate(-6deg)';
+        face.style.transform = 'translate(-34px, -2px)';
+        leftOpen.style.display = 'none';
+        leftSquint.style.display = 'block';
+        rightOpen.style.display = 'none';
+        rightSquint.style.display = 'block';
+        setMouth('wavy');
+        sweat.style.display = 'block';
+
+      } else if (state === 'pwd_peek') {
+        root.style.transform = 'translate(-6px, 0px) rotate(-2deg)';
+        face.style.transform = 'translate(-14px, 0px)';
+        leftOpen.style.display = 'none';
+        leftSquint.style.display = 'block';
+        rightOpen.style.display = 'block';
+        rightSquint.style.display = 'none';
+        rightPupil.style.transform = 'translate(6px, 0px)';
+        setMouth('peek');
+      }
+    }
+  </script>
+</body>
+</html>

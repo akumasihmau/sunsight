@@ -346,12 +346,6 @@ export default function LoginPage() {
             </svg>
             <span>Masuk Cepat dengan Akun Google (Demo)</span>
           </button>
-
-          {/* Micro Trust & Security Assurance */}
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
-            <span className="material-symbols-outlined text-[13px] text-emerald-600">verified_user</span>
-            <span>Akses terenkripsi • Data simulasi Anda terlindungi</span>
-          </div>
         </div>
       </form>
     </AuthSplitShell>

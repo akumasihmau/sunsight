@@ -521,8 +521,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
     minY,
     maxY,
     sMinX,
-    sMaxX,
-    sMinY,
     sMaxY,
     modules,
     bestDim,
@@ -634,8 +632,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
       minY,
       maxY,
       sMinX,
-      sMaxX,
-      sMinY,
       sMaxY,
       modules: placed,
       bestDim: { mw, mh },
@@ -864,14 +860,6 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
     ];
   }, [proj]);
 
-  // Reset active index when active project changes
-  useEffect(() => {
-    setActiveFacetIdx(0);
-    if (carouselRef.current) {
-      carouselRef.current.scrollTo({ left: 0, behavior: "instant" });
-    }
-  }, [proj.id]);
-
   const scrollToFacet = (idx: number) => {
     setActiveFacetIdx(idx);
     if (carouselRef.current) {
@@ -913,9 +901,9 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
       <div
         ref={carouselRef}
         onScroll={handleScroll}
-        className="w-full flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar scroll-smooth"
+        className="w-full flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden scroll-smooth"
       >
-        {facets.map((facet, idx) => (
+        {facets.map((facet) => (
           <div
             key={facet.id}
             className="w-full h-full flex-shrink-0 snap-center flex flex-col justify-between"
@@ -923,16 +911,9 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
             {/* Slide Header */}
             <div className="relative z-10 flex items-start justify-between gap-2">
               <div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-[13px] font-semibold text-slate-900 leading-tight">
-                    {facet.name}
-                  </p>
-                  {hasMultiple && (
-                    <span className="text-[10px] font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-full">
-                      {idx + 1}/{facets.length}
-                    </span>
-                  )}
-                </div>
+                <p className="text-[13px] font-semibold text-slate-900 leading-tight">
+                  {facet.name}
+                </p>
                 <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5">
                   {facet.dimensions} · {facet.capacityKwp} kWp
                 </p>
@@ -976,17 +957,18 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
             <span className="material-symbols-outlined text-[16px]">chevron_right</span>
           </button>
 
-          {/* Dots Indicator */}
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 py-0.5 px-2 rounded-full bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-2xs">
+          {/* Dots Indicator (Clean, no container box) */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5">
             {facets.map((_, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => scrollToFacet(i)}
                 className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                  activeFacetIdx === i ? "w-4 bg-amber-500 shadow-2xs" : "w-1.5 bg-slate-300 hover:bg-slate-400"
+                  activeFacetIdx === i ? "w-3.5 bg-amber-500" : "w-1.5 bg-slate-300 hover:bg-slate-400"
                 }`}
                 title={`Lihat ${facets[i].name}`}
+                aria-label={`Lihat slide ${i + 1}`}
               />
             ))}
           </div>
@@ -1639,7 +1621,7 @@ function HomePageContent() {
             </section>
 
             {/* Card B — Tata Letak Atap (Multi-Facet Carousel & Pristine CAD Grid) */}
-            <RoofLayoutBentoCard proj={activeProj} />
+            <RoofLayoutBentoCard key={activeProj.id} proj={activeProj} />
 
             {/* Card C — Dampak Ekologis (Full container eco-forest with breeze & falling leaves) */}
             <section className="md:col-span-2 xl:col-span-4 h-[260px] rounded-[22px] bg-gradient-to-b from-sky-200/90 via-sky-100/60 to-emerald-100/85 border border-sky-100/90 p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs">

@@ -45,6 +45,7 @@ export function BogorProjectsMap({
   const [mapMode, setMapMode] = useState<MapMode>("street");
   const [mapReady, setMapReady] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(13);
+  const [isPotentialOpen, setIsPotentialOpen] = useState(false);
 
   // Helper to construct marker HTML
   function createMarkerHtml(proj: MapProjectItem, active: boolean, isZoomedOut: boolean): string {
@@ -379,36 +380,82 @@ export function BogorProjectsMap({
         </div>
       </div>
 
-      {/* Bottom Information Card: Bar Penilaian Potensi Surya */}
+      {/* Bottom Right Floating Solar Potential Component (Expandable with Smooth Transition) */}
       {activeProject && (
-        <div className="absolute left-3 right-3 bottom-3 z-20 pointer-events-auto">
-          <div className="bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 shadow-md border border-slate-200/80">
-            <div className="min-w-0">
-              <h4 className="text-[14px] sm:text-[15px] font-bold text-slate-900">Potensi surya</h4>
-              <p className="text-xs text-slate-500 mt-0.5 leading-snug truncate">
-                {activeProject.district} · {irradiance} kWh/m² per hari
-              </p>
-            </div>
-            <div className="relative w-13 h-13 sm:w-14 sm:h-14 shrink-0">
-              <svg viewBox="0 0 56 56" className="w-full h-full -rotate-90">
-                <circle cx={28} cy={28} r={22} fill="none" stroke="#f1f5f9" strokeWidth={5} />
-                <circle
-                  cx={28}
-                  cy={28}
-                  r={22}
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth={5}
-                  strokeLinecap="round"
-                  strokeDasharray={2 * Math.PI * 22}
-                  strokeDashoffset={2 * Math.PI * 22 * (1 - Math.min(100, Math.max(0, roofScore)) / 100)}
-                />
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-[12px] sm:text-[13px] font-bold text-slate-900">
-                {roofScore}%
-              </span>
+        <div className="absolute right-3 bottom-3 z-20 pointer-events-auto flex flex-col items-end">
+          {/* Expanded State Card */}
+          <div
+            className={`transition-all duration-300 ease-out origin-bottom-right ${
+              isPotentialOpen
+                ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
+                : "opacity-0 scale-90 translate-y-3 pointer-events-none absolute bottom-0 right-0"
+            }`}
+          >
+            <div className="w-[270px] sm:w-[310px] bg-white/95 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 shadow-lg border border-slate-200/90 flex flex-col gap-2 relative">
+              {/* Header with Title and Close Button */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[18px] text-amber-500">wb_sunny</span>
+                  <h4 className="text-[13px] sm:text-[14px] font-bold text-slate-900">Potensi surya</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPotentialOpen(false)}
+                  className="w-6 h-6 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer"
+                  title="Tutup ringkasan potensi"
+                  aria-label="Tutup ringkasan potensi"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+
+              {/* Body stats & gauge */}
+              <div className="flex items-center justify-between gap-3 pt-0.5">
+                <div className="min-w-0">
+                  <p className="text-[12px] sm:text-[13px] font-semibold text-slate-800 truncate">
+                    {activeProject.district}
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-snug">
+                    {irradiance} kWh/m² per hari
+                  </p>
+                </div>
+                <div className="relative w-12 h-12 sm:w-13 sm:h-13 shrink-0">
+                  <svg viewBox="0 0 56 56" className="w-full h-full -rotate-90">
+                    <circle cx={28} cy={28} r={22} fill="none" stroke="#f1f5f9" strokeWidth={5} />
+                    <circle
+                      cx={28}
+                      cy={28}
+                      r={22}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth={5}
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 22}
+                      strokeDashoffset={2 * Math.PI * 22 * (1 - Math.min(100, Math.max(0, roofScore)) / 100)}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[11px] sm:text-[12px] font-bold text-slate-900">
+                    {roofScore}%
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Collapsed State Mini Sun Button */}
+          <button
+            type="button"
+            onClick={() => setIsPotentialOpen(true)}
+            className={`h-10 w-10 sm:h-11 sm:w-11 rounded-full bg-white/95 backdrop-blur-md text-amber-500 flex items-center justify-center shadow-md border border-slate-200/90 hover:bg-white hover:scale-105 active:scale-95 transition-all duration-300 ease-out cursor-pointer group ${
+              isPotentialOpen ? "opacity-0 scale-75 pointer-events-none absolute" : "opacity-100 scale-100"
+            }`}
+            title="Buka Potensi Surya"
+            aria-label="Buka Potensi Surya"
+          >
+            <span className="material-symbols-outlined text-[20px] sm:text-[22px] group-hover:rotate-45 group-hover:scale-110 transition-transform duration-300">
+              wb_sunny
+            </span>
+          </button>
         </div>
       )}
     </div>
