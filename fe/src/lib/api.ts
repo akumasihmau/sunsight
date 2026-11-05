@@ -384,7 +384,7 @@ export const api = {
 
   forgotPassword: (body: { email: string }) =>
     USE_MOCK
-      ? mockApi.forgotPassword()
+      ? mockApi.forgotPassword(body.email)
       : apiRequest<{ message: string }>("/forgot-password", { method: "POST", body }),
 
   resetPassword: (body: {

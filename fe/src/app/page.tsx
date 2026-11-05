@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { BogorProjectsMap } from "@/components/BogorProjectsMap";
 import { LandingView } from "@/components/landing/LandingView";
@@ -19,6 +19,20 @@ interface ProjectObstacle {
   xPct: number;
   yPct: number;
   label: string;
+}
+
+interface ProjectFacet {
+  id: string;
+  name: string;
+  shapeLabel: string;
+  dimensions: string;
+  ridgeM: number;
+  slopeM: number;
+  capacityKwp: number;
+  moduleCount: number;
+  effectiveAreaPct: number;
+  polygonPoints: [number, number][];
+  obstacles: ProjectObstacle[];
 }
 
 interface SavedRoofProject {
@@ -50,6 +64,7 @@ interface SavedRoofProject {
   effectiveAreaPct: number;
   obstacles: ProjectObstacle[];
   polygonPoints?: [number, number][];
+  facets?: ProjectFacet[];
 }
 
 const SAVED_PROJECTS: SavedRoofProject[] = [
@@ -89,6 +104,49 @@ const SAVED_PROJECTS: SavedRoofProject[] = [
     obstacles: [
       { name: "HVAC", type: "hvac", icon: "mode_fan", xPct: 68, yPct: 35, label: "Outdoor AC 2PK" },
       { name: "Skylight", type: "skylight", icon: "window", xPct: 32, yPct: 65, label: "Skylight Kaca" },
+    ],
+    facets: [
+      {
+        id: "menteng-f1",
+        name: "Bidang Atap Utama",
+        shapeLabel: "Pelana Sisi Selatan",
+        dimensions: "12.48 m × 7.28 m",
+        ridgeM: 12.48,
+        slopeM: 7.28,
+        capacityKwp: 8.3,
+        moduleCount: 36,
+        effectiveAreaPct: 84,
+        polygonPoints: [
+          [10, 15],
+          [90, 15],
+          [90, 85],
+          [10, 85],
+        ],
+        obstacles: [
+          { name: "HVAC", type: "hvac", icon: "mode_fan", xPct: 68, yPct: 35, label: "Outdoor AC 2PK" },
+          { name: "Skylight", type: "skylight", icon: "window", xPct: 32, yPct: 65, label: "Skylight Kaca" },
+        ],
+      },
+      {
+        id: "menteng-f2",
+        name: "Bidang Atap Sayap (Carport)",
+        shapeLabel: "Pelana Depan",
+        dimensions: "7.50 m × 4.80 m",
+        ridgeM: 7.50,
+        slopeM: 4.80,
+        capacityKwp: 3.3,
+        moduleCount: 12,
+        effectiveAreaPct: 88,
+        polygonPoints: [
+          [14, 18],
+          [86, 18],
+          [86, 82],
+          [14, 82],
+        ],
+        obstacles: [
+          { name: "Pipa Vent", type: "vent", icon: "air", xPct: 64, yPct: 40, label: "Ventilasi Udara" },
+        ],
+      },
     ],
   },
   {
@@ -130,6 +188,48 @@ const SAVED_PROJECTS: SavedRoofProject[] = [
       { name: "Toren Air", type: "tank", icon: "water_drop", xPct: 74, yPct: 68, label: "Toren 1000L" },
       { name: "Pipa Vent", type: "vent", icon: "air", xPct: 32, yPct: 30, label: "Pipa Ventilasi" },
     ],
+    facets: [
+      {
+        id: "baranangsiang-f1",
+        name: "Bidang Atap Utama Barat",
+        shapeLabel: "Persegi Panjang",
+        dimensions: "11.20 m × 6.50 m",
+        ridgeM: 11.20,
+        slopeM: 6.50,
+        capacityKwp: 7.5,
+        moduleCount: 15,
+        effectiveAreaPct: 80,
+        polygonPoints: [
+          [12, 16],
+          [88, 16],
+          [88, 84],
+          [12, 84],
+        ],
+        obstacles: [
+          { name: "Toren Air", type: "tank", icon: "water_drop", xPct: 70, yPct: 65, label: "Toren 1000L" },
+        ],
+      },
+      {
+        id: "baranangsiang-f2",
+        name: "Bidang Sayap L-Extension",
+        shapeLabel: "Sayap Timur (L)",
+        dimensions: "7.60 m × 5.20 m",
+        ridgeM: 7.60,
+        slopeM: 5.20,
+        capacityKwp: 5.0,
+        moduleCount: 10,
+        effectiveAreaPct: 78,
+        polygonPoints: [
+          [15, 20],
+          [85, 20],
+          [85, 80],
+          [15, 80],
+        ],
+        obstacles: [
+          { name: "Pipa Vent", type: "vent", icon: "air", xPct: 35, yPct: 45, label: "Pipa Pembuangan" },
+        ],
+      },
+    ],
   },
   {
     id: "proj-yasmin",
@@ -166,6 +266,28 @@ const SAVED_PROJECTS: SavedRoofProject[] = [
     ],
     obstacles: [
       { name: "Exhaust", type: "vent", icon: "mode_fan", xPct: 60, yPct: 45, label: "Exhaust Fan Dapur" },
+    ],
+    facets: [
+      {
+        id: "yasmin-f1",
+        name: "Bidang Atap Utama",
+        shapeLabel: "Persegi Standar",
+        dimensions: "10.50 m × 6.20 m",
+        ridgeM: 10.50,
+        slopeM: 6.20,
+        capacityKwp: 6.8,
+        moduleCount: 18,
+        effectiveAreaPct: 88,
+        polygonPoints: [
+          [12, 18],
+          [88, 18],
+          [88, 82],
+          [12, 82],
+        ],
+        obstacles: [
+          { name: "Exhaust", type: "vent", icon: "mode_fan", xPct: 60, yPct: 45, label: "Exhaust Fan Dapur" },
+        ],
+      },
     ],
   },
   {
@@ -206,6 +328,82 @@ const SAVED_PROJECTS: SavedRoofProject[] = [
     obstacles: [
       { name: "VRV Outdoor", type: "hvac", icon: "mode_fan", xPct: 62, yPct: 36, label: "VRV AC Multi-Split" },
       { name: "Petir", type: "vent", icon: "bolt", xPct: 32, yPct: 64, label: "Penyalur Petir" },
+    ],
+    facets: [
+      {
+        id: "bantarjati-f1",
+        name: "Bidang Trapesium Depan",
+        shapeLabel: "Limasan Depan",
+        dimensions: "14.00 m × 5.20 m",
+        ridgeM: 14.00,
+        slopeM: 5.20,
+        capacityKwp: 4.8,
+        moduleCount: 12,
+        effectiveAreaPct: 80,
+        polygonPoints: [
+          [22, 18],
+          [78, 18],
+          [92, 82],
+          [8, 82],
+        ],
+        obstacles: [
+          { name: "VRV Outdoor", type: "hvac", icon: "mode_fan", xPct: 60, yPct: 45, label: "VRV AC Multi-Split" },
+        ],
+      },
+      {
+        id: "bantarjati-f2",
+        name: "Bidang Trapesium Belakang",
+        shapeLabel: "Limasan Belakang",
+        dimensions: "14.00 m × 5.20 m",
+        ridgeM: 14.00,
+        slopeM: 5.20,
+        capacityKwp: 4.0,
+        moduleCount: 10,
+        effectiveAreaPct: 76,
+        polygonPoints: [
+          [8, 18],
+          [92, 18],
+          [78, 82],
+          [22, 82],
+        ],
+        obstacles: [
+          { name: "Petir", type: "vent", icon: "bolt", xPct: 35, yPct: 55, label: "Penyalur Petir" },
+        ],
+      },
+      {
+        id: "bantarjati-f3",
+        name: "Bidang Segitiga Timur",
+        shapeLabel: "Limasan Timur",
+        dimensions: "7.50 m × 4.80 m",
+        ridgeM: 7.50,
+        slopeM: 4.80,
+        capacityKwp: 1.2,
+        moduleCount: 3,
+        effectiveAreaPct: 68,
+        polygonPoints: [
+          [50, 16],
+          [88, 84],
+          [12, 84],
+        ],
+        obstacles: [],
+      },
+      {
+        id: "bantarjati-f4",
+        name: "Bidang Segitiga Barat",
+        shapeLabel: "Limasan Barat",
+        dimensions: "7.50 m × 4.80 m",
+        ridgeM: 7.50,
+        slopeM: 4.80,
+        capacityKwp: 1.2,
+        moduleCount: 3,
+        effectiveAreaPct: 68,
+        polygonPoints: [
+          [50, 16],
+          [88, 84],
+          [12, 84],
+        ],
+        obstacles: [],
+      },
     ],
   },
 ];
@@ -301,11 +499,11 @@ function isPointInPoly(px: number, py: number, polygon: [number, number][]): boo
   return inside;
 }
 
-function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
+function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
   const points = useMemo(() => {
     const raw =
-      proj.polygonPoints && proj.polygonPoints.length >= 3
-        ? proj.polygonPoints
+      facet.polygonPoints && facet.polygonPoints.length >= 3
+        ? facet.polygonPoints
         : [
             [10, 15],
             [90, 15],
@@ -313,15 +511,30 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
             [10, 85],
           ];
     return raw.map(([u, v]) => [36 + (u / 100) * 288, 18 + (v / 100) * 140] as [number, number]);
-  }, [proj.polygonPoints]);
+  }, [facet.polygonPoints]);
 
-  const { polygonStr, insetStr, minX, maxX, minY, maxY, modules, bestDim } = useMemo(() => {
+  const {
+    polygonStr,
+    insetStr,
+    minX,
+    maxX,
+    minY,
+    maxY,
+    sMinX,
+    sMaxX,
+    sMinY,
+    sMaxY,
+    modules,
+    bestDim,
+    obstacles,
+  } = useMemo(() => {
     const polygonStr = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
     const cx = points.reduce((acc, p) => acc + p[0], 0) / points.length;
     const cy = points.reduce((acc, p) => acc + p[1], 0) / points.length;
 
+    // Setback boundary points (smooth inward scaling)
     const insetPoints = points.map(([x, y]) => [
-      cx + (x - cx) * 0.9,
+      cx + (x - cx) * 0.90,
       cy + (y - cy) * 0.88,
     ] as [number, number]);
     const insetStr = insetPoints.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
@@ -333,62 +546,84 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
 
-    const obstacles = proj.obstacles.map((obs) => ({
+    const sXs = insetPoints.map((p) => p[0]);
+    const sYs = insetPoints.map((p) => p[1]);
+    const sMinX = Math.min(...sXs);
+    const sMaxX = Math.max(...sXs);
+    const sMinY = Math.min(...sYs);
+    const sMaxY = Math.max(...sYs);
+
+    const obstacles = (facet.obstacles || []).map((obs) => ({
       ...obs,
       ox: 36 + (obs.xPct / 100) * 288,
       oy: 18 + (obs.yPct / 100) * 140,
     }));
 
-    let bestPlaced: { x: number; y: number }[] = [];
-    let bestDim = { mw: 13, mh: 17 };
+    // Symmetrical, perfectly structured module grid packing
+    const targetCount = facet.moduleCount || 12;
+    const sWidth = Math.max(30, sMaxX - sMinX);
+    const sHeight = Math.max(20, sMaxY - sMinY);
 
-    // Adaptive module packing to naturally fit the project's module count
-    for (let s = 15; s >= 10.5; s -= 0.5) {
-      const mw = s * 0.85;
-      const mh = s * 1.15;
-      const dx = mw + 1.8;
-      const dy = mh + 2.0;
-      const margin = 2.5;
+    // Find optimal rows and cols so modules are arranged in pristine, neat arrays
+    let bestCols = 1;
+    let bestRows = 1;
+    let bestScore = Infinity;
 
-      const cols = Math.floor((maxX - minX) / dx);
-      const rows = Math.floor((maxY - minY) / dy);
-      const startX = minX + (maxX - minX - cols * dx) / 2 + (dx - mw) / 2;
-      const startY = minY + (maxY - minY - rows * dy) / 2 + (dy - mh) / 2;
-
-      const placed: { x: number; y: number }[] = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const mx = startX + c * dx;
-          const my = startY + r * dy;
-          const mcx = mx + mw / 2;
-          const mcy = my + mh / 2;
-
-          if (
-            !isPointInPoly(mx - margin, my - margin, points) ||
-            !isPointInPoly(mx + mw + margin, my - margin, points) ||
-            !isPointInPoly(mx + mw + margin, my + mh + margin, points) ||
-            !isPointInPoly(mx - margin, my + mh + margin, points)
-          ) {
-            continue;
+    for (let r = 1; r <= 4; r++) {
+      for (let c = 1; c <= 16; c++) {
+        if (r * c >= targetCount) {
+          const testMw = (sWidth - (c - 1) * 2) / c;
+          const testMh = (sHeight - (r - 1) * 2.2) / r;
+          if (testMw > 5 && testMh > 8) {
+            const ratio = testMh / testMw;
+            // Target portrait aspect ratio ~1.8 - 2.0
+            const score = Math.abs(ratio - 1.85) + (r * c - targetCount) * 0.15;
+            if (score < bestScore) {
+              bestScore = score;
+              bestCols = c;
+              bestRows = r;
+            }
           }
-
-          const collides = obstacles.some(
-            (o) => Math.abs(mcx - o.ox) < 18 && Math.abs(mcy - o.oy) < 16
-          );
-          if (collides) continue;
-
-          placed.push({ x: mx, y: my });
         }
       }
+    }
 
-      if (placed.length >= proj.moduleCount) {
-        bestPlaced = placed.slice(0, proj.moduleCount);
-        bestDim = { mw, mh };
-        break;
-      } else if (placed.length > bestPlaced.length) {
-        bestPlaced = placed;
-        bestDim = { mw, mh };
+    const gapX = 2.0;
+    const gapY = 2.2;
+    const mw = Math.max(6, (sWidth - (bestCols - 1) * gapX) / bestCols);
+    const mh = Math.max(8, (sHeight - (bestRows - 1) * gapY) / bestRows);
+
+    const gridW = bestCols * mw + (bestCols - 1) * gapX;
+    const gridH = bestRows * mh + (bestRows - 1) * gapY;
+    const startX = sMinX + Math.max(0, (sWidth - gridW) / 2);
+    const startY = sMinY + Math.max(0, (sHeight - gridH) / 2);
+
+    const placed: { x: number; y: number }[] = [];
+    for (let r = 0; r < bestRows; r++) {
+      for (let c = 0; c < bestCols; c++) {
+        const mx = startX + c * (mw + gapX);
+        const my = startY + r * (mh + gapY);
+        const mcx = mx + mw / 2;
+        const mcy = my + mh / 2;
+
+        // Verify inside polygon
+        const inPoly =
+          isPointInPoly(mcx, mcy, points) &&
+          isPointInPoly(mx + 1, my + 1, points) &&
+          isPointInPoly(mx + mw - 1, my + mh - 1, points);
+
+        if (!inPoly) continue;
+
+        // Verify obstacle buffer clearance
+        const collides = obstacles.some(
+          (o) => Math.abs(mcx - o.ox) < 18 && Math.abs(mcy - o.oy) < 16
+        );
+        if (collides) continue;
+
+        placed.push({ x: mx, y: my });
+        if (placed.length >= targetCount) break;
       }
+      if (placed.length >= targetCount) break;
     }
 
     return {
@@ -398,31 +633,36 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
       maxX,
       minY,
       maxY,
-      modules: bestPlaced,
-      bestDim,
+      sMinX,
+      sMaxX,
+      sMinY,
+      sMaxY,
+      modules: placed,
+      bestDim: { mw, mh },
+      obstacles,
     };
-  }, [points, proj.obstacles, proj.moduleCount]);
+  }, [points, facet.obstacles, facet.moduleCount]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center">
+    <div className="w-full h-full flex items-center justify-center select-none">
       <svg
-        className="w-full h-full max-h-[185px]"
+        className="w-full h-full max-h-[178px]"
         viewBox="0 0 360 175"
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          <pattern id="cadDotGrid" width="14" height="14" patternUnits="userSpaceOnUse">
+          <pattern id={`cadDotGrid-${facet.id}`} width="14" height="14" patternUnits="userSpaceOnUse">
             <circle cx="7" cy="7" r="0.75" fill="#e2e8f0" />
           </pattern>
-          <filter id="roofVectorShadow" x="-8%" y="-8%" width="116%" height="116%">
+          <filter id={`roofVectorShadow-${facet.id}`} x="-8%" y="-8%" width="116%" height="116%">
             <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.07" />
           </filter>
         </defs>
 
         {/* CAD Blueprint subtle dot grid */}
-        <rect width="100%" height="100%" fill="url(#cadDotGrid)" opacity="0.65" />
+        <rect width="100%" height="100%" fill={`url(#cadDotGrid-${facet.id})`} opacity="0.65" />
 
-        <g filter="url(#roofVectorShadow)">
+        <g filter={`url(#roofVectorShadow-${facet.id})`}>
           {/* User-drawn roof polygon */}
           <polygon
             points={polygonStr}
@@ -483,13 +723,11 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
           ))}
 
           {/* Obstacles with keep-out clearance safety buffer */}
-          {proj.obstacles.map((obs) => {
-            const ox = 36 + (obs.xPct / 100) * 288;
-            const oy = 18 + (obs.yPct / 100) * 140;
+          {obstacles.map((obs) => {
             const isRed = obs.type === "hvac" || obs.type === "tank";
 
             return (
-              <g key={obs.name} transform={`translate(${ox}, ${oy})`}>
+              <g key={obs.name} transform={`translate(${obs.ox}, ${obs.oy})`}>
                 {/* Keep-out buffer zone */}
                 <rect
                   x="-18"
@@ -541,9 +779,9 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
 
           {/* Setback label */}
           <text
-            x={minX + 8}
-            y={maxY - 5}
-            fontSize="6.5"
+            x={sMinX + 6}
+            y={sMaxY - 4}
+            fontSize="6"
             fontWeight="600"
             fill="#64748b"
             letterSpacing="0.02em"
@@ -565,7 +803,7 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
             fontWeight="600"
             fill="#64748b"
           >
-            {proj.ridgeM} m
+            {facet.ridgeM} m
           </text>
 
           <line x1="22" y1={minY} x2="22" y2={maxY} />
@@ -580,7 +818,7 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
             fill="#64748b"
             transform={`rotate(-90 19 ${(minY + maxY) / 2})`}
           >
-            {proj.slopeM} m
+            {facet.slopeM} m
           </text>
         </g>
 
@@ -593,6 +831,168 @@ function RoofGridCardVisual({ proj }: { proj: SavedRoofProject }) {
         ))}
       </svg>
     </div>
+  );
+}
+
+function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
+  const [activeFacetIdx, setActiveFacetIdx] = useState(0);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+
+  const facets = useMemo(() => {
+    if (proj.facets && proj.facets.length > 0) {
+      return proj.facets;
+    }
+    return [
+      {
+        id: `${proj.id}-f1`,
+        name: "Bidang Atap Utama",
+        shapeLabel: proj.shapeLabel,
+        dimensions: proj.dimensions,
+        ridgeM: proj.ridgeM,
+        slopeM: proj.slopeM,
+        capacityKwp: proj.capacityKwp,
+        moduleCount: proj.moduleCount,
+        effectiveAreaPct: proj.effectiveAreaPct,
+        polygonPoints: proj.polygonPoints || [
+          [10, 15],
+          [90, 15],
+          [90, 85],
+          [10, 85],
+        ],
+        obstacles: proj.obstacles || [],
+      },
+    ];
+  }, [proj]);
+
+  // Reset active index when active project changes
+  useEffect(() => {
+    setActiveFacetIdx(0);
+    if (carouselRef.current) {
+      carouselRef.current.scrollTo({ left: 0, behavior: "instant" });
+    }
+  }, [proj.id]);
+
+  const scrollToFacet = (idx: number) => {
+    setActiveFacetIdx(idx);
+    if (carouselRef.current) {
+      const el = carouselRef.current.children[idx] as HTMLElement;
+      if (el) {
+        carouselRef.current.scrollTo({ left: el.offsetLeft, behavior: "smooth" });
+      }
+    }
+  };
+
+  const handleScroll = () => {
+    if (!carouselRef.current) return;
+    const { scrollLeft, clientWidth } = carouselRef.current;
+    if (clientWidth > 0) {
+      const idx = Math.round(scrollLeft / clientWidth);
+      if (idx !== activeFacetIdx && idx >= 0 && idx < facets.length) {
+        setActiveFacetIdx(idx);
+      }
+    }
+  };
+
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const prevIdx = activeFacetIdx > 0 ? activeFacetIdx - 1 : facets.length - 1;
+    scrollToFacet(prevIdx);
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextIdx = activeFacetIdx < facets.length - 1 ? activeFacetIdx + 1 : 0;
+    scrollToFacet(nextIdx);
+  };
+
+  const hasMultiple = facets.length > 1;
+
+  return (
+    <section className="xl:col-span-4 h-[260px] bg-white rounded-[22px] p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs group">
+      {/* Carousel Track */}
+      <div
+        ref={carouselRef}
+        onScroll={handleScroll}
+        className="w-full flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar scroll-smooth"
+      >
+        {facets.map((facet, idx) => (
+          <div
+            key={facet.id}
+            className="w-full h-full flex-shrink-0 snap-center flex flex-col justify-between"
+          >
+            {/* Slide Header */}
+            <div className="relative z-10 flex items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[13px] font-semibold text-slate-900 leading-tight">
+                    {facet.name}
+                  </p>
+                  {hasMultiple && (
+                    <span className="text-[10px] font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-1.5 py-0.2 rounded-full">
+                      {idx + 1}/{facets.length}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5">
+                  {facet.dimensions} · {facet.capacityKwp} kWp
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[22px] sm:text-[26px] font-bold text-slate-900 tracking-tight leading-none whitespace-nowrap">
+                  {facet.moduleCount}{" "}
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">panel</span>
+                </p>
+                <p className="text-[10.5px] font-medium text-slate-400 mt-0.5">
+                  {facet.effectiveAreaPct}% area efektif
+                </p>
+              </div>
+            </div>
+
+            {/* CAD Blueprint SVG */}
+            <div className="w-full flex-1 min-h-0 relative flex items-center justify-center pt-0.5">
+              <FacetRoofVisual facet={facet} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Carousel Arrow Controls (Visible when facets > 1 on hover) */}
+      {hasMultiple && (
+        <>
+          <button
+            type="button"
+            onClick={handlePrev}
+            aria-label="Poligon sebelumnya"
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleNext}
+            aria-label="Poligon berikutnya"
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+          </button>
+
+          {/* Dots Indicator */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 py-0.5 px-2 rounded-full bg-white/80 backdrop-blur-sm border border-slate-200/60 shadow-2xs">
+            {facets.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => scrollToFacet(i)}
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  activeFacetIdx === i ? "w-4 bg-amber-500 shadow-2xs" : "w-1.5 bg-slate-300 hover:bg-slate-400"
+                }`}
+                title={`Lihat ${facets[i].name}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -639,6 +1039,11 @@ function HomePageContent() {
   const searchParams = useSearchParams();
   const hasToken = useHasToken();
   const biodata = useStoredBiodata();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const tabParam = searchParams.get("tab") as DashboardNavTab | null;
   const [activeTab, setActiveTabState] = useState<DashboardNavTab>(
@@ -671,6 +1076,7 @@ function HomePageContent() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>(SAVED_PROJECTS[0].id);
   const [shapeFilter, setShapeFilter] = useState<string>("all");
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [activePillarModal, setActivePillarModal] = useState<"hemat" | "mandiri" | "bersih" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
 
   // Interactive Location & Geolocation States
@@ -700,28 +1106,22 @@ function HomePageContent() {
 
   function handleUseGps() {
     if (typeof window === "undefined" || !navigator.geolocation) {
-      showToast("Browser tidak mendukung sensor GPS.");
+      router.push("/studio?mode=gps");
       return;
     }
     setIsGpsLoading(true);
-    showToast("Mengakses sensor GPS perangkat...");
+    showToast("Mengakses sensor GPS untuk Studio CAD...");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setIsGpsLoading(false);
         const { latitude, longitude } = pos.coords;
-        setActiveLocation({
-          name: `Titik GPS (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
-          district: "Lokasi GPS Terdeteksi",
-          lat: Number(latitude.toFixed(6)),
-          lng: Number(longitude.toFixed(6)),
-          irradiance: 4.88,
-          source: "GPS",
-        });
-        showToast(`📍 Lokasi GPS terdeteksi: Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}`);
+        showToast(`📍 Lokasi GPS terdeteksi! Membuka Studio...`);
+        router.push(`/studio?mode=gps&lat=${latitude.toFixed(6)}&lng=${longitude.toFixed(6)}`);
       },
       (err) => {
         setIsGpsLoading(false);
-        showToast(`Gagal mendeteksi GPS: ${err.message}. Tetap di Kota Bogor.`);
+        showToast(`Membuka Studio CAD dengan koordinat GPS default...`);
+        router.push("/studio?mode=gps&lat=-6.595038&lng=106.797241");
       },
       { timeout: 8000, enableHighAccuracy: true }
     );
@@ -751,14 +1151,14 @@ function HomePageContent() {
     [router]
   );
 
-  const initials = biodata?.name
+  const initials = mounted && biodata?.name
     ? biodata.name
         .split(" ")
         .filter(Boolean)
         .slice(0, 2)
         .map((part) => part[0]?.toUpperCase() ?? "")
         .join("")
-    : "MR";
+    : "PS";
 
   // Active Project for Bento display
   const activeProj = useMemo(() => {
@@ -908,10 +1308,6 @@ function HomePageContent() {
           {item.label}
         </button>
       ))}
-      <Link href="/studio" className={navPillClass(false)}>
-        <span className="material-symbols-outlined text-[18px]">polyline</span>
-        Studio
-      </Link>
     </>
   );
 
@@ -967,11 +1363,11 @@ function HomePageContent() {
           <div className="flex items-center gap-2">
             <Link
               href="/"
-              className="w-11 h-11 rounded-full bg-white flex items-center justify-center hover:bg-slate-50 transition"
+              className="h-11 px-3.5 rounded-full bg-white flex items-center justify-center hover:bg-slate-50 transition shadow-xs"
               title="SunSight"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo-icon.svg" alt="SunSight" className="w-6 h-6 object-contain" />
+              <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
             </Link>
 
             {/* Search (popover with GPS & map inside) */}
@@ -980,7 +1376,7 @@ function HomePageContent() {
                 type="button"
                 onClick={() => setSearchOpen((v) => !v)}
                 className={`w-11 h-11 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  searchOpen ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                  searchOpen ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50 shadow-xs"
                 }`}
                 aria-label="Cari proyek"
                 aria-expanded={searchOpen}
@@ -1022,9 +1418,9 @@ function HomePageContent() {
                         type="button"
                         onClick={() => {
                           setSearchOpen(false);
-                          setMapPickerOpen(true);
+                          router.push("/studio");
                         }}
-                        title="Pilih di peta"
+                        title="Buka & Pilih di Peta Studio CAD"
                         className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[18px]">map</span>
@@ -1084,21 +1480,28 @@ function HomePageContent() {
             {navPills}
           </nav>
 
-          <Link
-            href="/profile"
-            className="flex items-center gap-2.5 h-12 pl-1.5 pr-1.5 sm:pr-4 rounded-full bg-white hover:bg-slate-50 transition"
-            title="Profil & akun"
-          >
-            <span className="w-9 h-9 rounded-full bg-amber-200 text-amber-950 text-xs font-semibold flex items-center justify-center">
-              {initials}
-            </span>
-            <span className="hidden sm:block leading-tight">
-              <span className="block text-sm font-medium text-slate-900 max-w-[140px] truncate">
-                {biodata?.name || "Muhammad Raditya"}
+          <div className="flex items-center gap-2">
+            <Link
+              href="/studio"
+              className="h-11 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold flex items-center gap-2 transition shadow-xs hover:text-amber-600 group"
+              title="Buka Studio CAD"
+            >
+              <span className="material-symbols-outlined text-[19px] text-amber-500 group-hover:scale-110 transition-transform">
+                polyline
               </span>
-              <span className="block text-[11px] text-slate-400">Lihat profil</span>
-            </span>
-          </Link>
+              <span>Studio</span>
+            </Link>
+
+            <Link
+              href="/profile"
+              className="w-11 h-11 rounded-full bg-white hover:bg-slate-50 flex items-center justify-center transition shadow-xs group border border-slate-200/60"
+              title="Profil & akun"
+            >
+              <span className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-200 to-amber-300 text-amber-950 text-xs font-bold flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                {mounted ? initials : "PS"}
+              </span>
+            </Link>
+          </div>
         </header>
 
         {/* Mobile pill navigation */}
@@ -1107,6 +1510,10 @@ function HomePageContent() {
           aria-label="Navigasi utama"
         >
           {navPills}
+          <Link href="/studio" className={navPillClass(false)}>
+            <span className="material-symbols-outlined text-[18px]">polyline</span>
+            Studio
+          </Link>
         </nav>
 
         <main className="pt-3 sm:pt-4 space-y-6">
@@ -1124,51 +1531,115 @@ function HomePageContent() {
                 actionLabel="Buka di Studio"
               />
 
-              <h2 className="relative text-[26px] sm:text-[30px] font-medium leading-[1.15] tracking-tight text-slate-900 max-w-[13ch]">
+              <h2 className="relative text-[24px] sm:text-[28px] font-semibold leading-[1.15] tracking-tight text-slate-900 max-w-[11ch] sm:max-w-[12ch] z-10">
                 Ubah atap jadi sumber listrik.
               </h2>
 
-              <div className="absolute right-5 bottom-14 flex flex-col items-end pointer-events-none select-none">
-                <span className="-rotate-[14deg] inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-100 border border-amber-300 text-amber-800 text-xs font-medium shadow-sm">
-                  <span className="material-symbols-outlined text-[14px]">bolt</span>
-                  Hemat
-                </span>
-                <span className="-rotate-[6deg] -mt-0.5 translate-x-3 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-sky-100 border border-sky-300 text-sky-800 text-xs font-medium shadow-sm">
-                  <span className="material-symbols-outlined text-[14px]">solar_power</span>
-                  Mandiri
-                </span>
-                <span className="-rotate-[10deg] -mt-0.5 -translate-x-4 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 border border-slate-300 text-slate-700 text-xs font-medium shadow-sm">
-                  <span className="material-symbols-outlined text-[14px]">eco</span>
-                  Bersih
-                </span>
+              {/* Fanned Value Cards Stack (Hemat, Mandiri, Bersih - Radiant Soft Glow) */}
+              <div
+                className="absolute -right-1 sm:right-2 -bottom-2 w-[180px] sm:w-[195px] h-[160px] sm:h-[170px] pointer-events-auto select-none"
+                aria-label="Kartu nilai proyek: Bersih, Mandiri, Hemat"
+              >
+                {/* 1. Bersih Card (Back layer - Radiant Soft Sage/Emerald Glow) */}
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("bersih")}
+                  title="Lihat penjelasan: Kenapa Bersih?"
+                  className="group absolute -bottom-1.5 right-12 sm:right-14 z-10 w-[104px] sm:w-[114px] h-[134px] sm:h-[144px] rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between text-left bg-gradient-to-br from-emerald-100/95 via-teal-100/90 to-emerald-200/85 -rotate-[18deg] -translate-x-3 translate-y-0 hover:z-40 hover:-translate-y-7 hover:-rotate-4 hover:scale-105 hover:shadow-[0_16px_32px_rgba(16,185,129,0.32)] transition-all duration-300 ease-out border border-emerald-300/80 shadow-[0_8px_20px_rgba(16,185,129,0.18),inset_0_1px_1px_rgba(255,255,255,0.95)] cursor-pointer overflow-hidden outline-none"
+                >
+                  {/* Subtle soft radiant ambient glow */}
+                  <div className="absolute -right-5 -bottom-5 w-16 h-16 rounded-full bg-emerald-300/30 pointer-events-none blur-xs" />
+                  <div className="absolute -left-3 -top-3 w-10 h-10 rounded-full bg-white/50 pointer-events-none blur-[0.5px]" />
+
+                  {/* Top: Category Tag + Icon */}
+                  <div className="flex items-center justify-between relative z-10">
+                    <span className="text-[7.5px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-200/70 px-1.5 py-0.5 rounded-md">03 · Eko</span>
+                    <span className="material-symbols-outlined text-[15px] text-emerald-700">eco</span>
+                  </div>
+
+                  {/* Title & Stat */}
+                  <div className="relative z-10">
+                    <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-emerald-950">Bersih</h3>
+                    <p className="text-[9px] font-semibold text-emerald-800/90 leading-tight mt-1">11.5t CO₂</p>
+                  </div>
+
+                  {/* Bottom CTA Pill */}
+                  <div className="relative z-10 pt-0.5">
+                    <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-emerald-950 bg-emerald-200/80 border border-emerald-300/60 px-1.5 py-0.5 rounded-full group-hover:bg-emerald-300 transition-colors shadow-2xs">
+                      <span>Kenapa?</span>
+                      <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
+                    </span>
+                  </div>
+                </button>
+
+                {/* 2. Mandiri Card (Middle layer - Radiant Soft Sky Glow) */}
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("mandiri")}
+                  title="Lihat penjelasan: Kenapa Mandiri?"
+                  className="group absolute -bottom-1.5 right-6 sm:right-7 z-20 w-[104px] sm:w-[114px] h-[134px] sm:h-[144px] rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between text-left bg-gradient-to-br from-sky-100/95 via-sky-200/90 to-blue-200/85 -rotate-[6deg] -translate-x-1 translate-y-1.5 hover:z-40 hover:-translate-y-7 hover:rotate-0 hover:scale-105 hover:shadow-[0_16px_32px_rgba(14,165,233,0.32)] transition-all duration-300 ease-out border border-sky-300/80 shadow-[0_8px_20px_rgba(14,165,233,0.18),inset_0_1px_1px_rgba(255,255,255,0.95)] cursor-pointer overflow-hidden outline-none"
+                >
+                  {/* Subtle soft radiant ambient glow */}
+                  <div className="absolute -right-5 -bottom-5 w-16 h-16 rounded-full bg-sky-300/30 pointer-events-none blur-xs" />
+                  <div className="absolute -left-3 -top-3 w-10 h-10 rounded-full bg-white/50 pointer-events-none blur-[0.5px]" />
+
+                  {/* Top: Category Tag + Icon */}
+                  <div className="flex items-center justify-between relative z-10">
+                    <span className="text-[7.5px] font-bold uppercase tracking-wider text-sky-800 bg-sky-200/70 px-1.5 py-0.5 rounded-md">02 · Otonom</span>
+                    <span className="material-symbols-outlined text-[15px] text-sky-700">solar_power</span>
+                  </div>
+
+                  {/* Title & Stat */}
+                  <div className="relative z-10">
+                    <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-sky-950">Mandiri</h3>
+                    <p className="text-[9px] font-semibold text-sky-800/90 leading-tight mt-1">78% daya</p>
+                  </div>
+
+                  {/* Bottom CTA Pill */}
+                  <div className="relative z-10 pt-0.5">
+                    <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-sky-950 bg-sky-200/80 border border-sky-300/60 px-1.5 py-0.5 rounded-full group-hover:bg-sky-300 transition-colors shadow-2xs">
+                      <span>Kenapa?</span>
+                      <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
+                    </span>
+                  </div>
+                </button>
+
+                {/* 3. Hemat Card (Front layer - Radiant Soft Amber/Gold Glow) */}
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("hemat")}
+                  title="Lihat penjelasan: Kenapa Hemat?"
+                  className="group absolute -bottom-1.5 -right-0.5 sm:right-0 z-30 w-[104px] sm:w-[114px] h-[134px] sm:h-[144px] rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between text-left bg-gradient-to-br from-amber-100/95 via-amber-200/90 to-yellow-200/85 rotate-[6deg] translate-x-1 translate-y-3 hover:z-40 hover:-translate-y-7 hover:rotate-2 hover:scale-105 hover:shadow-[0_16px_32px_rgba(245,158,11,0.35)] transition-all duration-300 ease-out border border-amber-300/80 shadow-[0_8px_20px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.95)] cursor-pointer overflow-hidden outline-none"
+                >
+                  {/* Subtle soft radiant ambient glow */}
+                  <div className="absolute -right-5 -bottom-5 w-16 h-16 rounded-full bg-amber-300/35 pointer-events-none blur-xs" />
+                  <div className="absolute -left-3 -top-3 w-10 h-10 rounded-full bg-white/50 pointer-events-none blur-[0.5px]" />
+
+                  {/* Top: Category Tag + Icon */}
+                  <div className="flex items-center justify-between relative z-10">
+                    <span className="text-[7.5px] font-bold uppercase tracking-wider text-amber-900 bg-amber-200/70 px-1.5 py-0.5 rounded-md">01 · Hemat</span>
+                    <span className="material-symbols-outlined text-[15px] text-amber-800">bolt</span>
+                  </div>
+
+                  {/* Title & Stat */}
+                  <div className="relative z-10">
+                    <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-amber-950">Hemat</h3>
+                    <p className="text-[9px] font-semibold text-amber-900/90 leading-tight mt-1">s.d 85%</p>
+                  </div>
+
+                  {/* Bottom CTA Pill */}
+                  <div className="relative z-10 pt-0.5">
+                    <span className="inline-flex items-center gap-0.5 text-[8px] font-bold text-amber-950 bg-amber-200/80 border border-amber-300/60 px-1.5 py-0.5 rounded-full group-hover:bg-amber-300 transition-colors shadow-2xs">
+                      <span>Kenapa?</span>
+                      <span className="material-symbols-outlined text-[10px]">arrow_forward</span>
+                    </span>
+                  </div>
+                </button>
               </div>
             </section>
 
-            {/* Card B — Tata Letak Atap */}
-            <section className="xl:col-span-4 h-[260px] bg-white rounded-[22px] p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs">
-              <div className="relative z-10 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[13px] font-semibold text-slate-900 leading-tight">Tata letak atap</p>
-                  <p className="text-[12px] text-slate-400 leading-tight mt-0.5">
-                    {activeProj.dimensions} · {activeProj.capacityKwp} kWp
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[24px] sm:text-[28px] font-bold text-slate-900 tracking-tight leading-none whitespace-nowrap">
-                    {activeProj.moduleCount}{" "}
-                    <span className="text-sm font-semibold text-slate-500">panel</span>
-                  </p>
-                  <p className="text-[11px] font-medium text-slate-400 mt-0.5">
-                    {activeProj.effectiveAreaPct}% area efektif
-                  </p>
-                </div>
-              </div>
-
-              {/* Roof visual directly on card canvas (no nested box container, full height available) */}
-              <div className="w-full flex-1 min-h-0 relative flex items-center justify-center pt-1">
-                <RoofGridCardVisual proj={activeProj} />
-              </div>
-            </section>
+            {/* Card B — Tata Letak Atap (Multi-Facet Carousel & Pristine CAD Grid) */}
+            <RoofLayoutBentoCard proj={activeProj} />
 
             {/* Card C — Dampak Ekologis (Full container eco-forest with breeze & falling leaves) */}
             <section className="md:col-span-2 xl:col-span-4 h-[260px] rounded-[22px] bg-gradient-to-b from-sky-200/90 via-sky-100/60 to-emerald-100/85 border border-sky-100/90 p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs">
@@ -1334,25 +1805,104 @@ function HomePageContent() {
               </div>
             </section>
 
-            {/* Stats — 2×2 small cards */}
-            <div className="md:col-span-2 xl:col-span-4 grid grid-cols-2 gap-3">
-              {stats.map((s) => (
-                <section
-                  key={s.title}
-                  className="h-[170px] sm:h-[186px] bg-white rounded-[22px] p-5 flex flex-col justify-between"
+            {/* Stats — 2×2 small cards with Gemini Star Center Slice */}
+            <div className="md:col-span-2 xl:col-span-4 relative">
+              <div className="grid grid-cols-2 gap-3">
+                {stats.map((s) => (
+                  <section
+                    key={s.title}
+                    className="h-[170px] sm:h-[186px] bg-white rounded-[22px] p-5 flex flex-col justify-between"
+                  >
+                    <CardHeader title={s.title} subtitle={s.subtitle} />
+                    <div className="flex items-end gap-2 flex-wrap">
+                      <span className="text-[36px] sm:text-[42px] font-medium tracking-tight leading-none text-slate-900">
+                        {s.value}
+                        <span className="ml-1 text-base font-normal text-slate-400">{s.unit}</span>
+                      </span>
+                      <span className={`mb-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap ${s.tone}`}>
+                        {s.badge}
+                      </span>
+                    </div>
+                  </section>
+                ))}
+              </div>
+
+              {/* Star Cutout Slice that shapes the 4 Bento cards to follow the Gemini star with an exact 12px gap */}
+              <div
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[76px] h-[76px] pointer-events-none z-10 select-none"
+                aria-hidden="true"
+              >
+                <svg viewBox="0 0 100 100" className="w-full h-full">
+                  <path
+                    d="M 50 4 C 50 26, 74 50, 96 50 C 74 50, 50 74, 50 96 C 50 74, 26 50, 4 50 C 26 50, 50 26, 50 4 Z"
+                    fill="#EFF1F4"
+                  />
+                </svg>
+              </div>
+
+              {/* Center Floating Gemini Star Button (Yellow Radiant Soft Glow, Borderless) */}
+              <button
+                type="button"
+                onClick={() => setProposalOpen(true)}
+                title="Buka Proposal Detail Hasil Studio"
+                aria-label="Buka Proposal Detail Hasil Studio"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[52px] h-[52px] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer z-20 group border-0 outline-none select-none"
+              >
+                <svg
+                  viewBox="0 0 100 100"
+                  className="w-full h-full overflow-visible filter drop-shadow-[0_0_18px_rgba(251,191,36,0.65)] drop-shadow-[0_4px_12px_rgba(245,158,11,0.3)] group-hover:drop-shadow-[0_0_28px_rgba(251,191,36,0.9)] transition-all duration-300"
                 >
-                  <CardHeader title={s.title} subtitle={s.subtitle} />
-                  <div className="flex items-end gap-2 flex-wrap">
-                    <span className="text-[36px] sm:text-[42px] font-medium tracking-tight leading-none text-slate-900">
-                      {s.value}
-                      <span className="ml-1 text-base font-normal text-slate-400">{s.unit}</span>
-                    </span>
-                    <span className={`mb-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap ${s.tone}`}>
-                      {s.badge}
-                    </span>
-                  </div>
-                </section>
-              ))}
+                  <defs>
+                    {/* Yellow Radiant Soft Glow Gradient */}
+                    <linearGradient id="yellow-radiant-soft-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#FEF08A" />
+                      <stop offset="35%" stopColor="#FDE047" />
+                      <stop offset="70%" stopColor="#FACC15" />
+                      <stop offset="100%" stopColor="#F59E0B" />
+                    </linearGradient>
+
+                    {/* Center Luminous Shimmer */}
+                    <radialGradient id="yellow-shimmer" cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor="#FFFBEB" stopOpacity="0.9" />
+                      <stop offset="60%" stopColor="#FDE047" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                    </radialGradient>
+                  </defs>
+
+                  {/* Ambient Glow Halo behind */}
+                  <path
+                    d="M 50 4 C 50 26, 74 50, 96 50 C 74 50, 50 74, 50 96 C 50 74, 26 50, 4 50 C 26 50, 50 26, 50 4 Z"
+                    fill="url(#yellow-radiant-soft-glow)"
+                    className="opacity-45 blur-sm scale-105 transform origin-center transition-opacity group-hover:opacity-75"
+                  />
+
+                  {/* Main Star-Shaped Body (Gemini Silhouette) */}
+                  <path
+                    d="M 50 4 C 50 26, 74 50, 96 50 C 74 50, 50 74, 50 96 C 50 74, 26 50, 4 50 C 26 50, 50 26, 50 4 Z"
+                    fill="url(#yellow-radiant-soft-glow)"
+                    className="transition-transform duration-300 origin-center"
+                  />
+
+                  {/* Center Core Glow */}
+                  <circle cx="50" cy="50" r="22" fill="url(#yellow-shimmer)" pointerEvents="none" />
+
+                  {/* Pure 'i' Detail Symbol (Borderless, no white circle, 100% vector inside star) */}
+                  <g className="transition-transform duration-300 group-hover:scale-115 origin-center pointer-events-none">
+                    {/* Dot of 'i' */}
+                    <circle cx="50" cy="38" r="3.2" fill="#78350F" />
+                    {/* Stem of 'i' */}
+                    <line
+                      x1="50"
+                      y1="46"
+                      x2="50"
+                      y2="62"
+                      stroke="#78350F"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                    />
+                  </g>
+                </svg>
+              </button>
             </div>
 
             {/* Projects list + map */}
@@ -1365,7 +1915,7 @@ function HomePageContent() {
                   actionLabel="Lihat semua proyek"
                 />
 
-                <ul className="mt-3 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1">
+                <ul className="mt-3 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1.5">
                   {SAVED_PROJECTS.map((proj, idx) => {
                     const active = proj.id === selectedProjectId;
                     return (
@@ -1380,10 +1930,10 @@ function HomePageContent() {
                               setSelectedProjectId(proj.id);
                             }
                           }}
-                          className={`relative overflow-hidden flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
+                          className={`relative overflow-hidden flex items-center gap-3 p-3 rounded-2xl transition-all cursor-pointer shadow-none ${
                             active
-                              ? "bg-gradient-to-r from-amber-100/75 via-amber-50/40 to-white border-transparent"
-                              : "bg-white border-slate-200/80 hover:border-slate-300 text-slate-900 hover:bg-slate-50/60"
+                              ? "bg-gradient-to-r from-amber-100/90 via-amber-50/60 to-white border-0"
+                              : "bg-white border border-slate-200/80 hover:border-slate-300 text-slate-900 hover:bg-slate-50/60"
                           }`}
                         >
                           {/* Soft round bubbles: amber in top-left, sky blue in bottom-right */}
@@ -2003,6 +2553,284 @@ function HomePageContent() {
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-white/95 backdrop-blur-xl text-slate-900 text-xs font-bold shadow-[0_12px_36px_rgba(245,158,11,0.2)] flex items-center gap-2.5 border border-amber-300 animate-fadeIn">
           <span className="material-symbols-outlined text-[19px] text-amber-600">check_circle</span>
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Detail Explanation Modal for Hemat, Mandiri, Bersih */}
+      {activePillarModal && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setActivePillarModal(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh] animate-scaleUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with Radiant Soft Glow matching the pillar */}
+            <div
+              className={`p-6 bg-gradient-to-br ${
+                activePillarModal === "hemat"
+                  ? "from-amber-200 via-amber-300 to-yellow-200 text-amber-950 border-b border-amber-300/80"
+                  : activePillarModal === "mandiri"
+                  ? "from-sky-200 via-sky-300 to-blue-200 text-sky-950 border-b border-sky-300/80"
+                  : "from-emerald-200 via-emerald-300 to-teal-200 text-emerald-950 border-b border-emerald-300/80"
+              } relative overflow-hidden`}
+            >
+              {/* Decorative background circle */}
+              <div className="absolute -right-8 -bottom-8 w-36 h-36 rounded-full bg-white/30 pointer-events-none blur-xs" />
+
+              <div className="flex items-center justify-between relative z-10">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 backdrop-blur-md text-xs font-bold shadow-2xs">
+                  <span className="material-symbols-outlined text-[16px]">
+                    {activePillarModal === "hemat"
+                      ? "bolt"
+                      : activePillarModal === "mandiri"
+                      ? "solar_power"
+                      : "eco"}
+                  </span>
+                  <span>
+                    {activePillarModal === "hemat"
+                      ? "Solusi Finansial"
+                      : activePillarModal === "mandiri"
+                      ? "Solusi Otonomi"
+                      : "Solusi Ekologis"}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal(null)}
+                  className="w-8 h-8 rounded-full bg-white/60 hover:bg-white/90 text-slate-800 flex items-center justify-center transition cursor-pointer shadow-2xs border border-white/80"
+                  title="Tutup"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+
+              {/* Title & Headline */}
+              <div className="mt-4 relative z-10">
+                <h3 className="text-2xl font-bold tracking-tight">
+                  {activePillarModal === "hemat"
+                    ? "Kenapa Bisa Lebih Hemat?"
+                    : activePillarModal === "mandiri"
+                    ? "Kenapa Bisa Lebih Mandiri?"
+                    : "Kenapa Disebut Energi Bersih?"}
+                </h3>
+                <p className="text-sm font-medium opacity-90 mt-1">
+                  {activePillarModal === "hemat"
+                    ? "Memangkas tagihan listrik PLN hingga 85% dengan energi surya."
+                    : activePillarModal === "mandiri"
+                    ? "Penuhi hingga 78% kebutuhan listrik mandiri dari atap Anda sendiri."
+                    : "Kurangi 11.5 ton emisi karbon per tahun tanpa polusi operasional."}
+                </p>
+              </div>
+
+              {/* Tab Selector inside modal to easily browse all three */}
+              <div className="flex items-center gap-1.5 mt-5 bg-white/40 p-1 rounded-2xl relative z-10 border border-white/60">
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("hemat")}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                    activePillarModal === "hemat"
+                      ? "bg-white text-amber-950 shadow-sm border border-amber-200/80"
+                      : "text-slate-700 hover:text-slate-950"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">bolt</span>
+                  Hemat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("mandiri")}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                    activePillarModal === "mandiri"
+                      ? "bg-white text-sky-950 shadow-sm border border-sky-200/80"
+                      : "text-slate-700 hover:text-slate-950"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">solar_power</span>
+                  Mandiri
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivePillarModal("bersih")}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                    activePillarModal === "bersih"
+                      ? "bg-white text-emerald-950 shadow-sm border border-emerald-200/80"
+                      : "text-slate-700 hover:text-slate-950"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">eco</span>
+                  Bersih
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Highlight Metric Card */}
+              <div
+                className={`p-4 rounded-2xl border flex items-center gap-4 ${
+                  activePillarModal === "hemat"
+                    ? "bg-amber-50/70 border-amber-200"
+                    : activePillarModal === "mandiri"
+                    ? "bg-sky-50/70 border-sky-200"
+                    : "bg-emerald-50/70 border-emerald-200"
+                }`}
+              >
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                    activePillarModal === "hemat"
+                      ? "bg-amber-500 text-white"
+                      : activePillarModal === "mandiri"
+                      ? "bg-sky-500 text-white"
+                      : "bg-emerald-500 text-white"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[24px]">
+                    {activePillarModal === "hemat"
+                      ? "savings"
+                      : activePillarModal === "mandiri"
+                      ? "offline_bolt"
+                      : "energy_savings_leaf"}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 font-medium">Metrik Proyek ({activeProj.name})</p>
+                  <p className="text-base font-bold text-slate-900">
+                    {activePillarModal === "hemat" && "Hemat Rp 2,0 jt / bulan · ROI 2.4 tahun"}
+                    {activePillarModal === "mandiri" && `${activeProj.capacityKwp} kWp (${activeProj.moduleCount} Panel) · Area Atap ${activeProj.effectiveAreaPct}%`}
+                    {activePillarModal === "bersih" && "11.5 Ton CO₂ / thn · Setara 523 Pohon Rimbun"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Explanation Points */}
+              <div className="space-y-3 pt-1">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Faktor Utama Kenapa Bisa Terjadi
+                </p>
+
+                {activePillarModal === "hemat" && (
+                  <>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 text-sm font-bold">1</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Pemanfaatan Surya Gratis Saat Jam Puncak</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Listrik diproduksi secara maksimal pada pukul 09:00 - 15:00 saat peralatan rumah tangga (seperti AC dan kulkas) aktif, langsung memotong konsumsi berbayar dari PLN.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 text-sm font-bold">2</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Mekanisme Net-Metering PLN</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Kelebihan daya yang tidak terpakai dikirim balik ke jaringan PLN sebagai kredit pengurang tagihan bulanan berikutnya sesuai regulasi resmi ESDM.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 text-sm font-bold">3</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Perlindungan Kenaikan Tarif (Tariff Hedge)</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Investasi balik modal dalam 2.4 tahun, setelah itu seluruh listrik yang dihasilkan menjadi bebas biaya selama sisa umur panel (25+ tahun).
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {activePillarModal === "mandiri" && (
+                  <>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 text-sm font-bold">1</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Menjadi Prosumer (Produsen Mandiri)</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Atap bangunan Anda bertransformasi menjadi unit pembangkit listrik mikro pribadi, mengurangi ketergantungan total pada gardu PLN.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 text-sm font-bold">2</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Desain Terkalibrasi Orientasi Atap</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Simulasi SunSight menata panel di orientasi atap paling optimal (sudut kemiringan dan azimut matahari) untuk hasil produksi daya harian maksimal.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 text-sm font-bold">3</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Dukungan Sistem Baterai (Hybrid-Ready)</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Dapat dipadukan dengan modul baterai ESS untuk cadangan listrik otomatis saat terjadi gangguan pemadaman pada jaringan listrik umum.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {activePillarModal === "bersih" && (
+                  <>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-sm font-bold">1</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Nol Emisi Operasional (Zero Emission)</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Sinar foton matahari diubah langsung menjadi energi listrik tanpa proses pembakaran bahan bakar fosil, tanpa asap knalpot, dan tanpa polusi suara.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-sm font-bold">2</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Menggantikan Pasokan PLTU Batubara</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Setiap kWh listrik bersih dari atap mencegah sekitar ~0.87 kg emisi karbon yang biasanya dilepaskan pembangkit listrik fosil ke udara.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 text-sm font-bold">3</div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">Dampak Nyata Menuju Net-Zero 2060</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
+                          Mereduksi 11.5 ton CO₂ per tahun sama efektifnya dengan menanam 523 pohon rimbun dewasa di sekitar properti Anda.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setActivePillarModal(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActivePillarModal(null);
+                  openProjectInStudio(activeProj);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+              >
+                <span>Buka Detail di Studio</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

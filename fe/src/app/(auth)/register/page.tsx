@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
+import { AuthAlert } from "@/components/auth/AuthAlert";
 import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
-import { ApiRequestError, api, setToken } from "@/lib/api";
+import { PasswordChecklist } from "@/components/auth/PasswordChecklist";
+import { api, setToken } from "@/lib/api";
+import {
+  parseAuthError,
+  validateEmail,
+  validateFullName,
+  validateLocation,
+  validatePassword,
+  validatePasswordConfirmation,
+  validatePhone,
+  type AuthAlertData,
+} from "@/lib/auth-errors";
 import {
   resolveCoordinatesFromAddress,
   saveStoredBiodata,
@@ -16,6 +28,13 @@ import {
 export default function RegisterPage() {
   const router = useRouter();
 
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const phoneInputRef = useRef<HTMLInputElement | null>(null);
+  const locationInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmInputRef = useRef<HTMLInputElement | null>(null);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -25,42 +44,73 @@ export default function RegisterPage() {
   const [confirmation, setConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const [message, setMessage] = useState<string | null>(null);
+  const [alert, setAlert] = useState<AuthAlertData | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [excited, setExcited] = useState(false);
 
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
-    setFieldErrors({});
+    setAlert(null);
 
-    if (!name.trim()) {
-      setFieldErrors({ name: ["Nama lengkap wajib diisi."] });
-      return;
-    }
-    if (!email.trim()) {
-      setFieldErrors({ email: ["Email wajib diisi."] });
-      return;
-    }
-    if (!phone.trim()) {
-      setFieldErrors({ phone: ["Nomor telepon / WhatsApp wajib diisi."] });
-      return;
-    }
-    if (!location.trim()) {
-      setFieldErrors({ location: ["Alamat atau kota domisili wajib diisi."] });
-      return;
-    }
-    if (password.length < 8) {
-      setFieldErrors({ password: ["Password minimal 8 karakter."] });
-      return;
-    }
-    if (password !== confirmation) {
-      setFieldErrors({ password_confirmation: ["Konfirmasi password tidak cocok."] });
+    // 1. Client-side pre-validation: validate all fields simultaneously
+    const errors: Record<string, string[]> = {};
+
+    const nameErr = validateFullName(name);
+    if (nameErr) errors.name = [nameErr];
+
+    const emailErr = validateEmail(email);
+    if (emailErr) errors.email = [emailErr];
+
+    const phoneErr = validatePhone(phone);
+    if (phoneErr) errors.phone = [phoneErr];
+
+    const locErr = validateLocation(location);
+    if (locErr) errors.location = [locErr];
+
+    const pwdErr = validatePassword(password);
+    if (pwdErr) errors.password = [pwdErr];
+
+    const confErr = validatePasswordConfirmation(password, confirmation);
+    if (confErr) errors.password_confirmation = [confErr];
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setAlert({
+        title: "Periksa Kembali Isian Anda",
+        description: "Beberapa kolom biodata atau kata sandi belum lengkap atau belum sesuai ketentuan.",
+      });
+
+      // Auto-focus first erroneous input
+      if (errors.name) {
+        nameInputRef.current?.focus();
+      } else if (errors.email) {
+        emailInputRef.current?.focus();
+      } else if (errors.phone) {
+        phoneInputRef.current?.focus();
+      } else if (errors.location) {
+        locationInputRef.current?.focus();
+      } else if (errors.password) {
+        passwordInputRef.current?.focus();
+      } else if (errors.password_confirmation) {
+        confirmInputRef.current?.focus();
+      }
       return;
     }
 
     setBusy(true);
+    setFieldErrors({});
+
     try {
       const result = await api.register({
         name: name.trim(),
@@ -96,11 +146,14 @@ export default function RegisterPage() {
 
       router.push("/");
     } catch (caught) {
-      if (caught instanceof ApiRequestError) {
-        setMessage(caught.message);
-        setFieldErrors(caught.fieldErrors);
-      } else {
-        setMessage("Terjadi kesalahan yang tidak terduga.");
+      const parsed = parseAuthError(caught, "register");
+      setAlert(parsed.alert);
+      setFieldErrors(parsed.fieldErrors);
+
+      if (parsed.fieldErrors.email) {
+        emailInputRef.current?.focus();
+      } else if (parsed.fieldErrors.password) {
+        passwordInputRef.current?.focus();
       }
     } finally {
       setBusy(false);
@@ -109,27 +162,29 @@ export default function RegisterPage() {
 
   return (
     <AuthSplitShell
-      title="Buat Akun Baru"
-      subtitle="Isi biodata singkat untuk mulai simulasi atap surya Anda"
+      title="Buat Akun SunSight"
+      subtitle="Daftar akun gratis untuk menyimpan desain atap surya, analisis finansial, dan proposal teknis."
       backHref="/"
       backLabel="Kembali"
       isExcited={excited}
       bottomSlot={
         <p className="text-slate-600">
-          Sudah punya akun?{" "}
+          Sudah memiliki akun SunSight?{" "}
           <Link href="/login" className="font-bold text-amber-800 hover:text-amber-950 hover:underline ml-1">
             Masuk Sekarang
           </Link>
         </p>
       }
     >
-      {message !== null && (
-        <div
-          role="alert"
-          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-red-50 text-red-700 border border-red-200/80"
-        >
-          {message}
-        </div>
+      {/* Interactive Error / Alert banner */}
+      {alert && (
+        <AuthAlert
+          type="error"
+          title={alert.title}
+          description={alert.description}
+          action={alert.action}
+          onDismiss={() => setAlert(null)}
+        />
       )}
 
       <form onSubmit={onSubmit} className="space-y-3" noValidate>
@@ -139,6 +194,7 @@ export default function RegisterPage() {
             Nama Lengkap
           </label>
           <input
+            ref={nameInputRef}
             id="reg-name"
             type="text"
             required
@@ -146,14 +202,20 @@ export default function RegisterPage() {
             placeholder="cth. Muhammad Raditya"
             disabled={busy}
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            className={`w-full px-3.5 py-2 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-              fieldErrors.name ? "border-red-400 bg-red-50/30" : "border-slate-200"
+            onChange={(e) => {
+              setName(e.target.value);
+              clearFieldError("name");
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              fieldErrors.name
+                ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
             }`}
           />
-          {fieldErrors.name !== undefined && (
-            <span className="text-[11px] font-medium text-red-600 block">
-              {fieldErrors.name[0]}
+          {fieldErrors.name?.[0] && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+              <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+              <span>{fieldErrors.name[0]}</span>
             </span>
           )}
         </div>
@@ -164,6 +226,7 @@ export default function RegisterPage() {
             Alamat Email
           </label>
           <input
+            ref={emailInputRef}
             id="reg-email"
             type="email"
             required
@@ -171,14 +234,20 @@ export default function RegisterPage() {
             placeholder="nama@email.com"
             disabled={busy}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-3.5 py-2 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-              fieldErrors.email ? "border-red-400 bg-red-50/30" : "border-slate-200"
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearFieldError("email");
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              fieldErrors.email
+                ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
             }`}
           />
-          {fieldErrors.email !== undefined && (
-            <span className="text-[11px] font-medium text-red-600 block">
-              {fieldErrors.email[0]}
+          {fieldErrors.email?.[0] && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+              <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+              <span>{fieldErrors.email[0]}</span>
             </span>
           )}
         </div>
@@ -190,6 +259,7 @@ export default function RegisterPage() {
               No. Telepon / WA
             </label>
             <input
+              ref={phoneInputRef}
               id="reg-phone"
               type="tel"
               required
@@ -197,14 +267,20 @@ export default function RegisterPage() {
               placeholder="08xxxxxxxxxx"
               disabled={busy}
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className={`w-full px-3.5 py-2 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-                fieldErrors.phone ? "border-red-400 bg-red-50/30" : "border-slate-200"
+              onChange={(e) => {
+                setPhone(e.target.value);
+                clearFieldError("phone");
+              }}
+              className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+                fieldErrors.phone
+                  ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                  : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
               }`}
             />
-            {fieldErrors.phone !== undefined && (
-              <span className="text-[11px] font-medium text-red-600 block">
-                {fieldErrors.phone[0]}
+            {fieldErrors.phone?.[0] && (
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+                <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+                <span>{fieldErrors.phone[0]}</span>
               </span>
             )}
           </div>
@@ -233,6 +309,7 @@ export default function RegisterPage() {
             Alamat / Kota Domisili
           </label>
           <input
+            ref={locationInputRef}
             id="reg-location"
             type="text"
             required
@@ -240,14 +317,20 @@ export default function RegisterPage() {
             placeholder="cth. Jl. Pajajaran No. 42, Kota Bogor"
             disabled={busy}
             value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className={`w-full px-3.5 py-2 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-              fieldErrors.location ? "border-red-400 bg-red-50/30" : "border-slate-200"
+            onChange={(e) => {
+              setLocation(e.target.value);
+              clearFieldError("location");
+            }}
+            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              fieldErrors.location
+                ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
             }`}
           />
-          {fieldErrors.location !== undefined && (
-            <span className="text-[11px] font-medium text-red-600 block">
-              {fieldErrors.location[0]}
+          {fieldErrors.location?.[0] && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+              <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+              <span>{fieldErrors.location[0]}</span>
             </span>
           )}
         </div>
@@ -255,13 +338,12 @@ export default function RegisterPage() {
         {/* Password & Konfirmasi Password */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
           <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label htmlFor="reg-password" className="block text-xs font-semibold text-slate-700">
-                Password (min. 8)
-              </label>
-            </div>
+            <label htmlFor="reg-password" className="block text-xs font-semibold text-slate-700">
+              Kata Sandi
+            </label>
             <div className="relative">
               <input
+                ref={passwordInputRef}
                 id="reg-password"
                 type={showPassword ? "text" : "password"}
                 required
@@ -270,9 +352,14 @@ export default function RegisterPage() {
                 data-mascot-password="true"
                 disabled={busy}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-3.5 py-2 pr-9 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-                  fieldErrors.password ? "border-red-400 bg-red-50/30" : "border-slate-200"
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearFieldError("password");
+                }}
+                className={`w-full px-3.5 py-2 pr-9 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+                  fieldErrors.password
+                    ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                    : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
                 }`}
               />
               <button
@@ -287,40 +374,51 @@ export default function RegisterPage() {
                 </span>
               </button>
             </div>
-            {fieldErrors.password !== undefined && (
-              <span className="text-[11px] font-medium text-red-600 block">
-                {fieldErrors.password[0]}
+            {fieldErrors.password?.[0] && (
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+                <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+                <span>{fieldErrors.password[0]}</span>
               </span>
             )}
           </div>
 
           <div className="space-y-1">
             <label htmlFor="reg-password-confirm" className="block text-xs font-semibold text-slate-700">
-              Konfirmasi Password
+              Konfirmasi Kata Sandi
             </label>
             <div className="relative">
               <input
+                ref={confirmInputRef}
                 id="reg-password-confirm"
                 type={showPassword ? "text" : "password"}
                 required
                 autoComplete="new-password"
-                placeholder="Ulangi password"
+                placeholder="Ulangi kata sandi"
                 data-mascot-password="true"
                 disabled={busy}
                 value={confirmation}
-                onChange={(e) => setConfirmation(e.target.value)}
-                className={`w-full px-3.5 py-2 pr-9 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-                  fieldErrors.password_confirmation ? "border-red-400 bg-red-50/30" : "border-slate-200"
+                onChange={(e) => {
+                  setConfirmation(e.target.value);
+                  clearFieldError("password_confirmation");
+                }}
+                className={`w-full px-3.5 py-2 pr-9 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+                  fieldErrors.password_confirmation
+                    ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                    : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
                 }`}
               />
             </div>
-            {fieldErrors.password_confirmation !== undefined && (
-              <span className="text-[11px] font-medium text-red-600 block">
-                {fieldErrors.password_confirmation[0]}
+            {fieldErrors.password_confirmation?.[0] && (
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+                <span className="material-symbols-outlined text-[13px] leading-none shrink-0">info</span>
+                <span>{fieldErrors.password_confirmation[0]}</span>
               </span>
             )}
           </div>
         </div>
+
+        {/* Live Password Strength & Match Checklist */}
+        <PasswordChecklist password={password} confirmation={confirmation} />
 
         {/* Action Buttons */}
         <div className="pt-2 space-y-2">
@@ -338,9 +436,11 @@ export default function RegisterPage() {
             type="button"
             disabled={busy}
             onClick={() =>
-              setMessage(
-                "Pendaftaran via Google belum diaktifkan pada server lokal. Silakan lengkapi biodata di atas untuk mendaftar.",
-              )
+              setAlert({
+                title: "Daftar dengan Google",
+                description:
+                  "Pendaftaran instan via Google belum diaktifkan pada server lokal. Silakan lengkapi formulir di atas untuk mendaftar langsung.",
+              })
             }
             className="w-full py-2 px-4 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-title font-semibold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-2xs"
           >

@@ -1,14 +1,15 @@
-import type {
-  AuthResponse,
-  Imagery,
-  Paginated,
-  SaveSimulationResponse,
-  SimulationDetail,
-  SimulationInput,
-  SimulationOptions,
-  SimulationResult,
-  SimulationSummary,
-  User,
+import {
+  ApiRequestError,
+  type AuthResponse,
+  type Imagery,
+  type Paginated,
+  type SaveSimulationResponse,
+  type SimulationDetail,
+  type SimulationInput,
+  type SimulationOptions,
+  type SimulationResult,
+  type SimulationSummary,
+  type User,
 } from "./api";
 
 const STORAGE_SIMULATIONS_KEY = "sunsight.mock_simulations";
@@ -340,6 +341,9 @@ function saveSimulations(list: SimulationDetail[]): void {
 
 export const mockApi = {
   login: async (body: { email: string; password: string }): Promise<AuthResponse> => {
+    if (body.password === "salah" || body.password === "wrong") {
+      throw new ApiRequestError(401, "Email atau password salah.");
+    }
     const name = body.email.split("@")[0].replace(/[._-]/g, " ") || "Pengguna SunSight";
     const capitalName = name.charAt(0).toUpperCase() + name.slice(1);
     return {
@@ -353,6 +357,11 @@ export const mockApi = {
   },
 
   register: async (body: { name: string; email: string }): Promise<AuthResponse> => {
+    if (body.email === "taken@sunsight.id" || body.email === "admin@sunsight.id") {
+      throw new ApiRequestError(422, "The email has already been taken.", {
+        email: ["The email has already been taken."],
+      });
+    }
     return {
       token: "sunsight_mock_token_" + Date.now(),
       user: {
@@ -367,7 +376,12 @@ export const mockApi = {
     return { message: "Logged out (mock)" };
   },
 
-  forgotPassword: async (): Promise<{ message: string }> => {
+  forgotPassword: async (email?: string): Promise<{ message: string }> => {
+    if (email === "notfound@sunsight.id") {
+      throw new ApiRequestError(422, "The selected email is invalid.", {
+        email: ["The selected email is invalid."],
+      });
+    }
     return { message: "Tautan reset password telah dikirim ke email Anda (mock)." };
   },
 

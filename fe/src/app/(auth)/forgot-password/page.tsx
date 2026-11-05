@@ -1,40 +1,60 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
+import { AuthAlert } from "@/components/auth/AuthAlert";
 import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
-import { ApiRequestError, api } from "@/lib/api";
+import { api } from "@/lib/api";
+import {
+  parseAuthError,
+  validateEmail,
+  type AuthAlertData,
+} from "@/lib/auth-errors";
 
 export default function ForgotPasswordPage() {
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
-  const [message, setMessage] = useState<string | null>(null);
+  const [alert, setAlert] = useState<AuthAlertData | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
+    setAlert(null);
     setStatus("idle");
-    setMessage(null);
+
+    const emailErr = validateEmail(email);
+    if (emailErr) {
+      setFieldErrors({ email: [emailErr] });
+      setAlert({
+        title: "Periksa Alamat Email",
+        description: "Harap masukkan alamat email yang valid untuk menerima tautan pemulihan.",
+      });
+      emailInputRef.current?.focus();
+      return;
+    }
+
+    setBusy(true);
     setFieldErrors({});
 
     try {
-      await api.forgotPassword({ email });
+      await api.forgotPassword({ email: email.trim() });
       setStatus("success");
-      setMessage(
-        "Tautan atur ulang password telah dikirim. Silakan periksa kotak masuk atau folder spam email Anda.",
-      );
+      setAlert({
+        title: "Tautan Pemulihan Terkirim!",
+        description:
+          "Kami telah mengirimkan instruksi dan tautan atur ulang kata sandi ke email Anda. Silakan periksa kotak masuk atau folder spam.",
+      });
       setEmail("");
     } catch (caught) {
       setStatus("error");
-      if (caught instanceof ApiRequestError) {
-        setMessage(caught.message);
-        setFieldErrors(caught.fieldErrors);
-      } else {
-        setMessage("Terjadi kesalahan yang tidak terduga.");
-      }
+      const parsed = parseAuthError(caught, "forgot-password");
+      setAlert(parsed.alert);
+      setFieldErrors(parsed.fieldErrors);
+      emailInputRef.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -42,70 +62,86 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthSplitShell
-      title="Lupa password?"
-      subtitle="Masukkan email terdaftar untuk menerima tautan pemulihan"
+      title="Lupa Kata Sandi?"
+      subtitle="Masukkan email akun Anda untuk menerima instruksi pemulihan kata sandi secara aman."
       backHref="/login"
       backLabel="Kembali ke Masuk"
       bottomSlot={
-        <>
-          Ingat password Anda?{" "}
-          <Link href="/login" className="font-bold text-[#18191C] hover:underline ml-0.5">
-            Masuk
+        <p className="text-slate-600">
+          Sudah ingat kata sandi akun Anda?{" "}
+          <Link href="/login" className="font-bold text-amber-800 hover:text-amber-950 hover:underline ml-1">
+            Kembali ke Masuk
           </Link>
-        </>
+        </p>
       }
     >
-      {status === "error" && message !== null && (
-        <div
-          role="alert"
-          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-red-50 text-red-700 border border-red-200/80"
-        >
-          {message}
-        </div>
+      {alert && (
+        <AuthAlert
+          type={status === "success" ? "success" : "error"}
+          title={alert.title}
+          description={alert.description}
+          action={alert.action}
+          onDismiss={() => setAlert(null)}
+        />
       )}
 
-      {status === "success" && message !== null && (
-        <div
-          role="alert"
-          className="mb-4 px-3.5 py-2.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200/80"
-        >
-          {message}
+      {/* Helpful Guidance Notice Card */}
+      <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/60 text-left flex items-start gap-2.5 mb-3">
+        <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5">mail_lock</span>
+        <div className="text-[12px] leading-relaxed text-slate-600">
+          <span className="font-semibold text-slate-800 block">Prosedur Pemulihan Akun</span>
+          Tautan verifikasi resmi yang aktif selama 60 menit akan dikirimkan ke email terdaftar Anda untuk mengatur ulang kata sandi.
         </div>
-      )}
+      </div>
 
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
-        <div className="space-y-1 text-left">
+      <form onSubmit={onSubmit} className="space-y-3.5" noValidate>
+        <div className="space-y-1.5 text-left">
           <label htmlFor="forgot-email" className="block text-xs font-semibold text-slate-700">
-            Alamat Email
+            Alamat Email Terdaftar
           </label>
           <input
+            ref={emailInputRef}
             id="forgot-email"
             type="email"
             required
             autoComplete="email"
-            placeholder="nama@email.com"
+            placeholder="nama@domain.com"
             disabled={busy || status === "success"}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition ${
-              fieldErrors.email ? "border-red-400 bg-red-50/30" : "border-slate-200"
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (fieldErrors.email) {
+                setFieldErrors({});
+              }
+            }}
+            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              fieldErrors.email
+                ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
+                : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
             }`}
           />
-          {fieldErrors.email !== undefined && (
-            <span className="text-[11px] font-medium text-red-600 block">
-              {fieldErrors.email[0]}
+          {fieldErrors.email?.[0] && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-rose-600 mt-1">
+              <span className="material-symbols-outlined text-[14px] leading-none shrink-0">info</span>
+              <span>{fieldErrors.email[0]}</span>
             </span>
           )}
         </div>
 
-        <div className="pt-2">
+        <div className="pt-2 space-y-2.5">
           <button
             type="submit"
             disabled={busy || status === "success"}
             className="w-full py-3 px-4 rounded-full bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.99] text-amber-950 font-title font-bold text-xs sm:text-[13px] transition cursor-pointer shadow-[0_3px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {busy ? "Mengirim Tautan..." : status === "success" ? "Tautan Terkirim" : "Kirim Tautan Pemulihan"}
+            {busy ? "Mengirim Tautan..." : status === "success" ? "Tautan Terkirim" : "Kirim Tautan Pemulihan Kata Sandi"}
           </button>
+
+          {/* Micro Trust & Security Assurance */}
+          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
+            <span className="material-symbols-outlined text-[13px] text-emerald-600">verified_user</span>
+            <span>Tautan verifikasi dikirim secara rahasia & aman</span>
+          </div>
         </div>
       </form>
     </AuthSplitShell>

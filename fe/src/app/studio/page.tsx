@@ -7,14 +7,19 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Mouse
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { api, setToken, type SimulationInput, type SimulationParameters, type SimulationResult } from "@/lib/api";
 import { formatRp } from "@/lib/format";
-import { getStoredBiodata, saveStoredBiodata } from "@/lib/profile";
+import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/profile";
 
 type CvLayer = "satellite" | "cv" | "heatmap";
-type RoofShape = "rectangle" | "l-shape" | "trapezoid";
-type CadTool = "select" | "edit_polygon" | "add_polygon" | "add_obstacle" | "measure";
+type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
+type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "add_polygon" | "add_obstacle" | "measure";
 type Orientation = "portrait" | "landscape";
 type InverterType = "string" | "micro";
 type SlotState = "active" | "skylight" | "hvac" | "empty";
+
+export interface Point2D {
+  x: number;
+  y: number;
+}
 
 export interface RoofFacet {
   id: string;
@@ -38,6 +43,8 @@ export interface RoofFacet {
   panelGap: number;
   slotOverrides: Record<string, SlotState>;
   customModuleCount: number | null;
+  vertices?: Point2D[];
+  alignToAzimuth?: boolean;
 }
 
 type DragMode = "move" | "rot" | "br" | "r" | "b" | "tl" | "tr" | "bl";
@@ -53,6 +60,30 @@ interface DragState {
   initOy: number;
   initLat: number;
   initLng: number;
+}
+
+export interface PanelSlotItem {
+  r: number;
+  c: number;
+  key: string;
+  x: number;
+  y: number;
+  w: number;
+  l: number;
+  rotationDeg?: number;
+  state?: SlotState;
+}
+
+interface VertexDragState {
+  facetId: string;
+  vertexIdx: number;
+  startX: number;
+  startY: number;
+  initVertices: Point2D[];
+  initOx: number;
+  initOy: number;
+  initLat?: number;
+  initLng?: number;
 }
 
 const MODULE_SPECS: Record<
@@ -89,30 +120,35 @@ const MODULE_SPECS: Record<
 };
 
 const ECO_TREE_CONFIGS = [
-  { id: 0, layer: "front" as const, x: 168, y: 75, scale: 1.14, type: "oak" as const, delay: 20 },
-  { id: 1, layer: "mid" as const, x: 135, y: 56, scale: 0.92, type: "pine" as const, delay: 40 },
-  { id: 2, layer: "back" as const, x: 175, y: 46, scale: 0.7, type: "poplar" as const, delay: 60 },
-  { id: 3, layer: "mid" as const, x: 202, y: 56, scale: 0.9, type: "oak" as const, delay: 80 },
-  { id: 4, layer: "front" as const, x: 228, y: 74, scale: 1.12, type: "poplar" as const, delay: 100 },
-  { id: 5, layer: "back" as const, x: 118, y: 41, scale: 0.72, type: "pine" as const, delay: 120 },
-  { id: 6, layer: "mid" as const, x: 70, y: 53, scale: 0.9, type: "oak" as const, delay: 140 },
-  { id: 7, layer: "front" as const, x: 110, y: 73, scale: 1.16, type: "oak" as const, delay: 160 },
-  { id: 8, layer: "back" as const, x: 210, y: 44, scale: 0.67, type: "poplar" as const, delay: 180 },
-  { id: 9, layer: "mid" as const, x: 238, y: 54, scale: 0.89, type: "pine" as const, delay: 200 },
-  { id: 10, layer: "back" as const, x: 85, y: 38, scale: 0.66, type: "pine" as const, delay: 220 },
-  { id: 11, layer: "front" as const, x: 290, y: 75, scale: 1.15, type: "oak" as const, delay: 240 },
-  { id: 12, layer: "mid" as const, x: 170, y: 58, scale: 0.88, type: "pine" as const, delay: 260 },
-  { id: 13, layer: "back" as const, x: 245, y: 42, scale: 0.71, type: "oak" as const, delay: 280 },
-  { id: 14, layer: "mid" as const, x: 102, y: 53, scale: 0.87, type: "poplar" as const, delay: 300 },
-  { id: 15, layer: "front" as const, x: 48, y: 76, scale: 1.1, type: "pine" as const, delay: 320 },
-  { id: 16, layer: "back" as const, x: 52, y: 42, scale: 0.7, type: "oak" as const, delay: 340 },
-  { id: 17, layer: "mid" as const, x: 272, y: 53, scale: 0.91, type: "pine" as const, delay: 360 },
-  { id: 18, layer: "back" as const, x: 280, y: 41, scale: 0.66, type: "pine" as const, delay: 380 },
-  { id: 19, layer: "mid" as const, x: 35, y: 62, scale: 0.88, type: "poplar" as const, delay: 400 },
-  { id: 20, layer: "back" as const, x: 22, y: 49, scale: 0.65, type: "pine" as const, delay: 420 },
-  { id: 21, layer: "back" as const, x: 150, y: 44, scale: 0.68, type: "pine" as const, delay: 440 },
-  { id: 22, layer: "mid" as const, x: 308, y: 54, scale: 0.87, type: "oak" as const, delay: 460 },
-  { id: 23, layer: "back" as const, x: 315, y: 43, scale: 0.69, type: "poplar" as const, delay: 480 },
+  // --- Back Hill Layer (9 trees) ---
+  { id: 0, growRank: 3, layer: "back" as const, x: 175, y: 46, scale: 0.7, type: "poplar" as const },
+  { id: 1, growRank: 5, layer: "back" as const, x: 118, y: 41, scale: 0.72, type: "pine" as const },
+  { id: 2, growRank: 8, layer: "back" as const, x: 210, y: 44, scale: 0.67, type: "poplar" as const },
+  { id: 3, growRank: 10, layer: "back" as const, x: 85, y: 38, scale: 0.66, type: "pine" as const },
+  { id: 4, growRank: 14, layer: "back" as const, x: 245, y: 42, scale: 0.71, type: "oak" as const },
+  { id: 5, growRank: 17, layer: "back" as const, x: 52, y: 42, scale: 0.7, type: "oak" as const },
+  { id: 6, growRank: 20, layer: "back" as const, x: 280, y: 41, scale: 0.66, type: "pine" as const },
+  { id: 7, growRank: 23, layer: "back" as const, x: 22, y: 49, scale: 0.65, type: "pine" as const },
+  { id: 8, growRank: 24, layer: "back" as const, x: 315, y: 43, scale: 0.69, type: "poplar" as const },
+
+  // --- Mid Hill Layer (9 trees) ---
+  { id: 9, growRank: 2, layer: "mid" as const, x: 135, y: 56, scale: 0.92, type: "pine" as const },
+  { id: 10, growRank: 4, layer: "mid" as const, x: 202, y: 56, scale: 0.9, type: "oak" as const },
+  { id: 11, growRank: 7, layer: "mid" as const, x: 70, y: 53, scale: 0.9, type: "oak" as const },
+  { id: 12, growRank: 9, layer: "mid" as const, x: 238, y: 54, scale: 0.89, type: "pine" as const },
+  { id: 13, growRank: 13, layer: "mid" as const, x: 170, y: 58, scale: 0.88, type: "pine" as const },
+  { id: 14, growRank: 16, layer: "mid" as const, x: 102, y: 53, scale: 0.87, type: "poplar" as const },
+  { id: 15, growRank: 19, layer: "mid" as const, x: 272, y: 53, scale: 0.91, type: "pine" as const },
+  { id: 16, growRank: 21, layer: "mid" as const, x: 35, y: 62, scale: 0.88, type: "poplar" as const },
+  { id: 17, growRank: 22, layer: "mid" as const, x: 308, y: 54, scale: 0.87, type: "oak" as const },
+
+  // --- Front Hill Layer (6 focal trees) ---
+  { id: 18, growRank: 1, layer: "front" as const, x: 168, y: 75, scale: 1.14, type: "oak" as const },
+  { id: 19, growRank: 6, layer: "front" as const, x: 228, y: 74, scale: 1.12, type: "poplar" as const },
+  { id: 20, growRank: 11, layer: "front" as const, x: 110, y: 73, scale: 1.16, type: "oak" as const },
+  { id: 21, growRank: 12, layer: "front" as const, x: 290, y: 75, scale: 1.15, type: "oak" as const },
+  { id: 22, growRank: 15, layer: "front" as const, x: 48, y: 76, scale: 1.1, type: "pine" as const },
+  { id: 23, growRank: 18, layer: "front" as const, x: 195, y: 74, scale: 1.08, type: "oak" as const },
 ];
 
 function renderTreeSvg(type: "pine" | "oak" | "poplar") {
@@ -151,53 +187,686 @@ function renderTreeSvg(type: "pine" | "oak" | "poplar") {
   );
 }
 
-const PRESET_ADDRESSES = [
+interface StudioSavedProject {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lon: number;
+  capacityKwp: number;
+  ridge: number;
+  slope: number;
+  shape: RoofShape;
+  deg: number;
+}
+
+const STUDIO_SAVED_PROJECTS: StudioSavedProject[] = [
   {
-    label: "Jl. Pajajaran No. 42, Bogor Tengah",
-    lat: -6.5975,
-    lon: 106.8045,
+    id: "proj-bogor-tengah",
+    name: "Menteng Residence",
+    address: "Jl. Pajajaran No. 42, Bogor Tengah",
+    lat: -6.595038,
+    lon: 106.797241,
+    capacityKwp: 8.3,
     ridge: 12.48,
     slope: 7.28,
-    shape: "rectangle" as RoofShape,
+    shape: "rectangle",
     deg: -4,
   },
   {
-    label: "Baranangsiang Indah, Bogor Timur",
+    id: "proj-baranangsiang",
+    name: "Baranangsiang Indah",
+    address: "Komp. Baranangsiang Indah Blok C, Bogor Timur",
     lat: -6.6110,
     lon: 106.8160,
+    capacityKwp: 12.5,
     ridge: 14.2,
     slope: 8.0,
-    shape: "l-shape" as RoofShape,
+    shape: "l-shape",
     deg: 8,
   },
   {
-    label: "Taman Yasmin Sektor 3, Bogor Barat",
+    id: "proj-yasmin",
+    name: "Taman Yasmin Sektor 3",
+    address: "Jl. Yasmin Raya No. 88, Bogor Barat",
     lat: -6.5615,
     lon: 106.7620,
+    capacityKwp: 6.5,
     ridge: 11.5,
     slope: 6.8,
-    shape: "trapezoid" as RoofShape,
+    shape: "trapezoid",
     deg: 0,
   },
   {
-    label: "Jl. Ir. H. Juanda (Kebun Raya), Bogor",
+    id: "proj-kebun-raya",
+    name: "Paviliun Kebun Raya",
+    address: "Jl. Ir. H. Juanda No. 13, Bogor Tengah",
     lat: -6.5980,
     lon: 106.7950,
+    capacityKwp: 15.0,
     ridge: 15.0,
     slope: 8.5,
-    shape: "rectangle" as RoofShape,
+    shape: "rectangle",
     deg: 12,
   },
   {
-    label: "Bantarjati, Bogor Utara",
+    id: "proj-bantarjati",
+    name: "Bantarjati Permai",
+    address: "Jl. Achmad Adnawijaya No. 15, Bogor Utara",
     lat: -6.5780,
     lon: 106.8080,
+    capacityKwp: 10.2,
     ridge: 10.8,
     slope: 6.4,
-    shape: "rectangle" as RoofShape,
+    shape: "rectangle",
     deg: -6,
   },
 ];
+
+const PRESET_ADDRESSES = STUDIO_SAVED_PROJECTS.map((p) => ({
+  label: `${p.name}, ${p.address}`,
+  lat: p.lat,
+  lon: p.lon,
+  ridge: p.ridge,
+  slope: p.slope,
+  shape: p.shape,
+  deg: p.deg,
+}));
+
+export interface DetectedRoofModel {
+  id: string;
+  name: string;
+  confidence: number;
+  area: number;
+  ridge: number;
+  slope: number;
+  pitch: number;
+  azimuth: number;
+  rotation: number;
+  lat: number;
+  lng: number;
+  offsetX: number;
+  offsetY: number;
+  vertices: Point2D[];
+}
+
+export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
+  {
+    id: "facet-1",
+    name: "Bidang Atap Utama",
+    confidence: 98.4,
+    area: 90.85,
+    ridge: 12.48,
+    slope: 7.28,
+    pitch: 22,
+    azimuth: 188,
+    rotation: -4,
+    lat: -6.595038,
+    lng: 106.797241,
+    offsetX: 0,
+    offsetY: 0,
+    vertices: [
+      { x: -6.24, y: -3.64 },
+      { x: 6.24, y: -3.64 },
+      { x: 6.24, y: 3.64 },
+      { x: -6.24, y: 3.64 },
+    ],
+  },
+  {
+    id: "facet-2",
+    name: "Bidang Atap Sayap",
+    confidence: 94.2,
+    area: 36.0,
+    ridge: 7.5,
+    slope: 4.8,
+    pitch: 18,
+    azimuth: 98,
+    rotation: -4,
+    lat: -6.59495,
+    lng: 106.79742,
+    offsetX: 160,
+    offsetY: 45,
+    vertices: [
+      { x: -3.75, y: -2.4 },
+      { x: 3.75, y: -2.4 },
+      { x: 3.75, y: 2.4 },
+      { x: -3.75, y: 2.4 },
+    ],
+  },
+  {
+    id: "facet-carport",
+    name: "Bidang Atap Carport Depan",
+    confidence: 91.8,
+    area: 23.56,
+    ridge: 6.2,
+    slope: 3.8,
+    pitch: 15,
+    azimuth: 180,
+    rotation: -4,
+    lat: -6.59518,
+    lng: 106.79712,
+    offsetX: -120,
+    offsetY: 110,
+    vertices: [
+      { x: -3.1, y: -1.9 },
+      { x: 3.1, y: -1.9 },
+      { x: 3.1, y: 1.9 },
+      { x: -3.1, y: 1.9 },
+    ],
+  },
+  {
+    id: "facet-east",
+    name: "Atap Bangunan Timur",
+    confidence: 89.5,
+    area: 58.8,
+    ridge: 9.8,
+    slope: 6.0,
+    pitch: 20,
+    azimuth: 190,
+    rotation: 12,
+    lat: -6.59482,
+    lng: 106.79768,
+    offsetX: 240,
+    offsetY: -65,
+    vertices: [
+      { x: -4.9, y: -3.0 },
+      { x: 4.9, y: -3.0 },
+      { x: 4.9, y: 3.0 },
+      { x: -4.9, y: 3.0 },
+    ],
+  },
+  {
+    id: "facet-south",
+    name: "Atap Bangunan Selatan",
+    confidence: 87.2,
+    area: 65.0,
+    ridge: 10.0,
+    slope: 6.5,
+    pitch: 22,
+    azimuth: 184,
+    rotation: -8,
+    lat: -6.59536,
+    lng: 106.79735,
+    offsetX: 70,
+    offsetY: 175,
+    vertices: [
+      { x: -5.0, y: -3.25 },
+      { x: 5.0, y: -3.25 },
+      { x: 5.0, y: 3.25 },
+      { x: -5.0, y: 3.25 },
+    ],
+  },
+];
+
+export function generateGpsCandidates(lat: number, lng: number): DetectedRoofModel[] {
+  return [
+    {
+      id: "gps-roof-main",
+      name: "Bidang Atap Utama",
+      confidence: 98.6,
+      area: 88.5,
+      ridge: 12.0,
+      slope: 7.2,
+      pitch: 22,
+      azimuth: 188,
+      rotation: -4,
+      lat: lat,
+      lng: lng,
+      offsetX: 0,
+      offsetY: 0,
+      vertices: [
+        { x: -6.0, y: -3.6 },
+        { x: 6.0, y: -3.6 },
+        { x: 6.0, y: 3.6 },
+        { x: -6.0, y: 3.6 },
+      ],
+    },
+    {
+      id: "gps-roof-wing",
+      name: "Bidang Atap Sayap",
+      confidence: 94.2,
+      area: 36.0,
+      ridge: 7.5,
+      slope: 4.8,
+      pitch: 18,
+      azimuth: 98,
+      rotation: -4,
+      lat: lat + 0.00008,
+      lng: lng + 0.00015,
+      offsetX: 140,
+      offsetY: 35,
+      vertices: [
+        { x: -3.75, y: -2.4 },
+        { x: 3.75, y: -2.4 },
+        { x: 3.75, y: 2.4 },
+        { x: -3.75, y: 2.4 },
+      ],
+    },
+    {
+      id: "gps-roof-carport",
+      name: "Bidang Atap Carport Depan",
+      confidence: 91.8,
+      area: 24.0,
+      ridge: 6.0,
+      slope: 4.0,
+      pitch: 15,
+      azimuth: 180,
+      rotation: -4,
+      lat: lat - 0.0001,
+      lng: lng - 0.0001,
+      offsetX: -120,
+      offsetY: 85,
+      vertices: [
+        { x: -3.0, y: -2.0 },
+        { x: 3.0, y: -2.0 },
+        { x: 3.0, y: 2.0 },
+        { x: -3.0, y: 2.0 },
+      ],
+    },
+  ];
+}
+
+export function computePolygonArea(vertices: Point2D[]): number {
+  if (!vertices || vertices.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < vertices.length; i++) {
+    const j = (i + 1) % vertices.length;
+    area += vertices[i].x * vertices[j].y;
+    area -= vertices[j].x * vertices[i].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+export function pointInPolygon(pt: Point2D, poly: Point2D[]): boolean {
+  if (!poly || poly.length < 3) return true;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    const intersect =
+      yi > pt.y !== yj > pt.y &&
+      pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// ---------------------------------------------------------------------------
+// Polygon geometry helpers (all coordinates in meters, facet-local frame)
+// ---------------------------------------------------------------------------
+
+export function polygonBounds(poly: Point2D[]) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of poly) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+export function polygonPerimeter(poly: Point2D[]): number {
+  let p = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    p += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return p;
+}
+
+function signedArea(poly: Point2D[]): number {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const j = (i + 1) % poly.length;
+    a += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
+  }
+  return a / 2;
+}
+
+/** 
+ * Inward offset of a polygon by distance d.
+ * Uses miter offset first, but if lines cross, invert, or collapse on irregular/acute vertices,
+ * seamlessly falls back to centroid-directed inward scaling so the setback boundary and usable interior
+ * always exist, preserve the polygon's exact shape, and never drop to 0.
+ */
+export function insetPolygon(poly: Point2D[], d: number): Point2D[] {
+  const n = poly.length;
+  if (n < 3 || d <= 0) return poly;
+  const originalSign = signedArea(poly);
+  const origArea = Math.abs(originalSign);
+  if (origArea < 1e-4) return poly;
+
+  // Compute centroid as guaranteed fallback reference
+  const cx = poly.reduce((s, p) => s + p.x, 0) / n;
+  const cy = poly.reduce((s, p) => s + p.y, 0) / n;
+  const avgDist = poly.reduce((s, p) => s + Math.hypot(p.x - cx, p.y - cy), 0) / n;
+
+  const fallbackScale = (): Point2D[] => {
+    const s = Math.max(0.15, 1 - d / Math.max(avgDist, d * 1.25));
+    return poly.map((p) => ({
+      x: Math.round((cx + (p.x - cx) * s) * 1000) / 1000,
+      y: Math.round((cy + (p.y - cy) * s) * 1000) / 1000,
+    }));
+  };
+
+  // Interior is on the left of each edge for CCW (positive area in y-down screen = CW visually)
+  const sign = originalSign > 0 ? 1 : -1;
+  const lines: { px: number; py: number; dx: number; dy: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dx = (b.x - a.x) / len;
+    const dy = (b.y - a.y) / len;
+    const nx = -dy * sign;
+    const ny = dx * sign;
+    lines.push({ px: a.x + nx * d, py: a.y + ny * d, dx, dy });
+  }
+
+  const out: Point2D[] = [];
+  for (let i = 0; i < n; i++) {
+    const l1 = lines[(i - 1 + n) % n];
+    const l2 = lines[i];
+    const denom = l1.dx * l2.dy - l1.dy * l2.dx;
+    const v = poly[i];
+    if (Math.abs(denom) < 1e-7) {
+      out.push({ x: l2.px, y: l2.py });
+      continue;
+    }
+    const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / denom;
+    let x = l1.px + l1.dx * t;
+    let y = l1.py + l1.dy * t;
+    // Clamp miter spikes on very sharp corners
+    const dist = Math.hypot(x - v.x, y - v.y);
+    const maxMiter = d * 2.8;
+    if (dist > maxMiter) {
+      x = v.x + ((x - v.x) / dist) * maxMiter;
+      y = v.y + ((y - v.y) / dist) * maxMiter;
+    }
+    out.push({ x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 });
+  }
+
+  // Prevent inverted, collapsed, or distorted insets: fallback to robust centroid-scaled inset
+  const newSign = signedArea(out);
+  const newArea = Math.abs(newSign);
+  if (newSign * sign <= 0 || newArea < 0.1 * origArea || newArea > origArea) {
+    return fallbackScale();
+  }
+  return out;
+}
+
+/** Horizontal inside-intervals of the polygon at scanline y. */
+function scanlineIntervals(poly: Point2D[], y: number): [number, number][] {
+  const xs: number[] = [];
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > y !== b.y > y) {
+      xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+  }
+  xs.sort((p, q) => p - q);
+  const res: [number, number][] = [];
+  for (let k = 0; k + 1 < xs.length; k += 2) res.push([xs[k], xs[k + 1]]);
+  return res;
+}
+
+function intersectIntervals(a: [number, number][], b: [number, number][]): [number, number][] {
+  const res: [number, number][] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const lo = Math.max(a[i][0], b[j][0]);
+    const hi = Math.min(a[i][1], b[j][1]);
+    if (hi > lo) res.push([lo, hi]);
+    if (a[i][1] < b[j][1]) i++;
+    else j++;
+  }
+  return res;
+}
+
+/** x-intervals where a full-height vertical segment spanning [yTop, yBot] stays inside the polygon. */
+function bandIntervals(poly: Point2D[], yTop: number, yBot: number): [number, number][] {
+  const eps = 1e-6;
+  const samples = [yTop + eps, yBot - eps, (yTop + yBot) / 2];
+  for (const v of poly) {
+    if (v.y > yTop && v.y < yBot) samples.push(v.y - eps, v.y + eps);
+  }
+  let res = scanlineIntervals(poly, samples[0]);
+  for (let k = 1; k < samples.length && res.length > 0; k++) {
+    res = intersectIntervals(res, scanlineIntervals(poly, samples[k]));
+  }
+  return res;
+}
+
+function segmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): boolean {
+  const d = (a: Point2D, b: Point2D, c: Point2D) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const d1 = d(p3, p4, p1);
+  const d2 = d(p3, p4, p2);
+  const d3 = d(p1, p2, p3);
+  const d4 = d(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/** Exact test: axis-aligned rectangle fully inside a simple polygon. */
+function rectInsidePolygon(poly: Point2D[], x0: number, y0: number, x1: number, y1: number): boolean {
+  const corners: Point2D[] = [
+    { x: x0, y: y0 },
+    { x: x1, y: y0 },
+    { x: x1, y: y1 },
+    { x: x0, y: y1 },
+  ];
+  for (const c of corners) if (!pointInPolygon(c, poly)) return false;
+  for (const v of poly) {
+    if (v.x > x0 && v.x < x1 && v.y > y0 && v.y < y1) return false;
+  }
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    for (let k = 0; k < 4; k++) {
+      if (segmentsIntersect(a, b, corners[k], corners[(k + 1) % 4])) return false;
+    }
+  }
+  return true;
+}
+
+interface PackOptions {
+  panelW: number;
+  panelL: number;
+  gap: number;
+  margin: number;
+  marginBottom: number;
+}
+
+const PACK_CACHE = new Map<string, { slots: PanelSlotItem[]; rows: number; cols: number }>();
+
+/**
+ * Packs intact solar modules inside an arbitrary polygon (triangles, trapezoids, L-shapes, rectangles).
+ * Uses inset polygon clearance for setback, tests multi-phase vertical sweeps and adaptive horizontal alignments
+ * (both column-grid snapped and interval-centered) to maximize whole module count without clipping or distortion.
+ */
+export function packPanelsInPolygon(poly: Point2D[], opts: PackOptions) {
+  const key = `${poly.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(";")}|${opts.panelW}|${opts.panelL}|${opts.gap}|${opts.margin}|${opts.marginBottom}`;
+  const cached = PACK_CACHE.get(key);
+  if (cached) return cached;
+
+  const { panelW, panelL, gap, margin, marginBottom } = opts;
+  let usablePoly = margin > 0 ? insetPolygon(poly, margin) : poly;
+  if (!usablePoly || usablePoly.length < 3) {
+    usablePoly = poly;
+  }
+
+  let b = polygonBounds(usablePoly);
+  const stepX = panelW + gap;
+  const stepY = panelL + gap;
+  let extraBottom = Math.max(0, marginBottom - margin);
+
+  // Adaptive margin fallback if polygon bounds are tight
+  if (b.height < panelL + extraBottom && margin > 0.1) {
+    usablePoly = insetPolygon(poly, margin * 0.4);
+    b = polygonBounds(usablePoly);
+    extraBottom = 0;
+  }
+  if (b.height < panelL) {
+    usablePoly = poly;
+    b = polygonBounds(usablePoly);
+    extraBottom = 0;
+  }
+
+  const availH = b.height;
+  if (availH < panelL - 1e-9) {
+    return { slots: [], rows: 0, cols: 0 };
+  }
+
+  const maxPossibleRows = Math.max(0, Math.floor((availH - extraBottom + gap) / stepY + 1e-9));
+  if (maxPossibleRows <= 0) {
+    return { slots: [], rows: 0, cols: 0 };
+  }
+
+  const totalGridH = maxPossibleRows * stepY - gap;
+  const centeredPhase = Math.max(0, (availH - extraBottom - totalGridH) / 2);
+
+  // Candidate vertical phases: centered first (preserves symmetry), top-flush, bottom-flush, plus intermediate sweeps
+  const phases = [centeredPhase, 0, Math.max(0, availH - extraBottom - totalGridH)];
+  const PHASE_STEPS = 10;
+  for (let k = 1; k < PHASE_STEPS; k++) {
+    const ph = (k / PHASE_STEPS) * stepY;
+    if (ph < availH - extraBottom - panelL) {
+      phases.push(ph);
+    }
+  }
+
+  const nColsGlobal = Math.max(0, Math.floor((b.width + gap) / stepX + 1e-9));
+  const gridX0 = b.minX + Math.max(0, (b.width - (nColsGlobal * stepX - gap)) / 2);
+
+  let best: PanelSlotItem[] = [];
+  let bestRows = 0;
+  let bestCols = 0;
+
+  for (const phase of phases) {
+    for (const alignMode of ["grid", "center"] as const) {
+      const slots: PanelSlotItem[] = [];
+      let rowIdx = 0;
+      let maxCols = 0;
+
+      for (
+        let yTop = b.minY + phase;
+        yTop + panelL <= b.maxY - extraBottom + 1e-9;
+        yTop += stepY
+      ) {
+        const intervals = bandIntervals(usablePoly, yTop, yTop + panelL);
+        let c = 0;
+
+        for (const [l, r] of intervals) {
+          const availW = r - l;
+          if (availW < panelW - 1e-9) continue;
+          const nMax = Math.floor((availW + gap) / stepX + 1e-9);
+          if (nMax <= 0) continue;
+          const runW = nMax * stepX - gap;
+          const slack = availW - runW;
+
+          let start = l + slack / 2; // centered alignment
+          if (alignMode === "grid") {
+            const snapped = gridX0 + Math.ceil((l - gridX0) / stepX - 1e-9) * stepX;
+            if (snapped >= l - 1e-9 && snapped + runW <= r + 1e-9) {
+              start = snapped;
+            }
+          }
+
+          for (let i = 0; i < nMax; i++) {
+            const x0 = start + i * stepX;
+            const x1 = x0 + panelW;
+            if (!rectInsidePolygon(usablePoly, x0, yTop, x1, yTop + panelL)) continue;
+
+            slots.push({
+              r: rowIdx,
+              c,
+              key: `${rowIdx}_${c}`,
+              x: x0 + panelW / 2,
+              y: yTop + panelL / 2,
+              w: panelW,
+              l: panelL,
+            });
+            c++;
+          }
+        }
+
+        if (c > 0) {
+          maxCols = Math.max(maxCols, c);
+          rowIdx++;
+        }
+      }
+
+      if (slots.length > best.length) {
+        best = slots;
+        bestRows = rowIdx;
+        bestCols = maxCols;
+      }
+    }
+  }
+
+  const result = { slots: best, rows: Math.max(1, bestRows), cols: Math.max(1, bestCols) };
+  if (PACK_CACHE.size > 300) PACK_CACHE.clear();
+  PACK_CACHE.set(key, result);
+  return result;
+}
+
+export function rotatePoint(p: Point2D, rad: number): Point2D {
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: p.x * cos - p.y * sin,
+    y: p.x * sin + p.y * cos,
+  };
+}
+
+export function rotatePolygon(poly: Point2D[], rad: number): Point2D[] {
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return poly.map((p) => ({
+    x: p.x * cos - p.y * sin,
+    y: p.x * sin + p.y * cos,
+  }));
+}
+
+export function getFacetVertices(facet: RoofFacet): Point2D[] {
+  if (facet.vertices && facet.vertices.length >= 3) {
+    return facet.vertices;
+  }
+  const w2 = facet.ridge / 2;
+  const h2 = facet.slope / 2;
+  if (facet.shape === "l-shape") {
+    return [
+      { x: -w2, y: -h2 },
+      { x: w2 * 0.3, y: -h2 },
+      { x: w2 * 0.3, y: -h2 * 0.16 },
+      { x: w2, y: -h2 * 0.16 },
+      { x: w2, y: h2 },
+      { x: -w2, y: h2 },
+    ];
+  }
+  if (facet.shape === "trapezoid") {
+    return [
+      { x: -w2 * 0.7, y: -h2 },
+      { x: w2 * 0.7, y: -h2 },
+      { x: w2, y: h2 },
+      { x: -w2, y: h2 },
+    ];
+  }
+  return [
+    { x: -w2, y: -h2 },
+    { x: w2, y: -h2 },
+    { x: w2, y: h2 },
+    { x: -w2, y: h2 },
+  ];
+}
 
 const INITIAL_FACETS: RoofFacet[] = [
   {
@@ -222,6 +891,13 @@ const INITIAL_FACETS: RoofFacet[] = [
     panelGap: 3,
     slotOverrides: {},
     customModuleCount: null,
+    vertices: [
+      { x: -6.24, y: -3.64 },
+      { x: 6.24, y: -3.64 },
+      { x: 6.24, y: 3.64 },
+      { x: -6.24, y: 3.64 },
+    ],
+    alignToAzimuth: true,
   },
   {
     id: "facet-2",
@@ -245,6 +921,13 @@ const INITIAL_FACETS: RoofFacet[] = [
     panelGap: 3,
     slotOverrides: {},
     customModuleCount: null,
+    vertices: [
+      { x: -3.75, y: -2.4 },
+      { x: 3.75, y: -2.4 },
+      { x: 3.75, y: 2.4 },
+      { x: -3.75, y: 2.4 },
+    ],
+    alignToAzimuth: true,
   },
 ];
 
@@ -272,71 +955,137 @@ function computeFacetMetrics(
   // 3. Racking Extra Tilt (Self-cleaning rain runoff bonus)
   const rackingBonus = 1.0 + (extraTilt / 20) * 0.02;
 
-  // 4. Roof Geometry & Usable Area
-  const usableRidge = Math.max(1, facet.ridge - 2 * facet.setback);
-  const usableSlope = Math.max(1, facet.slope - facet.setback - facet.gutter);
-  const grossArea = facet.ridge * facet.slope;
-  const netArea = usableRidge * usableSlope;
-  const netAreaPct = grossArea > 0 ? Math.round((netArea / grossArea) * 100) : 0;
+  // 4. Roof Geometry & Usable Area (true polygon geometry for every shape)
+  const vertices = getFacetVertices(facet);
+  const setback = Math.max(0, facet.setback ?? 0.3);
+  const gutter = facet.shape === "rectangle" ? Math.max(0, facet.gutter ?? 0.3) : 0;
+  const bounds = polygonBounds(vertices);
+  const usableRidge = Math.max(0, bounds.width - 2 * setback);
+  const usableSlope = Math.max(0, bounds.height - setback * 2 - gutter);
+  const grossArea = computePolygonArea(vertices);
+  const insetPoly = insetPolygon(vertices, setback);
+  const rawInsetArea = computePolygonArea(insetPoly);
+  const fallbackNetArea = grossArea * Math.max(0.45, 1 - (setback * 2) / Math.max(bounds.width, bounds.height, 1));
+  const netArea = facet.shape !== "rectangle"
+    ? Math.max(0.1, rawInsetArea > 0.05 * grossArea ? rawInsetArea : fallbackNetArea)
+    : Math.max(0.1, Math.min(grossArea, usableRidge * usableSlope));
+  const netAreaPct = grossArea > 0 ? Math.min(100, Math.round((netArea / grossArea) * 100)) : 0;
 
-  // 5. Module Layout Grid Packing
+  // 5. Module Layout Packing (intact modules fitted to the exact polygon outline)
   const currentSpec = MODULE_SPECS[facet.modulePower] || MODULE_SPECS[550];
-  const panelW = facet.orientation === "portrait" ? currentSpec.w : currentSpec.l;
-  const panelL = facet.orientation === "portrait" ? currentSpec.l : currentSpec.w;
   const gapM = facet.panelGap / 100;
 
-  let cols = Math.floor((usableRidge + gapM) / (panelW + gapM));
-  let rows = Math.floor((usableSlope + gapM) / (panelL + gapM));
-  if (cols < 1) cols = 1;
-  if (rows < 1) rows = 1;
+  // Azimuth orientation integration:
+  // When alignToAzimuth is active (default true), the array grid and individual modules rotate to face solar Azimuth
+  const alignToAzimuth = facet.alignToAzimuth ?? true;
+  const rawAngle = alignToAzimuth ? facet.azimuth - 180 - (facet.rotation || 0) : 0;
+  let panelAngleDeg = ((rawAngle + 180) % 360) - 180;
+  if (panelAngleDeg < -180) panelAngleDeg += 360;
+  const isAngleActive = Math.abs(panelAngleDeg) >= 0.5;
+  const rad = (panelAngleDeg * Math.PI) / 180;
 
-  function isOutOfBounds(r: number, c: number) {
-    if (facet.shape === "l-shape") {
-      return c >= Math.ceil(cols * 0.65) && r < Math.floor(rows * 0.42);
-    }
-    if (facet.shape === "trapezoid") {
-      return r === 0 && (c === 0 || c === cols - 1);
-    }
-    return false;
-  }
+  const targetPoly = isAngleActive ? rotatePolygon(vertices, -rad) : vertices;
 
-  const validSlots: { r: number; c: number; key: string }[] = [];
+  const packOptsPortrait = {
+    panelW: currentSpec.w,
+    panelL: currentSpec.l,
+    gap: gapM,
+    margin: setback,
+    marginBottom: setback + gutter,
+  };
+
+  const packOptsLandscape = {
+    panelW: currentSpec.l,
+    panelL: currentSpec.w,
+    gap: gapM,
+    margin: setback,
+    marginBottom: setback + gutter,
+  };
+
+  const rawPackedPortrait = packPanelsInPolygon(targetPoly, packOptsPortrait);
+  const rawPackedLandscape = packPanelsInPolygon(targetPoly, packOptsLandscape);
+
+  const applySlotRotation = (packedRes: { slots: PanelSlotItem[]; rows: number; cols: number }) => {
+    if (!isAngleActive) return packedRes;
+    const transformedSlots = packedRes.slots.map((slot) => {
+      const unrot = rotatePoint({ x: slot.x, y: slot.y }, rad);
+      return {
+        ...slot,
+        x: unrot.x,
+        y: unrot.y,
+        rotationDeg: Math.round(panelAngleDeg * 10) / 10,
+      };
+    });
+    return {
+      ...packedRes,
+      slots: transformedSlots,
+    };
+  };
+
+  const packedPortrait = applySlotRotation(rawPackedPortrait);
+  const packedLandscape = applySlotRotation(rawPackedLandscape);
+
+  const portraitSlotsCount = packedPortrait.slots.length;
+  const landscapeSlotsCount = packedLandscape.slots.length;
+  const bestOrientation: Orientation = landscapeSlotsCount > portraitSlotsCount ? "landscape" : "portrait";
+
+  const packed = facet.orientation === "landscape" ? packedLandscape : packedPortrait;
+  const rawSlots: PanelSlotItem[] = packed.slots;
+  const cols = packed.cols;
+  const rows = packed.rows;
   const obstacleRow = Math.min(rows - 1, 1);
   const obstacleCol = Math.max(1, Math.floor((cols - 2) / 2));
 
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (!isOutOfBounds(r, c)) {
-        validSlots.push({ r, c, key: `${r}_${c}` });
-      }
-    }
-  }
+  const totalValidSlots = rawSlots.length;
 
-  const totalValidSlots = validSlots.length;
+  // Separate slots into obstacle/fixed overrides vs candidate panel slots
+  const candidateIndices: number[] = [];
+  const slotStates: SlotState[] = new Array(totalValidSlots);
 
-  let activeCount = 0;
-  validSlots.forEach((slot) => {
-    let state = facet.slotOverrides[slot.key];
-    if (!state) {
-      if (
-        facet.hasHvac &&
-        obstacleFilterActive &&
-        slot.r === obstacleRow &&
-        (slot.c === obstacleCol || slot.c === obstacleCol + 1)
-      ) {
-        state = "hvac";
-      } else if (facet.hasSkylight && slot.r === 0 && slot.c === Math.min(1, cols - 1)) {
-        state = "skylight";
-      } else {
-        state = "active";
-      }
+  rawSlots.forEach((slot, idx) => {
+    const override = facet.slotOverrides[slot.key];
+    if (override) {
+      slotStates[idx] = override;
+    } else if (
+      facet.hasHvac &&
+      obstacleFilterActive &&
+      slot.r === obstacleRow &&
+      (slot.c === obstacleCol || slot.c === obstacleCol + 1)
+    ) {
+      slotStates[idx] = "hvac";
+    } else if (facet.hasSkylight && slot.r === 0 && slot.c === Math.min(1, cols - 1)) {
+      slotStates[idx] = "skylight";
+    } else {
+      // Unassigned candidate slot
+      candidateIndices.push(idx);
     }
-    if (state === "active") activeCount++;
   });
 
-  let modulesFitted =
-    facet.customModuleCount !== null ? Math.min(facet.customModuleCount, totalValidSlots) : activeCount;
-  if (modulesFitted < 0) modulesFitted = 0;
+  // Count how many are forced active by explicit user slotOverrides
+  const forcedActiveCount = slotStates.filter((s) => s === "active").length;
+  const totalAvailable = forcedActiveCount + candidateIndices.length;
+
+  const targetTotal =
+    facet.customModuleCount !== null
+      ? Math.max(0, Math.min(totalAvailable, facet.customModuleCount))
+      : totalAvailable;
+
+  const remainingToActivate = Math.max(0, targetTotal - forcedActiveCount);
+
+  candidateIndices.forEach((slotIdx, i) => {
+    if (i < remainingToActivate) {
+      slotStates[slotIdx] = "active";
+    } else {
+      slotStates[slotIdx] = "empty";
+    }
+  });
+
+  const validSlots: PanelSlotItem[] = rawSlots.map((slot, idx) => ({
+    ...slot,
+    state: slotStates[idx],
+  }));
+
+  const modulesFitted = validSlots.filter((s) => s.state === "active").length;
 
   const actualKwp = (modulesFitted * facet.modulePower) / 1000;
   const totalPanelAreaM2 = modulesFitted * currentSpec.w * currentSpec.l;
@@ -383,6 +1132,11 @@ function computeFacetMetrics(
     costRacking,
     facetCapex,
     currentSpec,
+    portraitSlotsCount,
+    landscapeSlotsCount,
+    bestOrientation,
+    panelAngleDeg,
+    alignToAzimuth,
   };
 }
 
@@ -402,6 +1156,7 @@ function StudioPageContent() {
   const [obstacleFilterActive, setObstacleFilterActive] = useState(true);
   const [sunHour, setSunHour] = useState<number>(12);
   const [cadTool, setCadTool] = useState<CadTool>("select");
+  const [obstacleBrush, setObstacleBrush] = useState<SlotState | null>(null);
   const [cadToast, setCadToast] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1.0);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
@@ -415,10 +1170,39 @@ function StudioPageContent() {
   // Mouse HUD for Radiometer
   const [probePos, setProbePos] = useState<{ x: number; y: number } | null>(null);
 
-  // Multi-Polygon Roof Facets State
+  // Multi-Polygon Roof Facets State & Selection
   const [facets, setFacets] = useState<RoofFacet[]>(INITIAL_FACETS);
-  const [activeFacetId, setActiveFacetId] = useState<string>("facet-1");
+  const [selectedFacetIds, setSelectedFacetIds] = useState<string[]>(["facet-1"]);
+
+  // Active facet ID is the primary focus facet for single-facet properties editing
+  const activeFacetId = useMemo(() => {
+    if (selectedFacetIds.length > 0) {
+      return selectedFacetIds[selectedFacetIds.length - 1];
+    }
+    return facets[0]?.id || "";
+  }, [selectedFacetIds, facets]);
+
+  const setActiveFacetId = useCallback((id: string) => {
+    setSelectedFacetIds((prev) => {
+      if (prev.includes(id)) {
+        return [...prev.filter((x) => x !== id), id];
+      }
+      return [...prev, id];
+    });
+  }, []);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [vertexDragState, setVertexDragState] = useState<VertexDragState | null>(null);
+  const [penPoints, setPenPoints] = useState<Point2D[]>([]);
+  const [penMousePos, setPenMousePos] = useState<Point2D | null>(null);
+  const [measurePoints, setMeasurePoints] = useState<Point2D[]>([]);
+  const [measureMousePos, setMeasureMousePos] = useState<Point2D | null>(null);
+  const [isMeasureClosed, setIsMeasureClosed] = useState(false);
+
+  // AI Rooftop Detection States (Front End Simulation)
+  const [showDetectedRoofs, setShowDetectedRoofs] = useState(true);
+  const [isAiScanning, setIsAiScanning] = useState(false);
+  const [selectionDone, setSelectionDone] = useState(false);
+  const [detectedRoofsList, setDetectedRoofsList] = useState<DetectedRoofModel[]>(AI_DETECTED_ROOFS);
 
   // Map synchronization state for real-time scale & position tracking
   const [mapTick, setMapTick] = useState(0);
@@ -476,6 +1260,54 @@ function StudioPageContent() {
     );
   }, [activeFacetId]);
 
+  /**
+   * Normalizes raw polygon vertices (meters, facet-local frame) so they are centered on the facet
+   * anchor, and shifts the anchor (lat/lng + offsets) by the same amount so the polygon never jumps.
+   * ridge/slope always equal the true bounding box of the vertices.
+   */
+  const buildPolygonPatch = useCallback(
+    (
+      raw: Point2D[],
+      base: { lat?: number; lng?: number; offsetX: number; offsetY: number; rotation: number }
+    ): Partial<RoofFacet> => {
+      const b = polygonBounds(raw);
+      const cx = (b.minX + b.maxX) / 2;
+      const cy = (b.minY + b.maxY) / 2;
+      const r3 = (n: number) => Math.round(n * 1000) / 1000;
+      const vertices = raw.map((v) => ({ x: r3(v.x - cx), y: r3(v.y - cy) }));
+
+      const rad = (base.rotation * Math.PI) / 180;
+      const shiftX = (cx * Math.cos(rad) - cy * Math.sin(rad)) * pixelsPerMeter;
+      const shiftY = (cx * Math.sin(rad) + cy * Math.cos(rad)) * pixelsPerMeter;
+
+      let lat = base.lat;
+      let lng = base.lng;
+      if (mapInstanceRef.current && (window as any).L && base.lat && base.lng && (shiftX || shiftY)) {
+        try {
+          const L = (window as any).L;
+          const pt = mapInstanceRef.current.latLngToContainerPoint([base.lat, base.lng]);
+          const ll = mapInstanceRef.current.containerPointToLatLng(L.point(pt.x + shiftX, pt.y + shiftY));
+          lat = ll.lat;
+          lng = ll.lng;
+        } catch {
+          // keep base anchor
+        }
+      }
+
+      return {
+        shape: "custom_polygon",
+        vertices,
+        ridge: Math.max(0.1, Math.round(b.width * 100) / 100),
+        slope: Math.max(0.1, Math.round(b.height * 100) / 100),
+        lat,
+        lng,
+        offsetX: Math.round(base.offsetX + shiftX),
+        offsetY: Math.round(base.offsetY + shiftY),
+      };
+    },
+    [pixelsPerMeter]
+  );
+
   // Synchronize initial facet & map location from URL query params (e.g. when launched from Dashboard)
   useEffect(() => {
     const pName = searchParams.get("name");
@@ -523,6 +1355,374 @@ function StudioPageContent() {
     }, 2400);
   }, []);
 
+  const toggleFacetSelection = useCallback(
+    (facetId: string) => {
+      setSelectedFacetIds((prev) => {
+        if (prev.includes(facetId)) {
+          const next = prev.filter((id) => id !== facetId);
+          showToast(`Bidang atap dikeluarkan dari seleksi (${next.length} bidang aktif)`);
+          return next;
+        } else {
+          const next = [...prev, facetId];
+          showToast(`Bidang atap ditambahkan ke seleksi (${next.length} bidang aktif)`);
+          return next;
+        }
+      });
+    },
+    [showToast]
+  );
+
+  const selectAllFacets = useCallback(() => {
+    setSelectedFacetIds(facets.map((f) => f.id));
+    showToast(`Semua bidang atap dipilih (${facets.length} bidang aktif)`);
+  }, [facets, showToast]);
+
+  const unselectAllFacets = useCallback(() => {
+    setSelectedFacetIds([]);
+    showToast("Semua seleksi bidang atap dibatalkan (0 bidang dipilih)");
+  }, [showToast]);
+
+  // Facets currently participating in Studio calculations & tree growth
+  const selectedFacets = useMemo(() => {
+    return facets.filter((f) => selectedFacetIds.includes(f.id));
+  }, [facets, selectedFacetIds]);
+
+  const selectDetectedRoof = useCallback(
+    (detected: DetectedRoofModel) => {
+      const existing = facets.find((f) => f.id === detected.id);
+      if (existing) {
+        setActiveFacetId(detected.id);
+        showToast(`🎯 Beralih ke ${detected.name}`);
+      } else {
+        const newFacet: RoofFacet = {
+          id: detected.id,
+          name: detected.name,
+          shape: "custom_polygon",
+          ridge: detected.ridge,
+          slope: detected.slope,
+          pitch: detected.pitch,
+          azimuth: detected.azimuth,
+          setback: 0.5,
+          gutter: 0.5,
+          rotation: detected.rotation,
+          lat: detected.lat,
+          lng: detected.lng,
+          offsetX: detected.offsetX,
+          offsetY: detected.offsetY,
+          hasHvac: false,
+          hasSkylight: false,
+          modulePower: 550,
+          orientation: "portrait",
+          panelGap: 3,
+          slotOverrides: {},
+          customModuleCount: null,
+          vertices: detected.vertices,
+          ...buildPolygonPatch(detected.vertices, {
+            lat: detected.lat,
+            lng: detected.lng,
+            offsetX: detected.offsetX,
+            offsetY: detected.offsetY,
+            rotation: detected.rotation,
+          }),
+        };
+        setFacets((prev) => [...prev, newFacet]);
+        setSelectedFacetIds((prev) => [...prev.filter((x) => x !== detected.id), detected.id]);
+        showToast(
+          `🎯 ${detected.name} terpilih! Panel surya otomatis dipasang (${detected.area.toFixed(1)} m²)`
+        );
+      }
+    },
+    [facets, showToast, buildPolygonPatch, setActiveFacetId]
+  );
+
+  const triggerGpsDetectionFlow = useCallback(
+    (latitude: number, longitude: number) => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([latitude, longitude], 21, { duration: 1.5 });
+      }
+      setAddressInput("Lokasi GPS Terkini");
+
+      // Reset facets to empty: ONLY show detected roofs first (no solar panels yet!)
+      setFacets([]);
+      setSelectedFacetIds([]);
+      setSelectionDone(false);
+
+      // Generate localized detected candidates
+      const gpsCandidates = generateGpsCandidates(latitude, longitude);
+      setDetectedRoofsList(gpsCandidates);
+
+      // Run AI Scanning animation
+      setIsAiScanning(true);
+      setShowDetectedRoofs(true);
+      setTimeout(() => {
+        setIsAiScanning(false);
+        showToast("✨ 3 Bidang atap terdeteksi oleh AI! Klik bidang atap di peta untuk memasang panel surya.");
+      }, 900);
+    },
+    [showToast]
+  );
+
+  const handleRunAiDetection = useCallback(() => {
+    setIsAiScanning(true);
+    setShowDetectedRoofs(true);
+    setSelectionDone(false);
+    showToast("🔍 Menjalankan model AI Computer Vision untuk memindai kontur atap...");
+    setTimeout(() => {
+      setIsAiScanning(false);
+      showToast("✨ Deteksi atap selesai. Silakan pilih bidang atap untuk dipasang panel.");
+    }, 900);
+  }, [showToast]);
+
+  const startVertexDrag = useCallback(
+    (e: ReactMouseEvent, facetId: string, vertexIdx: number) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setActiveFacetId(facetId);
+      const facet = facets.find((f) => f.id === facetId) || activeFacet;
+      const currentVertices = getFacetVertices(facet);
+      setVertexDragState({
+        facetId,
+        vertexIdx,
+        startX: e.clientX,
+        startY: e.clientY,
+        initVertices: currentVertices.map((v) => ({ ...v })),
+        initOx: facet.offsetX,
+        initOy: facet.offsetY,
+        initLat: facet.lat,
+        initLng: facet.lng,
+      });
+    },
+    [facets, activeFacet]
+  );
+
+  const addVertexAtEdge = useCallback(
+    (edgeIdx: number) => {
+      const currentVertices = getFacetVertices(activeFacet);
+      const nextIdx = (edgeIdx + 1) % currentVertices.length;
+      const p1 = currentVertices[edgeIdx];
+      const p2 = currentVertices[nextIdx];
+      const midPoint: Point2D = {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2,
+      };
+
+      const newVertices = [
+        ...currentVertices.slice(0, edgeIdx + 1),
+        midPoint,
+        ...currentVertices.slice(edgeIdx + 1),
+      ];
+
+      updateActiveFacet({ ...buildPolygonPatch(newVertices, activeFacet), slotOverrides: {} });
+      showToast(`✨ Simpul baru ditambahkan (${newVertices.length} titik)`);
+    },
+    [activeFacet, updateActiveFacet, showToast, buildPolygonPatch]
+  );
+
+  const deleteVertex = useCallback(
+    (vertexIdx: number) => {
+      const currentVertices = getFacetVertices(activeFacet);
+      if (currentVertices.length <= 3) {
+        showToast("Minimal poligon harus memiliki 3 simpul!");
+        return;
+      }
+      const newVertices = currentVertices.filter((_, i) => i !== vertexIdx);
+      updateActiveFacet({ ...buildPolygonPatch(newVertices, activeFacet), slotOverrides: {} });
+      showToast(`🗑️ Simpul #${vertexIdx + 1} dihapus (${newVertices.length} titik tersisa)`);
+    },
+    [activeFacet, updateActiveFacet, showToast, buildPolygonPatch]
+  );
+
+  const deleteLastVertex = useCallback(() => {
+    const currentVertices = getFacetVertices(activeFacet);
+    if (currentVertices.length <= 3) {
+      showToast("Minimal poligon harus memiliki 3 simpul!");
+      return;
+    }
+    deleteVertex(currentVertices.length - 1);
+  }, [activeFacet, deleteVertex, showToast]);
+
+  const finishPenPolygon = useCallback(
+    (points: Point2D[]) => {
+      if (points.length < 3) {
+        showToast("Minimal butuh 3 titik untuk membuat poligon!");
+        return;
+      }
+
+      // 1. Calculate true bounding box of drawn points
+      const xs = points.map((p) => p.x);
+      const ys = points.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+
+      // Exact center of the drawn polygon in screen pixels
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+
+      // Real-world physical dimensions in meters (exact bounding box, no artificial minimum)
+      const ridge = Math.max(0.1, Math.round(((maxX - minX) / pixelsPerMeter) * 100) / 100);
+      const slope = Math.max(0.1, Math.round(((maxY - minY) / pixelsPerMeter) * 100) / 100);
+
+      // Symmetrically centered vertices around (0, 0), millimeter precision
+      const vertices: Point2D[] = points.map((p) => ({
+        x: Math.round(((p.x - cx) / pixelsPerMeter) * 1000) / 1000,
+        y: Math.round(((p.y - cy) / pixelsPerMeter) * 1000) / 1000,
+      }));
+
+      const area = computePolygonArea(vertices);
+
+      // Viewport dimensions to calculate exact screen offset so polygon stays where user drew it!
+      let offsetX = 0;
+      let offsetY = 0;
+      const viewportEl = document.getElementById("canvas-viewport-container");
+      if (viewportEl) {
+        const vRect = viewportEl.getBoundingClientRect();
+        offsetX = Math.round(cx - vRect.width / 2);
+        offsetY = Math.round(cy - vRect.height / 2);
+      }
+
+      // Geo-coordinates projection from Leaflet map
+      let targetLat = activeFacet.lat || -6.595038;
+      let targetLng = activeFacet.lng || 106.797241;
+      if (mapInstanceRef.current && (window as any).L) {
+        try {
+          const L = (window as any).L;
+          const latLng = mapInstanceRef.current.containerPointToLatLng(L.point(cx, cy));
+          targetLat = latLng.lat;
+          targetLng = latLng.lng;
+        } catch {}
+      }
+
+      const newNum = facets.length + 1;
+      const newId = `facet-custom-${Date.now()}`;
+      const newFacet: RoofFacet = {
+        id: newId,
+        name: `Poligon Manual #${newNum}`,
+        shape: "custom_polygon",
+        ridge,
+        slope,
+        pitch: 20,
+        azimuth: 188,
+        setback: 0.3,
+        gutter: 0.3,
+        rotation: 0,
+        lat: targetLat,
+        lng: targetLng,
+        offsetX,
+        offsetY,
+        hasHvac: false,
+        hasSkylight: false,
+        modulePower: 550,
+        orientation: "portrait",
+        panelGap: 3,
+        slotOverrides: {},
+        customModuleCount: null,
+        vertices,
+      };
+
+      setFacets((prev) => [...prev, newFacet]);
+      setActiveFacetId(newId);
+      setPenPoints([]);
+      setCadTool("edit_polygon");
+      showToast(
+        `✨ Poligon baru berhasil dibuat (${points.length} simpul, ${area.toFixed(1)} m²)!`
+      );
+    },
+    [pixelsPerMeter, activeFacet, facets.length, showToast]
+  );
+
+  const handleCanvasPenClick = (e: ReactMouseEvent) => {
+    if (cadTool !== "pen") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pt: Point2D = {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    };
+
+    if (penPoints.length >= 3) {
+      const p0 = penPoints[0];
+      const dist = Math.hypot(pt.x - p0.x, pt.y - p0.y);
+      if (dist < 22) {
+        finishPenPolygon(penPoints);
+        return;
+      }
+    }
+
+    setPenPoints((prev) => [...prev, pt]);
+  };
+
+  const measureTotalDistance = useMemo(() => {
+    if (measurePoints.length < 2) return 0;
+    let dist = 0;
+    for (let i = 0; i < measurePoints.length - 1; i++) {
+      dist += Math.hypot(
+        measurePoints[i + 1].x - measurePoints[i].x,
+        measurePoints[i + 1].y - measurePoints[i].y
+      );
+    }
+    if (isMeasureClosed && measurePoints.length >= 3) {
+      dist += Math.hypot(
+        measurePoints[0].x - measurePoints[measurePoints.length - 1].x,
+        measurePoints[0].y - measurePoints[measurePoints.length - 1].y
+      );
+    }
+    return dist / pixelsPerMeter;
+  }, [measurePoints, pixelsPerMeter, isMeasureClosed]);
+
+  const measureArea = useMemo(() => {
+    if (measurePoints.length < 3) return 0;
+    const meterPts = measurePoints.map((p) => ({
+      x: p.x / pixelsPerMeter,
+      y: p.y / pixelsPerMeter,
+    }));
+    return computePolygonArea(meterPts);
+  }, [measurePoints, pixelsPerMeter]);
+
+  const measureCentroid = useMemo(() => {
+    if (measurePoints.length === 0) return null;
+    let sumX = 0;
+    let sumY = 0;
+    for (const p of measurePoints) {
+      sumX += p.x;
+      sumY += p.y;
+    }
+    return {
+      x: sumX / measurePoints.length,
+      y: sumY / measurePoints.length,
+    };
+  }, [measurePoints]);
+
+  const handleCanvasMeasureClick = (e: ReactMouseEvent) => {
+    if (cadTool !== "measure") return;
+    if (isMeasureClosed) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pt: Point2D = {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    };
+
+    if (measurePoints.length >= 3) {
+      const p0 = measurePoints[0];
+      const dist = Math.hypot(pt.x - p0.x, pt.y - p0.y);
+      if (dist < 24) {
+        setIsMeasureClosed(true);
+        showToast("Poligon tertutup! Luas area berhasil dihitung.");
+        return;
+      }
+    }
+
+    setMeasurePoints((prev) => [...prev, pt]);
+  };
+
+  const handleConvertMeasureToFacet = () => {
+    if (measurePoints.length < 3) return;
+    finishPenPolygon(measurePoints);
+    setMeasurePoints([]);
+    setIsMeasureClosed(false);
+  };
+
   const addNewFacet = useCallback(() => {
     const newId = `facet-${Date.now()}`;
     const newNum = facets.length + 1;
@@ -561,13 +1761,11 @@ function StudioPageContent() {
     }
     setFacets((prev) => {
       const next = prev.filter((f) => f.id !== id);
-      if (activeFacetId === id) {
-        setActiveFacetId(next[0].id);
-      }
       return next;
     });
+    setSelectedFacetIds((prev) => prev.filter((fid) => fid !== id));
     showToast("Bidang atap dihapus");
-  }, [facets.length, activeFacetId, showToast]);
+  }, [facets.length, showToast]);
 
   // Backward-compatible field accessors mapped to active facet
   const ridge = activeFacet.ridge;
@@ -588,13 +1786,33 @@ function StudioPageContent() {
   const slotOverrides = activeFacet.slotOverrides;
   const customModuleCount = activeFacet.customModuleCount;
 
+  // For custom polygons, ridge/slope edits scale the actual vertices so outline & dimensions stay in sync
+  const isCustomActive = activeFacet.shape === "custom_polygon" && (activeFacet.vertices?.length ?? 0) >= 3;
   const setRidge = (val: number | ((prev: number) => number)) => {
-    const nextVal = typeof val === "function" ? val(activeFacet.ridge) : val;
-    updateActiveFacet({ ridge: Math.max(1, nextVal) });
+    const nextVal = Math.max(1, typeof val === "function" ? val(activeFacet.ridge) : val);
+    if (isCustomActive && activeFacet.vertices) {
+      const b = polygonBounds(activeFacet.vertices);
+      const s = b.width > 0 ? nextVal / b.width : 1;
+      updateActiveFacet({
+        ridge: nextVal,
+        vertices: activeFacet.vertices.map((v) => ({ x: Math.round(v.x * s * 1000) / 1000, y: v.y })),
+      });
+      return;
+    }
+    updateActiveFacet({ ridge: nextVal });
   };
   const setSlope = (val: number | ((prev: number) => number)) => {
-    const nextVal = typeof val === "function" ? val(activeFacet.slope) : val;
-    updateActiveFacet({ slope: Math.max(1, nextVal) });
+    const nextVal = Math.max(1, typeof val === "function" ? val(activeFacet.slope) : val);
+    if (isCustomActive && activeFacet.vertices) {
+      const b = polygonBounds(activeFacet.vertices);
+      const s = b.height > 0 ? nextVal / b.height : 1;
+      updateActiveFacet({
+        slope: nextVal,
+        vertices: activeFacet.vertices.map((v) => ({ x: v.x, y: Math.round(v.y * s * 1000) / 1000 })),
+      });
+      return;
+    }
+    updateActiveFacet({ slope: nextVal });
   };
   const setPitch = (val: number | ((prev: number) => number)) => {
     const nextVal = typeof val === "function" ? val(activeFacet.pitch) : val;
@@ -612,7 +1830,84 @@ function StudioPageContent() {
     const nextVal = typeof val === "function" ? val(activeFacet.gutter) : val;
     updateActiveFacet({ gutter: nextVal });
   };
-  const setRoofShape = (shape: RoofShape) => updateActiveFacet({ shape, slotOverrides: {}, customModuleCount: null });
+  const alignToAzimuth = activeFacet.alignToAzimuth ?? true;
+  const setAlignToAzimuth = (val: boolean) => {
+    updateActiveFacet({ alignToAzimuth: val });
+    showToast(val ? "Grid panel diselaraskan dengan Azimuth matahari" : "Grid panel disejajarkan dengan kemiringan atap (flush)");
+  };
+
+  const setRoofShape = (shape: RoofShape) => {
+    if (shape === "custom_polygon") {
+      const existingVerts =
+        activeFacet.vertices && activeFacet.vertices.length >= 3
+          ? activeFacet.vertices
+          : getFacetVertices(activeFacet);
+      updateActiveFacet({
+        shape,
+        vertices: existingVerts,
+        slotOverrides: {},
+        customModuleCount: null,
+      });
+      setCadTool("edit_polygon");
+      showToast("Beralih ke Poligon Bebas (Mode Edit Simpul Figma)");
+      return;
+    }
+    const templateVertices = getFacetVertices({ ...activeFacet, shape, vertices: undefined });
+    updateActiveFacet({
+      shape,
+      vertices: templateVertices,
+      slotOverrides: {},
+      customModuleCount: null,
+    });
+    showToast(
+      `Bentuk atap diubah ke ${shape === "rectangle" ? "Persegi" : shape === "l-shape" ? "Bentuk L" : "Limasan"}`
+    );
+  };
+
+  const nudgeFacet = (dx: number, dy: number) => {
+    let nextLat = activeFacet.lat;
+    let nextLng = activeFacet.lng;
+
+    if (mapInstanceRef.current && (window as any).L && activeFacet.lat && activeFacet.lng) {
+      try {
+        const L = (window as any).L;
+        const currentPt = mapInstanceRef.current.latLngToContainerPoint([activeFacet.lat, activeFacet.lng]);
+        const targetPt = L.point(currentPt.x + dx, currentPt.y + dy);
+        const targetLatLng = mapInstanceRef.current.containerPointToLatLng(targetPt);
+        nextLat = targetLatLng.lat;
+        nextLng = targetLatLng.lng;
+      } catch {}
+    }
+
+    const nextOx = (activeFacet.offsetX || 0) + dx;
+    const nextOy = (activeFacet.offsetY || 0) + dy;
+
+    updateActiveFacet({
+      offsetX: nextOx,
+      offsetY: nextOy,
+      lat: nextLat,
+      lng: nextLng,
+    });
+  };
+
+  const centerFacetOnRoof = () => {
+    let centerLat = activeFacet.lat;
+    let centerLng = activeFacet.lng;
+    if (mapInstanceRef.current) {
+      try {
+        const c = mapInstanceRef.current.getCenter();
+        centerLat = c.lat;
+        centerLng = c.lng;
+      } catch {}
+    }
+    updateActiveFacet({
+      offsetX: 0,
+      offsetY: 0,
+      lat: centerLat,
+      lng: centerLng,
+    });
+    showToast("Poligon dipusatkan ke titik tengah atap");
+  };
   const setPolygonRotation = (rot: number | ((prev: number) => number)) => {
     const nextVal = typeof rot === "function" ? rot(activeFacet.rotation) : rot;
     updateActiveFacet({ rotation: nextVal });
@@ -650,19 +1945,103 @@ function StudioPageContent() {
   const [inverterType, setInverterType] = useState<InverterType>("string");
   const [plnTariff, setPlnTariff] = useState(1700);
   const [monthlyBill, setMonthlyBill] = useState(2_800_000);
+  const [manualBillInput, setManualBillInput] = useState<string>("");
+  const [isTypingBill, setIsTypingBill] = useState(false);
 
   // ROI Interactive Chart State
   const [roiYear, setRoiYear] = useState(4.8);
   const [roiHoverYear, setRoiHoverYear] = useState<number | null>(null);
 
+  // Studio Nav Open/Close & Filter Popover
+  const [studioNavOpen, setStudioNavOpen] = useState(true);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
   // Biodata state
-  const [biodata, setBiodata] = useState(getStoredBiodata());
+  const [biodata, setBiodata] = useState<UserBiodata | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    setBiodata(getStoredBiodata());
+  }, []);
+
+  const initials = useMemo(() => {
+    if (!mounted || !biodata?.name) return "PS";
+    const parts = biodata.name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }, [mounted, biodata?.name]);
+
+  const [isGpsLoading, setIsGpsLoading] = useState(false);
+
+  const filteredStudioProjects = useMemo(() => {
+    const q = addressInput.trim().toLowerCase();
+    if (!q) return STUDIO_SAVED_PROJECTS;
+    return STUDIO_SAVED_PROJECTS.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.address.toLowerCase().includes(q)
+    );
+  }, [addressInput]);
+
+  const handleSelectStudioProject = (proj: (typeof STUDIO_SAVED_PROJECTS)[0]) => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([proj.lat, proj.lon], 21, { duration: 1.2 });
+    }
+    updateActiveFacet({
+      lat: proj.lat,
+      lng: proj.lon,
+      ridge: proj.ridge,
+      slope: proj.slope,
+      shape: proj.shape,
+      rotation: proj.deg,
+      name: proj.name,
+    });
+    setAddressInput(proj.address);
+    showToast(`Beralih ke proyek: ${proj.name}`);
+  };
+
+  const handleUseGps = () => {
+    if (!navigator.geolocation) {
+      showToast("Geolokasi tidak didukung oleh peramban, menggunakan lokasi simulasi.");
+      triggerGpsDetectionFlow(-6.595038, 106.797241);
+      setSearchOpen(false);
+      return;
+    }
+    setIsGpsLoading(true);
+    showToast("Mengakses sensor GPS perangkat...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsGpsLoading(false);
+        triggerGpsDetectionFlow(pos.coords.latitude, pos.coords.longitude);
+        setSearchOpen(false);
+      },
+      (err) => {
+        setIsGpsLoading(false);
+        showToast("Izin GPS tidak aktif, memuat lokasi simulasi.");
+        triggerGpsDetectionFlow(-6.595038, 106.797241);
+        setSearchOpen(false);
+      },
+      { timeout: 8000, enableHighAccuracy: true }
+    );
+  };
 
   useEffect(() => {
     const bio = getStoredBiodata();
     setBiodata(bio);
     if (typeof window !== "undefined") {
       const sp = new URLSearchParams(window.location.search);
+      const mode = sp.get("mode");
+      const latParam = sp.get("lat");
+      const lngParam = sp.get("lng");
+
+      if (mode === "gps") {
+        const lat = latParam ? parseFloat(latParam) : -6.595038;
+        const lng = lngParam ? parseFloat(lngParam) : 106.797241;
+        triggerGpsDetectionFlow(lat, lng);
+        return;
+      }
+
       const addr = sp.get("address");
       const shape = sp.get("shape") as RoofShape | null;
       const ridgeParam = sp.get("ridge");
@@ -688,7 +2067,7 @@ function StudioPageContent() {
         if (!isNaN(val)) setPolygonRotation(val);
       }
     }
-  }, []);
+  }, [triggerGpsDetectionFlow]);
 
   // Initialize Dynamic OpenStreetMap & Real Earth Satellite Map (CDN, zero npm packages)
   useEffect(() => {
@@ -837,10 +2216,51 @@ function StudioPageContent() {
     }
   }, [activeLayer, mapLoaded]);
 
-  // OSM Nominatim Geocoding API handler (Focused strictly on Kota Bogor)
+  // OSM Nominatim Geocoding & Preset Search handler (Focused on Kota Bogor & presets)
   const handleGeocodeSearch = async (query: string) => {
-    if (!query.trim()) return;
-    const searchQuery = query.toLowerCase().includes("bogor") ? query : `${query}, Kota Bogor`;
+    const q = query.trim().toLowerCase();
+    if (!q) return;
+
+    if (q.includes("gps") || q.includes("lokasi terkini") || q.includes("lokasi saya")) {
+      handleUseGps();
+      return;
+    }
+
+    // Check presets first for instant & accurate jump
+    const matchedPreset = PRESET_ADDRESSES.find(
+      (p) => p.label.toLowerCase().includes(q) || q.includes(p.label.toLowerCase().slice(0, 10))
+    );
+    if (matchedPreset) {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([matchedPreset.lat, matchedPreset.lon], 21, { duration: 1.2 });
+      }
+      updateActiveFacet({
+        lat: matchedPreset.lat,
+        lng: matchedPreset.lon,
+        ridge: matchedPreset.ridge,
+        slope: matchedPreset.slope,
+        shape: matchedPreset.shape,
+        rotation: matchedPreset.deg,
+        name: matchedPreset.label,
+      });
+      setAddressInput(matchedPreset.label);
+      showToast(`Lokasi diterapkan: ${matchedPreset.label}`);
+      return;
+    }
+
+    if (q.includes("menteng")) {
+      const lat = -6.595038;
+      const lon = 106.797241;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.2 });
+      }
+      updateActiveFacet({ lat, lng: lon, name: "Menteng Residence" });
+      setAddressInput("Menteng Residence, Bogor Tengah");
+      showToast("Lokasi: Menteng Residence, Bogor Tengah");
+      return;
+    }
+
+    const searchQuery = q.includes("bogor") ? query : `${query}, Kota Bogor`;
     showToast(`Mencari lokasi: ${searchQuery}...`);
     try {
       const res = await fetch(
@@ -853,11 +2273,11 @@ function StudioPageContent() {
         const lat = parseFloat(data[0].lat);
         const lon = parseFloat(data[0].lon);
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.5 });
+          mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.2 });
         }
         updateActiveFacet({ lat, lng: lon });
         setAddressInput(data[0].display_name || searchQuery);
-        showToast(`Lokasi Kota Bogor: ${data[0].display_name.split(",")[0]}`);
+        showToast(`Lokasi ditemukan: ${data[0].display_name.split(",")[0]}`);
       } else {
         showToast("Lokasi tidak ditemukan di OSM. Menggunakan preset Bogor.");
       }
@@ -866,11 +2286,28 @@ function StudioPageContent() {
     }
   };
 
-  // Calculations (Multi-Polygon Solar Physics & Aggregate Financials)
+  const handleResetSearch = () => {
+    const defaultAddress = "Jl. Pajajaran No. 42, Bogor Tengah";
+    const defaultLat = -6.595038;
+    const defaultLng = 106.797241;
+    setAddressInput(defaultAddress);
+    updateActiveFacet({
+      lat: defaultLat,
+      lng: defaultLng,
+      name: "Menteng Residence",
+    });
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([defaultLat, defaultLng], 21, { duration: 1.2 });
+    }
+    showToast("Pencarian & lokasi peta direset ke posisi awal");
+  };
+
+  // Calculations (Multi-Polygon Solar Physics & Aggregate Financials based on ALL facets in project)
   const calc = useMemo(() => {
     const monthlyKwh = monthlyBill / plnTariff;
+    const hasSelection = selectedFacets.length > 0;
 
-    // Active Facet Specific Metrics
+    // Active Facet Specific Metrics (Used by Tab 1 & Grid Inspector)
     const activeMetrics = computeFacetMetrics(
       activeFacet,
       sunHour,
@@ -879,43 +2316,53 @@ function StudioPageContent() {
       inverterType
     );
 
-    // All Facets Metrics
-    const allMetrics = facets.map((f) =>
+    // Selected Facets Metrics (for selection inspection if needed)
+    const selectedMetrics = selectedFacets.map((f) =>
       computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType)
     );
 
-    // Aggregate System Totals
-    const totalGrossArea = allMetrics.reduce((s, m) => s + m.grossArea, 0);
-    const totalNetArea = allMetrics.reduce((s, m) => s + m.netArea, 0);
-    const totalValidSlots = allMetrics.reduce((s, m) => s + m.totalValidSlots, 0);
-    const totalModulesFitted = allMetrics.reduce((s, m) => s + m.modulesFitted, 0);
-    const totalActualKwp = allMetrics.reduce((s, m) => s + m.actualKwp, 0);
-    const totalAnnualProductionKwh = allMetrics.reduce((s, m) => s + m.annualProductionKwh, 0);
-    const totalMonthlyGenKwh = allMetrics.reduce((s, m) => s + m.monthlyGenKwh, 0);
+    // ALL Facets Metrics (Studio calculations reflect the ENTIRE PROJECT holistically!)
+    const allFacetsMetrics = facets.map((f) =>
+      computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType)
+    );
 
-    const costModules = allMetrics.reduce((s, m) => s + m.costModules, 0);
-    const costInverter = allMetrics.reduce((s, m) => s + m.costInverter, 0);
-    const costRacking = allMetrics.reduce((s, m) => s + m.costRacking, 0);
-    const costInstall = 15_000_000; // Standar instalasi mekanikal & elektrikal
+    // Aggregate System Totals for ALL facets in project
+    const totalGrossArea = allFacetsMetrics.reduce((s, m) => s + m.grossArea, 0);
+    const totalNetArea = allFacetsMetrics.reduce((s, m) => s + m.netArea, 0);
+    const totalValidSlots = allFacetsMetrics.reduce((s, m) => s + m.totalValidSlots, 0);
+    const totalModulesFitted = allFacetsMetrics.reduce((s, m) => s + m.modulesFitted, 0);
+    const totalActualKwp = allFacetsMetrics.reduce((s, m) => s + m.actualKwp, 0);
+    const totalAnnualProductionKwh = allFacetsMetrics.reduce((s, m) => s + m.annualProductionKwh, 0);
+    const totalMonthlyGenKwh = allFacetsMetrics.reduce((s, m) => s + m.monthlyGenKwh, 0);
+
+    const costModules = allFacetsMetrics.reduce((s, m) => s + m.costModules, 0);
+    const costInverter = allFacetsMetrics.reduce((s, m) => s + m.costInverter, 0);
+    const costRacking = allFacetsMetrics.reduce((s, m) => s + m.costRacking, 0);
+    const costInstall = totalModulesFitted > 0 ? 15_000_000 : 0; // Standar instalasi mekanikal & elektrikal proyek
     const totalCapex = costModules + costInverter + costRacking + costInstall;
 
     const monthlySaving = Math.min(monthlyBill, totalMonthlyGenKwh * plnTariff);
+    const newMonthlyBill = Math.max(0, monthlyBill - monthlySaving);
     const annualSaving = monthlySaving * 12;
-    const coveragePct = Math.min(100, Math.round((totalMonthlyGenKwh / Math.max(1, monthlyKwh)) * 100));
+    const coveragePct = monthlyKwh > 0 ? Math.min(100, Math.round((totalMonthlyGenKwh / monthlyKwh) * 100)) : 0;
 
-    const paybackYears = annualSaving > 0 ? totalCapex / annualSaving : null;
+    const paybackYears = annualSaving > 0 && totalCapex > 0 ? totalCapex / annualSaving : null;
     const bepYear = paybackYears ? Math.round(paybackYears * 10) / 10 : 4.8;
     const irr = totalCapex > 0 ? Math.round(((annualSaving / totalCapex) * 100) * 10) / 10 : 0;
     const lcoe = totalAnnualProductionKwh > 0 ? Math.round(totalCapex / (totalAnnualProductionKwh * 25)) : 0;
     const cumulative25 = annualSaving * 25;
     const netProfit25 = cumulative25 - totalCapex * 1.15;
 
+    // Environmental Serapan Karbon & Pohon: Always computed from ALL polygons in the project!
     const co2ReductionKg = totalAnnualProductionKwh * 0.8;
     const co2ReductionTon = co2ReductionKg / 1000;
     const treesEquivalent = Math.round(co2ReductionKg / 22);
     const forestHa = (treesEquivalent * 0.0011).toFixed(2);
 
     return {
+      hasSelection,
+      selectedCount: selectedFacets.length,
+      projectFacetCount: facets.length,
       // Active Facet Specific (Used by Tab 1 & Grid Inspector)
       grossArea: activeMetrics.grossArea,
       netArea: activeMetrics.netArea,
@@ -932,10 +2379,14 @@ function StudioPageContent() {
       dcAcRatio: activeMetrics.dcAcRatio,
       inverterEffPct: activeMetrics.inverterEffPct,
       currentSpec: activeMetrics.currentSpec,
+      portraitSlotsCount: activeMetrics.portraitSlotsCount,
+      landscapeSlotsCount: activeMetrics.landscapeSlotsCount,
+      bestOrientation: activeMetrics.bestOrientation,
 
-      // Total System Aggregate Metrics (Used by Top Ribbon, Tab 3 & Charts)
+      // Total System Aggregate Metrics across ENTIRE PROJECT (Used by Top Ribbon, Tab 3 & Charts)
       totalGrossArea,
       totalNetArea,
+      totalValidSlotsAggregate: totalValidSlots,
       totalModulesFitted,
       actualKwp: totalActualKwp,
       annualProductionKwh: totalAnnualProductionKwh,
@@ -947,6 +2398,7 @@ function StudioPageContent() {
       costRacking,
       costInstall,
       cappedSaving: monthlySaving,
+      newMonthlyBill,
       annualSaving,
       paybackYears,
       bepYear,
@@ -959,8 +2411,9 @@ function StudioPageContent() {
       forestHa,
     };
   }, [
-    activeFacet,
     facets,
+    activeFacet,
+    selectedFacets,
     monthlyBill,
     plnTariff,
     sunHour,
@@ -968,13 +2421,6 @@ function StudioPageContent() {
     extraTilt,
     inverterType,
   ]);
-
-  const activeTreeCount = useMemo(() => {
-    const minBenchmark = 120;
-    const maxBenchmark = 3850;
-    const ratio = Math.max(0, Math.min(1, (calc.treesEquivalent - minBenchmark) / (maxBenchmark - minBenchmark)));
-    return Math.max(2, Math.min(24, Math.round(2 + ratio * 22)));
-  }, [calc.treesEquivalent]);
 
   // Save Simulation to Server State & Action
   const [isSaving, setIsSaving] = useState(false);
@@ -1017,16 +2463,60 @@ function StudioPageContent() {
   };
 
   const handleSlotClick = (key: string) => {
-    const cycle: Record<SlotState, SlotState> = {
-      active: "skylight",
-      skylight: "hvac",
-      hvac: "empty",
-      empty: "active",
-    };
-    const current = slotOverrides[key] || "active";
-    const next = cycle[current];
-    setSlotOverrides((prev) => ({ ...prev, [key]: next }));
-    showToast(`Slot Atap diubah: ${next.toUpperCase()}`);
+    if (obstacleBrush) {
+      const current = slotOverrides[key];
+      if (current === obstacleBrush) {
+        // Toggle back to active
+        const next = { ...slotOverrides };
+        delete next[key];
+        setSlotOverrides(next);
+        showToast("Rintangan dihapus, modul aktif kembali");
+      } else {
+        setSlotOverrides((prev) => ({ ...prev, [key]: obstacleBrush }));
+        showToast(
+          `Rintangan manual diterapkan: ${
+            obstacleBrush === "hvac"
+              ? "AC / Chiller"
+              : obstacleBrush === "skylight"
+                ? "Skylight Kaca"
+                : "Void / Ruang Kosong"
+          }`
+        );
+      }
+      return;
+    }
+
+    // Interactive direct toggle: click panel on polygon to turn off (empty) or turn on (active)
+    const currentSlot = calc.validSlots.find((s: PanelSlotItem) => s.key === key);
+    const currentState = currentSlot?.state ?? slotOverrides[key] ?? "active";
+
+    if (currentState === "active") {
+      // Turn OFF module into empty candidate slot
+      const nextOverrides: Record<string, SlotState> = { ...slotOverrides, [key]: "empty" };
+      const newActive = calc.validSlots.filter((s: PanelSlotItem) => {
+        if (s.key === key) return false;
+        return (nextOverrides[s.key] ?? s.state) === "active";
+      }).length;
+
+      updateActiveFacet({
+        slotOverrides: nextOverrides,
+        customModuleCount: newActive,
+      });
+      showToast(`Modul dinonaktifkan (${newActive} terpasang)`);
+    } else {
+      // Turn ON module into active solar panel
+      const nextOverrides: Record<string, SlotState> = { ...slotOverrides, [key]: "active" };
+      const newActive = calc.validSlots.filter((s: PanelSlotItem) => {
+        if (s.key === key) return true;
+        return (nextOverrides[s.key] ?? s.state) === "active";
+      }).length;
+
+      updateActiveFacet({
+        slotOverrides: nextOverrides,
+        customModuleCount: newActive,
+      });
+      showToast(`Modul surya dipasang (${newActive} terpasang)`);
+    }
   };
 
   const azInfo = useMemo(() => {
@@ -1125,7 +2615,7 @@ function StudioPageContent() {
   const wedgePathD = `M 20 70 L 52 70 A 32 32 0 0 0 ${wedgeEndX.toFixed(1)} ${wedgeEndY.toFixed(1)} Z`;
   const arcPathD = `M 52 70 A 32 32 0 0 0 ${wedgeEndX.toFixed(1)} ${wedgeEndY.toFixed(1)}`;
 
-  const currentInspectYear = roiHoverYear !== null ? roiHoverYear : roiYear;
+  const currentInspectYear = roiHoverYear !== null ? roiHoverYear : (calc.bepYear || 4.8);
 
   const getCashFlowAtYear = (t: number) => {
     if (t <= 0) return -calc.totalCapex;
@@ -1136,18 +2626,51 @@ function StudioPageContent() {
 
   const currentInspectCashFlow = getCashFlowAtYear(currentInspectYear);
 
+  // Active Tree Count for Eco-Forest Animation (Live reactive to total installed solar panels across ALL project polygons)
+  const activeTreeCount = useMemo(() => {
+    // If 0 modules fitted in project: 0 trees sprouted
+    if (calc.totalModulesFitted === 0) {
+      return 0;
+    }
+
+    // 1. If user is actively hovering on ROI financial projection chart: preview 25-year growth
+    if (roiHoverYear !== null) {
+      const yearRatio = Math.max(0, Math.min(1, roiHoverYear / 25));
+      return Math.max(2, Math.min(24, Math.round(2 + yearRatio * 22)));
+    }
+
+    // 2. Baseline Studio: Live reactive directly to installed solar panels across ALL project polygons
+    const totalSlots = Math.max(1, calc.totalValidSlotsAggregate || calc.totalValidSlots || 1);
+    const modRatio = Math.max(0, Math.min(1, calc.totalModulesFitted / totalSlots));
+    return Math.max(1, Math.min(24, Math.round(modRatio * 24)));
+  }, [calc.totalModulesFitted, calc.totalValidSlotsAggregate, calc.totalValidSlots, roiHoverYear]);
+
+  const displayTreesCount = useMemo(() => {
+    if (calc.totalModulesFitted === 0) {
+      return 0;
+    }
+    // Only preview cumulative timeline when user is actively hovering over the ROI projection chart
+    if (roiHoverYear !== null) {
+      return Math.round(roiHoverYear * calc.treesEquivalent);
+    }
+    return calc.treesEquivalent;
+  }, [calc.totalModulesFitted, roiHoverYear, calc.treesEquivalent]);
+
   const chartW = 340;
   const chartH = 125;
   const chartPadLeft = 28;
   const chartPadRight = 20;
   const plotW = chartW - chartPadLeft - chartPadRight;
-  const minVal = -calc.totalCapex * 1.05;
-  const maxVal = Math.max(1, calc.cumulative25 - calc.totalCapex) * 1.05;
-  const valRange = maxVal - minVal;
+  const minVal = Math.min(-1_000_000, -calc.totalCapex * 1.05);
+  const maxVal = Math.max(1_000_000, (calc.cumulative25 - calc.totalCapex) * 1.05);
+  const valRange = Math.max(1_000_000, maxVal - minVal);
 
-  const mapChartX = (t: number) => chartPadLeft + (t / 25) * plotW;
+  const mapChartX = (t: number) => chartPadLeft + (Math.max(0, Math.min(25, t)) / 25) * plotW;
   const mapChartY = (v: number) => chartH - 20 - ((v - minVal) / valRange) * (chartH - 35);
   const zeroY = mapChartY(0);
+
+  const effectiveBep = Math.min(25, Math.max(0, calc.bepYear));
+  const bepRatio = Math.max(0.04, Math.min(0.96, effectiveBep / 25));
 
   const curvePoints = useMemo(() => {
     const pts: { x: number; y: number; t: number; v: number }[] = [];
@@ -1166,9 +2689,10 @@ function StudioPageContent() {
   }, [curvePoints]);
 
   const profitFillD = useMemo(() => {
-    const bepX = mapChartX(calc.bepYear);
+    if (calc.bepYear >= 25 || calc.annualSaving <= 0) return "";
+    const bepX = mapChartX(effectiveBep);
     const endX = mapChartX(25);
-    const profitPts = curvePoints.filter((pt) => pt.t >= calc.bepYear);
+    const profitPts = curvePoints.filter((pt) => pt.t >= effectiveBep);
     if (!profitPts.length) return "";
     let d = `M ${bepX.toFixed(1)} ${zeroY.toFixed(1)}`;
     profitPts.forEach((pt) => {
@@ -1176,19 +2700,19 @@ function StudioPageContent() {
     });
     d += ` L ${endX.toFixed(1)} ${zeroY.toFixed(1)} Z`;
     return d;
-  }, [calc.bepYear, curvePoints, zeroY]);
+  }, [calc.bepYear, effectiveBep, curvePoints, zeroY]);
 
   const deficitFillD = useMemo(() => {
     const startX = mapChartX(0);
-    const bepX = mapChartX(calc.bepYear);
-    const deficitPts = curvePoints.filter((pt) => pt.t <= calc.bepYear);
+    const bepX = mapChartX(effectiveBep);
+    const deficitPts = curvePoints.filter((pt) => pt.t <= effectiveBep);
     let d = `M ${startX.toFixed(1)} ${zeroY.toFixed(1)}`;
     deficitPts.forEach((pt) => {
       d += ` L ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
     });
     d += ` L ${bepX.toFixed(1)} ${zeroY.toFixed(1)} Z`;
     return d;
-  }, [calc.bepYear, curvePoints, zeroY]);
+  }, [calc.bepYear, effectiveBep, curvePoints, zeroY]);
 
   const handleChartMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1238,6 +2762,39 @@ function StudioPageContent() {
     if (activeLayer === "heatmap") {
       const rect = currentTarget.getBoundingClientRect();
       setProbePos({ x: clientX - rect.left, y: clientY - rect.top });
+    }
+
+    if (vertexDragState) {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const dx = clientX - vertexDragState.startX;
+        const dy = clientY - vertexDragState.startY;
+        const rotRad = (-activeFacet.rotation * Math.PI) / 180;
+        const localDx = (dx * Math.cos(rotRad) - dy * Math.sin(rotRad)) / pixelsPerMeter;
+        const localDy = (dx * Math.sin(rotRad) + dy * Math.cos(rotRad)) / pixelsPerMeter;
+
+        const newVertices = vertexDragState.initVertices.map((v, i) => {
+          if (i === vertexDragState.vertexIdx) {
+            return {
+              x: Math.round((v.x + localDx) * 1000) / 1000,
+              y: Math.round((v.y + localDy) * 1000) / 1000,
+            };
+          }
+          return v;
+        });
+
+        const patch = buildPolygonPatch(newVertices, {
+          lat: vertexDragState.initLat,
+          lng: vertexDragState.initLng,
+          offsetX: vertexDragState.initOx,
+          offsetY: vertexDragState.initOy,
+          rotation: activeFacet.rotation,
+        });
+
+        updateActiveFacet(patch);
+      });
+      return;
     }
 
     if (!dragState) return;
@@ -1308,21 +2865,36 @@ function StudioPageContent() {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    if (vertexDragState) {
+      setVertexDragState(null);
+      showToast("Bentuk simpul poligon diperbarui");
+    }
     if (dragState) {
       setDragState(null);
       showToast("Geometri poligon berhasil diperbarui");
     }
   };
 
+  const selectedTariffLabel = useMemo(() => {
+    if (plnTariff === 1700) return "R-2 / TR (3.500 – 5.500 VA)";
+    if (plnTariff === 1444.7) return "R-1 / TR (1.300 – 2.200 VA)";
+    if (plnTariff === 1699.53) return "R-3 / TR (> 6.600 VA)";
+    if (plnTariff === 1444.71) return "B-2 / TR (Bisnis Menengah)";
+    if (plnTariff === 1114.74) return "B-3 / TM (Bisnis Komersial Besar)";
+    if (plnTariff === 1114.75) return "I-3 / TM (Industri / Pabrik)";
+    if (plnTariff === 996.74) return "I-4 / TT (Industri Skala Besar)";
+    return `Golongan Tarif PLN (Rp ${Number(plnTariff).toLocaleString("id-ID")}/kWh)`;
+  }, [plnTariff]);
+
   const simulationResultForModal: SimulationResult = {
     geometry: {
-      roof_width_m: slope,
-      roof_length_m: ridge,
+      roof_width_m: activeFacet.slope,
+      roof_length_m: activeFacet.ridge,
       total_area_sqm: calc.totalGrossArea,
       effective_area_sqm: calc.totalNetArea,
     },
     layout: {
-      max_slots: calc.totalValidSlots,
+      max_slots: calc.totalValidSlotsAggregate || calc.totalValidSlots,
       installed: calc.totalModulesFitted,
       rows: calc.rows,
       columns: calc.cols,
@@ -1335,8 +2907,8 @@ function StudioPageContent() {
       daily_irradiance_kwh_per_sqm: 4.85,
       incidence_factor: 0.984,
       performance_ratio: 0.8,
-      irradiance_source: "NASA POWER / PVGIS",
-      irradiance_period: "klimatologi tahunan",
+      irradiance_source: "Model Radiasi Surya Tropis",
+      irradiance_period: "Rata-rata Tahunan",
     },
     finance: {
       capex_total_idr: calc.totalCapex,
@@ -1349,8 +2921,8 @@ function StudioPageContent() {
       monthly_saving_idr: calc.cappedSaving,
       annual_saving_idr: calc.annualSaving,
       payback_years: calc.paybackYears,
-      tariff_key: "R2",
-      tariff_label: "R-2 / 3.500-5.500 VA",
+      tariff_key: "PLN",
+      tariff_label: selectedTariffLabel,
       tariff_idr_per_kwh: plnTariff,
       monthly_bill_idr: monthlyBill,
       co2_reduction_kg_per_year: calc.co2ReductionTon * 1000,
@@ -1359,196 +2931,987 @@ function StudioPageContent() {
   };
 
   const simulationParamsForModal: SimulationParameters = {
-    setback_m: setback,
-    gutter_m: gutter,
-    tilt_deg: pitch,
-    azimuth_deg: azimuth,
+    setback_m: activeFacet.setback ?? 0.5,
+    gutter_m: activeFacet.gutter ?? 0.5,
+    tilt_deg: activeFacet.pitch ?? 20,
+    azimuth_deg: activeFacet.azimuth ?? 188,
     module_key: `module_${modulePower}`,
-    orientation,
-    clearance_m: panelGap / 100,
+    orientation: activeFacet.orientation ?? "portrait",
+    clearance_m: (activeFacet.panelGap ?? 3) / 100,
     panel_count: calc.totalModulesFitted,
     inverter_type: inverterType,
     monthly_bill_idr: monthlyBill,
-    tariff_key: "R2",
+    tariff_key: "PLN",
   };
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden bg-[#f8fafc] font-body-md text-slate-800 antialiased select-none flex flex-col">
+    <div className="h-screen w-screen relative overflow-hidden bg-[#FAF9F5] font-body-md text-slate-800 antialiased select-none flex flex-col print:h-auto print:w-auto print:overflow-visible print:bg-[#FAF9F5] print:p-0">
       {/* =======================================================
-          TOP STUDIO HEADER (Modern Soft Gradient + Glassmorphism)
+          EXPANDABLE FLOATING PILL NAVBAR (Horisontal Individual Bubbles)
           ======================================================= */}
-      <header className="h-14 w-full bg-white/80 backdrop-blur-xl border-b border-amber-200/50 px-4 flex items-center justify-between z-40 shrink-0 shadow-[0_2px_16px_rgba(245,158,11,0.03)]">
-        {/* Left: Back button, Logo, Project name badge */}
-        <div className="flex items-center gap-3">
+      <div className="fixed top-4 left-4 z-40 select-none flex items-center gap-2 max-w-[calc(100vw-2rem)] print:hidden">
+        {/* Toggle Button: Closed = Logo + Menu icon | Opened = Close (✕) button */}
+        <button
+          type="button"
+          onClick={() => {
+            setStudioNavOpen((prev) => {
+              const next = !prev;
+              if (!next) {
+                setSearchOpen(false);
+                setFilterOpen(false);
+              }
+              return next;
+            });
+          }}
+          className={`h-11 rounded-full bg-white text-slate-800 relative flex items-center justify-center transition-all duration-300 ease-out shadow-xs cursor-pointer border border-slate-200/80 shrink-0 select-none overflow-hidden ${
+            studioNavOpen
+              ? "w-11 hover:bg-slate-50 text-slate-700 hover:text-slate-900"
+              : "w-[172px] hover:bg-white text-slate-700"
+          }`}
+          title={studioNavOpen ? "Tutup Navigasi Studio" : "Buka Navigasi Studio"}
+          aria-label={studioNavOpen ? "Tutup Navigasi Studio" : "Buka Navigasi Studio"}
+          aria-expanded={studioNavOpen}
+        >
+          {/* CLOSED STATE LAYER (Full Logo + Hamburger) */}
+          <div
+            className={`absolute inset-0 px-4 flex items-center justify-between transition-opacity duration-200 pointer-events-none select-none ${
+              studioNavOpen ? "opacity-0" : "opacity-100"
+            }`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain shrink-0" />
+            <span className="material-symbols-outlined text-[20px] text-slate-600 shrink-0">menu</span>
+          </div>
+
+          {/* OPENED STATE LAYER (Centered Close '✕' Button) */}
+          <div
+            className={`w-11 h-11 flex items-center justify-center transition-all duration-200 select-none shrink-0 ${
+              studioNavOpen ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px] text-slate-800 leading-none flex items-center justify-center text-center">
+              close
+            </span>
+          </div>
+        </button>
+
+        {/* Action Pills Container (Slides smoothly in/out together without abrupt unmount) */}
+        <div
+          className={`flex items-center gap-2 transition-all duration-300 ease-out ${
+            studioNavOpen
+              ? "max-w-[750px] opacity-100 translate-x-0 pointer-events-auto"
+              : "max-w-0 opacity-0 -translate-x-3 pointer-events-none"
+          } ${searchOpen || filterOpen ? "overflow-visible" : "overflow-hidden"}`}
+        >
+          {/* Pill 1: Kembali ke Beranda */}
           <Link
             href="/"
-            className="w-8 h-8 rounded-xl border border-amber-200/60 bg-white/75 hover:bg-white backdrop-blur-md flex items-center justify-center text-slate-700 hover:text-slate-900 transition shadow-2xs"
+            className="h-11 px-4 rounded-full bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-xs shrink-0 border border-slate-200/60 cursor-pointer"
             title="Kembali ke Beranda"
           >
             <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            <span className="hidden sm:inline">Beranda</span>
           </Link>
 
-          <Link href="/" className="flex items-center gap-2" title="SunSight Studio">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="SunSight" className="h-7 w-auto" />
-          </Link>
-
-          <div className="h-4 w-px bg-amber-200/60 mx-1 hidden sm:block" />
-
-          <span className="px-2.5 py-1 rounded-xl bg-amber-50/80 text-amber-950 text-xs font-semibold border border-amber-200/60 hidden sm:inline-flex items-center gap-1.5 shadow-2xs">
-            <span>{activeFacet.name || "Proyek Menteng #06"}</span>
-          </span>
-        </div>
-
-        {/* Center: Search input */}
-        <div className="relative w-64 md:w-80 max-w-sm">
-          <div className="flex items-center rounded-xl bg-white/75 backdrop-blur-md border border-amber-200/60 px-2.5 py-1.5 focus-within:bg-white focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/20 transition-all shadow-2xs">
-            <span className="material-symbols-outlined text-amber-500 text-[18px] mr-2">search</span>
-            <input
-              type="text"
-              value={addressInput}
-              onChange={(e) => setAddressInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleGeocodeSearch(addressInput);
-                }
+          {/* Pill 2: Pencarian (Identik dengan Beranda: Bulat w-11 h-11 dengan popover proyek) */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen((v) => !v);
+                setFilterOpen(false);
               }}
-              placeholder="Menteng, Jakarta Pusat atau Kota Bogor..."
-              className="w-full bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none"
-            />
-            {addressInput && (
-              <button
-                type="button"
-                onClick={() => setAddressInput("")}
-                className="text-slate-400 hover:text-slate-600 ml-1 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[14px]">cancel</span>
-              </button>
+              className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border ${
+                searchOpen
+                  ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                  : "bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 border-slate-200/60 shadow-xs"
+              }`}
+              title="Pencarian Alamat & Lokasi"
+              aria-label="Cari proyek atau lokasi"
+              aria-expanded={searchOpen}
+            >
+              <span className="material-symbols-outlined text-[20px]">{searchOpen ? "close" : "search"}</span>
+            </button>
+
+            {/* Search Popover (Identik dengan Beranda) */}
+            {searchOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Tutup pencarian"
+                  className="fixed inset-0 z-30 cursor-default"
+                  onClick={() => setSearchOpen(false)}
+                />
+                <div className="absolute left-0 top-14 z-40 w-[min(400px,calc(100vw-2rem))] bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.25)] border border-slate-200/90 p-2.5 animate-fadeIn">
+                  {/* Search Bar Input */}
+                  <div className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100">
+                    <span className="material-symbols-outlined text-[18px] text-slate-400 shrink-0">search</span>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={addressInput}
+                      onChange={(e) => setAddressInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleGeocodeSearch(addressInput);
+                          setSearchOpen(false);
+                        }
+                      }}
+                      placeholder="Cari proyek atau alamat"
+                      className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 outline-none border-0 border-none focus:ring-0 p-0"
+                    />
+                    {addressInput && (
+                      <button
+                        type="button"
+                        onClick={() => setAddressInput("")}
+                        title="Hapus teks pencarian"
+                        className="w-7 h-7 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleUseGps}
+                      disabled={isGpsLoading}
+                      title="Gunakan lokasi GPS saya"
+                      className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      <span className={`material-symbols-outlined text-[18px] ${isGpsLoading ? "animate-spin" : ""}`}>
+                        {isGpsLoading ? "sync" : "my_location"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleGeocodeSearch(addressInput);
+                        setSearchOpen(false);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-400 text-amber-950 font-bold text-xs hover:bg-amber-500 transition cursor-pointer shrink-0"
+                    >
+                      Cari
+                    </button>
+                  </div>
+
+                  {/* Subtitle: Lokasi Aktif & Tombol Reset */}
+                  <div className="flex items-center justify-between px-2 pt-2.5 pb-1 gap-2">
+                    <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate min-w-0">
+                      <span className="material-symbols-outlined text-[13px] text-amber-600 shrink-0">location_on</span>
+                      <span className="truncate">{activeFacet.name || addressInput || "Kota Bogor, Jawa Barat"}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleResetSearch();
+                        setSearchOpen(false);
+                      }}
+                      className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 hover:underline shrink-0 flex items-center gap-1 cursor-pointer"
+                      title="Reset posisi peta ke lokasi default"
+                    >
+                      <span className="material-symbols-outlined text-[14px] text-amber-600">restart_alt</span>
+                      Reset
+                    </button>
+                  </div>
+
+                  {/* List Proyek Tersimpan (Format Persis Beranda) */}
+                  <div className="max-h-72 overflow-y-auto mt-1 space-y-1">
+                    {filteredStudioProjects.length === 0 ? (
+                      <div className="py-5 text-center px-2">
+                        <p className="text-xs text-slate-400 m-0">Tidak ada proyek yang cocok</p>
+                        {addressInput.toLowerCase().includes("gps") || addressInput.toLowerCase().includes("terkini") ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUseGps();
+                              setSearchOpen(false);
+                            }}
+                            className="mt-2.5 w-full py-2 px-3 rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">my_location</span>
+                            <span>Deteksi Atap di Lokasi GPS Terkini &rarr;</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleGeocodeSearch(addressInput);
+                              setSearchOpen(false);
+                            }}
+                            className="mt-2 text-xs font-semibold text-amber-700 hover:underline cursor-pointer"
+                          >
+                            Cari &ldquo;{addressInput}&rdquo; di Peta &rarr;
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      filteredStudioProjects.map((proj) => {
+                        const isCurrent =
+                          activeFacet.name === proj.name ||
+                          activeFacet.name === proj.address ||
+                          (Math.abs((activeFacet.lat ?? 0) - proj.lat) < 0.0001 &&
+                            Math.abs((activeFacet.lng ?? 0) - proj.lon) < 0.0001);
+                        return (
+                          <button
+                            key={proj.id}
+                            type="button"
+                            onClick={() => {
+                              handleSelectStudioProject(proj);
+                              setSearchOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
+                              isCurrent
+                                ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
+                                : "hover:bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            <span
+                              className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                                isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">roofing</span>
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-sm font-semibold truncate text-slate-900">{proj.name}</span>
+                              <span className="block text-xs text-slate-400 truncate">{proj.address}</span>
+                            </span>
+                            <span className="text-xs font-semibold text-slate-700 shrink-0">{proj.capacityKwp} kWp</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
-        </div>
 
-        {/* Right: Layer Selector, Reset, Ekspor Proposal PDF, User Avatar */}
-        <div className="flex items-center gap-2">
-          {/* Layer Selector Dropdown */}
+          {/* Pill 3: Filter Lapisan */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOpen((v) => !v);
+                setSearchOpen(false);
+              }}
+              className={`h-11 px-3.5 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-semibold transition-all duration-300 shadow-xs cursor-pointer border ${
+                filterOpen
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 border-slate-200/60"
+              }`}
+              title="Filter Lapisan Peta & CAD"
+              aria-expanded={filterOpen}
+            >
+              <span className="material-symbols-outlined text-[18px]">layers</span>
+              <span className="hidden sm:inline">Filter</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                filterOpen
+                  ? "bg-amber-400 text-amber-950 border-amber-300"
+                  : "bg-amber-100 text-amber-900 border-amber-200"
+              }`}>
+                {activeLayer === "satellite" ? "Satelit" : activeLayer === "cv" ? "AI" : "Heatmap"}
+              </span>
+            </button>
+
+            {/* Filter Popover */}
+            {filterOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Tutup filter"
+                  className="fixed inset-0 z-30 cursor-default"
+                  onClick={() => setFilterOpen(false)}
+                />
+                <div className="absolute left-0 top-14 z-40 w-60 bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.25)] border border-slate-200/90 p-2.5 animate-fadeIn space-y-1">
+                  <div className="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Lapisan Tampilan
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveLayer("satellite");
+                      showToast("Lapisan: Satelit Normal");
+                      setFilterOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
+                      activeLayer === "satellite"
+                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
+                        : "text-slate-700 hover:bg-amber-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-amber-700">satellite_alt</span>
+                      <span>Satelit Normal</span>
+                    </div>
+                    {activeLayer === "satellite" && (
+                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveLayer("cv");
+                      showToast("Lapisan: Deteksi AI (Computer Vision)");
+                      setFilterOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
+                      activeLayer === "cv"
+                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
+                        : "text-slate-700 hover:bg-amber-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-emerald-600">psychology</span>
+                      <span>Deteksi AI (CV)</span>
+                    </div>
+                    {activeLayer === "cv" && (
+                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveLayer("heatmap");
+                      showToast("Lapisan: Radiasi Sinar Matahari");
+                      setFilterOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
+                      activeLayer === "heatmap"
+                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
+                        : "text-slate-700 hover:bg-amber-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-rose-500">wb_sunny</span>
+                      <span>Heatmap Radiasi</span>
+                    </div>
+                    {activeLayer === "heatmap" && (
+                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
+                    )}
+                  </button>
+
+                  <div className="w-full h-px bg-slate-100 my-1" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateActiveFacet({
+                        ridge: 12.48,
+                        slope: 7.28,
+                        pitch: 22,
+                        rotation: -4,
+                        setback: 0.5,
+                        gutter: 0.6,
+                        lat: -6.595038,
+                        lng: 106.797241,
+                      });
+                      if (mapInstanceRef.current) {
+                        mapInstanceRef.current.setView([-6.595038, 106.797241], 21);
+                      }
+                      showToast("Parameter & poligon direset ke standar");
+                      setFilterOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">restart_alt</span>
+                    <span>Reset Parameter Atap</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Pill 4: Proposal PDF */}
           <button
             type="button"
-            onClick={() => {
-              const next: Record<CvLayer, CvLayer> = { satellite: "cv", cv: "heatmap", heatmap: "satellite" };
-              const n = next[activeLayer];
-              setActiveLayer(n);
-              showToast(`Layer: ${n === "cv" ? "Satelit RGB (CV)" : n === "heatmap" ? "Iradiasi Heatmap" : "Satelit Normal"}`);
-            }}
-            className="h-8 px-2.5 rounded-xl border border-amber-200/60 bg-white/75 hover:bg-white backdrop-blur-md flex items-center gap-1.5 text-xs font-medium text-slate-700 transition cursor-pointer shadow-2xs"
-            title="Ganti Lapisan Peta"
+            onClick={() => setProposalOpen(true)}
+            className="h-11 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-amber-800 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-xs shrink-0 cursor-pointer border border-slate-200/60"
+            title="Unduh Proposal PDF Resmi"
           >
-            <span className="material-symbols-outlined text-amber-500 text-[16px]">satellite_alt</span>
-            <span className="hidden md:inline text-slate-500">Layer:</span>
-            <span className="font-semibold text-slate-800 text-[11px]">
-              {activeLayer === "cv" ? "Satelit RGB" : activeLayer === "heatmap" ? "Heatmap" : "Satelit"}
-            </span>
-            <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 text-[9px] font-bold border border-amber-200/60">cv</span>
-            <span className="material-symbols-outlined text-slate-400 text-[14px]">expand_more</span>
+            <span className="material-symbols-outlined text-[18px] text-amber-700">picture_as_pdf</span>
+            <span className="hidden sm:inline">Proposal PDF</span>
           </button>
 
-          {/* Reset */}
-          <button
-            type="button"
-            onClick={() => {
-              updateActiveFacet({
-                ridge: 12.48,
-                slope: 7.28,
-                pitch: 22,
-                rotation: -4,
-                setback: 0.5,
-                gutter: 0.6,
-                lat: -6.595038,
-                lng: 106.797241,
-              });
-              if (mapInstanceRef.current) {
-                mapInstanceRef.current.setView([-6.595038, 106.797241], 21);
-              }
-              showToast("Parameter & poligon direset ke standar");
-            }}
-            className="h-8 px-2.5 rounded-xl border border-slate-200/80 bg-white/75 hover:bg-white backdrop-blur-md flex items-center gap-1 text-xs font-medium text-slate-700 transition cursor-pointer shadow-2xs"
-            title="Reset Parameter Atap"
-          >
-            <span className="material-symbols-outlined text-slate-500 text-[16px]">restart_alt</span>
-            <span className="hidden sm:inline">Reset</span>
-          </button>
-
-          {/* Simpan Desain Button: Modern Soft Amber with Status Indicator */}
+          {/* Pill 5: Simpan Desain */}
           <button
             type="button"
             onClick={handleSaveSimulation}
             disabled={isSaving}
-            className={`h-8 px-3.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition cursor-pointer shadow-xs border ${
+            className={`h-11 px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer border ${
               saveSuccess
-                ? "bg-emerald-500 text-white border-emerald-600"
-                : "bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 border-amber-300"
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-[0_2px_12px_rgba(16,185,129,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
+                : "bg-gradient-to-r from-amber-100/90 via-amber-200/90 to-amber-100/90 hover:from-amber-200/90 hover:via-amber-300/90 hover:to-amber-200/90 text-amber-950 active:scale-[0.98] border-amber-300/80 shadow-[0_2px_14px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.28)]"
             }`}
-            title="Simpan simulasi desain atap ini ke akun Anda"
+            title="Simpan simulasi desain ke riwayat Anda"
           >
-            <span className={`material-symbols-outlined text-[16px] ${isSaving ? "animate-spin" : ""}`}>
+            <span className={`material-symbols-outlined text-[18px] text-amber-800 ${isSaving ? "animate-spin" : ""}`}>
               {isSaving ? "sync" : saveSuccess ? "check_circle" : "save"}
             </span>
             <span className="hidden sm:inline">
               {isSaving ? "Menyimpan..." : saveSuccess ? "Tersimpan" : "Simpan Desain"}
             </span>
-          </button>
-
-          {/* Ekspor Proposal PDF Button: Modern Soft Amber Glass Gradient */}
-          <button
-            type="button"
-            onClick={() => setProposalOpen(true)}
-            className="h-8 px-3.5 rounded-xl bg-gradient-to-r from-amber-100/95 via-amber-200/80 to-amber-100/95 hover:from-amber-200 hover:to-amber-300 active:scale-95 text-amber-950 flex items-center gap-1.5 text-xs font-bold shadow-[0_2px_10px_rgba(245,158,11,0.12),inset_0_1px_1px_rgba(255,255,255,0.85)] border border-amber-300/80 transition cursor-pointer"
-            title="Ekspor Proposal PDF Resmi"
-          >
-            <span className="material-symbols-outlined text-[16px] text-amber-700">picture_as_pdf</span>
-            <span className="hidden sm:inline">Proposal PDF</span>
-          </button>
-
-          {/* User Avatar */}
-          <button
-            type="button"
-            onClick={() => setProfileModalOpen(true)}
-            className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-100 to-amber-200/90 border border-amber-300/80 hover:ring-2 hover:ring-amber-400 text-amber-950 font-bold text-xs flex items-center justify-center transition cursor-pointer shadow-xs"
-            title="Profil Pengguna & Logout"
-          >
-            MR
-          </button>
-
-          {/* Quick Logout Button */}
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await api.logout();
-              } catch {}
-              setToken(null);
-              router.replace("/login");
-            }}
-            className="h-8 px-2.5 rounded-xl border border-slate-200/80 hover:border-rose-300 bg-white/75 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 transition cursor-pointer shadow-2xs"
-            title="Keluar dari Akun"
-          >
-            <span className="material-symbols-outlined text-[15px]">logout</span>
-            <span className="hidden md:inline">Keluar</span>
+            <span className="sm:hidden">
+              {isSaving ? "..." : saveSuccess ? "OK" : "Simpan"}
+            </span>
           </button>
         </div>
-      </header>
+      </div>
 
       {/* =======================================================
           FULL-SCREEN CANVAS VIEWPORT + INSPECTOR
           ======================================================= */}
-      <main className="w-full flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+      <main className="w-full flex-1 flex flex-col lg:flex-row overflow-hidden relative print:hidden">
         {/* =======================================================
             LEFT: CANVAS VIEWPORT (Truly Edge-to-Edge)
             ======================================================= */}
         <div
-          className="relative flex-1 h-[55vh] lg:h-full bg-slate-100 overflow-hidden select-none cursor-default"
+          id="canvas-viewport-container"
+          className={`relative flex-1 h-[55vh] lg:h-full bg-slate-100 overflow-hidden select-none ${
+            cadTool === "pen" ? "cursor-crosshair" : "cursor-default"
+          }`}
           onMouseMove={onViewportMouseMove}
           onMouseUp={onViewportMouseUp}
+          onClick={(e) => {
+            if (e.target === e.currentTarget || (e.target as HTMLElement).id === "studio-leaflet-map") {
+              if (cadTool === "select") {
+                unselectAllFacets();
+              }
+            }
+          }}
         >
+          {/* Top Right: Compass Rose (N) + Zoom Controls (+ / -) */}
+          <div className="absolute top-4 right-4 z-30 flex flex-col items-center gap-1 p-1 rounded-2xl bg-white/90 backdrop-blur-xl border border-white/80 shadow-[0_8px_24px_rgba(0,0,0,0.08)] pointer-events-auto">
+            {/* Compass Rose N */}
+            <button
+              type="button"
+              onClick={() => {
+                if (mapInstanceRef.current) {
+                  mapInstanceRef.current.setView([activeFacet.lat || -6.595038, activeFacet.lng || 106.797241], 21);
+                }
+                showToast("Peta diorientasikan ke Utara & dipusatkan ke atap");
+              }}
+              className="w-8 h-8 rounded-xl flex flex-col items-center justify-center text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 transition cursor-pointer"
+              title="Orientasi Utara & Pusatkan ke Atap"
+            >
+              <span className="text-[9px] font-black font-mono text-slate-800 leading-none">N</span>
+              <span className="material-symbols-outlined text-[12px] text-amber-500 -mt-0.5">navigation</span>
+            </button>
+
+            <div className="w-5 h-px bg-slate-200/80 my-0.5" />
+
+            {/* Zoom In */}
+            <button
+              type="button"
+              onClick={() => {
+                setZoomScale((z) => Math.min(2.5, z + 0.15));
+                if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
+              }}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 transition cursor-pointer"
+              title="Perbesar (Zoom In)"
+            >
+              <span className="material-symbols-outlined text-[17px]">add</span>
+            </button>
+
+            {/* Zoom Out */}
+            <button
+              type="button"
+              onClick={() => {
+                setZoomScale((z) => Math.max(0.6, z - 0.15));
+                if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
+              }}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 transition cursor-pointer"
+              title="Perkecil (Zoom Out)"
+            >
+              <span className="material-symbols-outlined text-[17px]">remove</span>
+            </button>
+          </div>
+
+          {/* Pen Tool Interactive Drawing Overlay */}
+          {cadTool === "pen" && (
+            <div
+              className="absolute inset-0 z-20 pointer-events-auto cursor-crosshair"
+              onClick={handleCanvasPenClick}
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setPenMousePos({
+                  x: Math.round(e.clientX - rect.left),
+                  y: Math.round(e.clientY - rect.top),
+                });
+              }}
+            >
+              <svg className="w-full h-full overflow-visible pointer-events-none">
+                {penPoints.length > 0 && (
+                  <>
+                    {/* Polyline connecting placed points */}
+                    <polyline
+                      points={penPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="rgba(34, 211, 238, 0.15)"
+                      stroke="#22d3ee"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 3"
+                    />
+
+                    {/* Rubberband line to mouse position */}
+                    {penMousePos && penPoints.length > 0 && (
+                      <line
+                        x1={penPoints[penPoints.length - 1].x}
+                        y1={penPoints[penPoints.length - 1].y}
+                        x2={penMousePos.x}
+                        y2={penMousePos.y}
+                        stroke="#06b6d4"
+                        strokeWidth="2"
+                        strokeDasharray="4 4"
+                      />
+                    )}
+
+                    {/* Live distance badge on the rubberband line */}
+                    {penMousePos && penPoints.length > 0 && (
+                      <g
+                        transform={`translate(${
+                          (penPoints[penPoints.length - 1].x + penMousePos.x) / 2
+                        }, ${
+                          (penPoints[penPoints.length - 1].y + penMousePos.y) / 2 - 12
+                        })`}
+                      >
+                        <rect
+                          x="-30"
+                          y="-10"
+                          width="60"
+                          height="20"
+                          rx="6"
+                          fill="#0f172a"
+                          fillOpacity="0.85"
+                          stroke="#22d3ee"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x="0"
+                          y="3"
+                          textAnchor="middle"
+                          fill="#67e8f9"
+                          fontSize="10"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                        >
+                          {(
+                            Math.hypot(
+                              penMousePos.x - penPoints[penPoints.length - 1].x,
+                              penMousePos.y - penPoints[penPoints.length - 1].y
+                            ) / pixelsPerMeter
+                          ).toFixed(2)}
+                          m
+                        </text>
+                      </g>
+                    )}
+
+                    {/* Placed point vertices */}
+                    {penPoints.map((p, idx) => {
+                      const isFirst = idx === 0;
+                      return (
+                        <g key={`pen-pt-${idx}`} transform={`translate(${p.x}, ${p.y})`}>
+                          <circle
+                            r={isFirst && penPoints.length >= 3 ? 8 : 5}
+                            fill={isFirst && penPoints.length >= 3 ? "#10b981" : "#06b6d4"}
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            className={isFirst && penPoints.length >= 3 ? "animate-pulse" : ""}
+                          />
+                          <text
+                            x="0"
+                            y="-9"
+                            textAnchor="middle"
+                            fill="#ffffff"
+                            fontSize="9"
+                            fontFamily="sans-serif"
+                            fontWeight="bold"
+                            stroke="#0f172a"
+                            strokeWidth="2"
+                            paintOrder="stroke"
+                          >
+                            P{idx + 1}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </>
+                )}
+              </svg>
+
+              {/* Floating Mini Action Pill on Drawn Polygon (✓ and ✕ only, zero clutter) */}
+              {penPoints.length > 0 && (
+                <div
+                  className="absolute z-35 flex items-center gap-1.5 p-1 rounded-full bg-white/95 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.15)] border border-slate-200/90 pointer-events-auto animate-fadeIn"
+                  style={{
+                    left: `${penPoints[penPoints.length - 1].x}px`,
+                    top: `${Math.max(24, penPoints[penPoints.length - 1].y - 36)}px`,
+                    transform: "translate(-50%, -100%)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Finish (✓) Button */}
+                  <button
+                    type="button"
+                    disabled={penPoints.length < 3}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      finishPenPolygon(penPoints);
+                    }}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                      penPoints.length >= 3
+                        ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm hover:scale-110 active:scale-95"
+                        : "bg-slate-200 text-slate-400 cursor-not-allowed opacity-50"
+                    }`}
+                    title={
+                      penPoints.length >= 3
+                        ? "Selesai Poligon (✓)"
+                        : "Tambahkan minimal 3 titik untuk selesai"
+                    }
+                  >
+                    <span className="material-symbols-outlined text-[17px] font-bold">check</span>
+                  </button>
+
+                  {/* Cancel (✕) Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPenPoints([]);
+                      setCadTool("select");
+                      showToast("Pen Tool dibatalkan");
+                    }}
+                    className="w-7 h-7 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-600 flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                    title="Batal (✕)"
+                  >
+                    <span className="material-symbols-outlined text-[17px]">close</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Measure Tool Interactive Measuring Tape Overlay (Freehand Distance & Area Measurement) */}
+          {cadTool === "measure" && (
+            <div
+              className={`absolute inset-0 cursor-crosshair pointer-events-auto ${
+                measurePoints.length > 0 ? "z-30" : "z-20"
+              }`}
+              onClick={handleCanvasMeasureClick}
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setMeasureMousePos({
+                  x: Math.round(e.clientX - rect.left),
+                  y: Math.round(e.clientY - rect.top),
+                });
+              }}
+            >
+              <svg className="w-full h-full overflow-visible pointer-events-none">
+                {measurePoints.length > 0 && (
+                  <>
+                    {/* Polyline / Polygon connecting placed measurement points */}
+                    {isMeasureClosed && measurePoints.length >= 3 ? (
+                      <polygon
+                        points={measurePoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                        fill="rgba(245, 158, 11, 0.16)"
+                        stroke="#f59e0b"
+                        strokeWidth="2.5"
+                        strokeDasharray="6 3"
+                      />
+                    ) : (
+                      <>
+                        {measurePoints.length >= 3 && (
+                          <polygon
+                            points={measurePoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                            fill="rgba(245, 158, 11, 0.08)"
+                            stroke="none"
+                          />
+                        )}
+                        <polyline
+                          points={measurePoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="2.5"
+                          strokeDasharray="6 3"
+                        />
+                      </>
+                    )}
+
+                    {/* Rubberband line to mouse position (only if not closed) */}
+                    {!isMeasureClosed && measureMousePos && measurePoints.length > 0 && (() => {
+                      const pLast = measurePoints[measurePoints.length - 1];
+                      const isNearStart = Boolean(
+                        measurePoints.length >= 3 &&
+                        Math.hypot(measureMousePos.x - measurePoints[0].x, measureMousePos.y - measurePoints[0].y) < 24
+                      );
+                      const targetX = isNearStart ? measurePoints[0].x : measureMousePos.x;
+                      const targetY = isNearStart ? measurePoints[0].y : measureMousePos.y;
+                      const distM = (Math.hypot(targetX - pLast.x, targetY - pLast.y) / pixelsPerMeter).toFixed(1);
+
+                      return (
+                        <>
+                          <line
+                            x1={pLast.x}
+                            y1={pLast.y}
+                            x2={targetX}
+                            y2={targetY}
+                            stroke={isNearStart ? "#10b981" : "#fbbf24"}
+                            strokeWidth={isNearStart ? "2.5" : "2"}
+                            strokeDasharray={isNearStart ? "none" : "4 4"}
+                          />
+                          <g transform={`translate(${(pLast.x + targetX) / 2}, ${(pLast.y + targetY) / 2 - 12})`}>
+                            <rect
+                              x={isNearStart ? "-44" : "-28"}
+                              y="-10"
+                              width={isNearStart ? "88" : "56"}
+                              height="20"
+                              rx="6"
+                              fill="#ffffff"
+                              fillOpacity="0.95"
+                              stroke={isNearStart ? "#10b981" : "#f59e0b"}
+                              strokeWidth="1.2"
+                            />
+                            <text
+                              x="0"
+                              y="3"
+                              textAnchor="middle"
+                              fill={isNearStart ? "#065f46" : "#78350f"}
+                              fontSize={isNearStart ? "9" : "10"}
+                              fontFamily="monospace"
+                              fontWeight="bold"
+                            >
+                              {isNearStart ? `Tutup (${distM}m)` : `${distM}m`}
+                            </text>
+                          </g>
+                        </>
+                      );
+                    })()}
+
+                    {/* Segment distances along completed lines */}
+                    {measurePoints.slice(0, -1).map((p1, idx) => {
+                      const p2 = measurePoints[idx + 1];
+                      const segDist = Math.hypot(p2.x - p1.x, p2.y - p1.y) / pixelsPerMeter;
+                      return (
+                        <g
+                          key={`seg-dist-${idx}`}
+                          transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2 - 12})`}
+                        >
+                          <rect
+                            x="-22"
+                            y="-9"
+                            width="44"
+                            height="18"
+                            rx="5"
+                            fill="#ffffff"
+                            fillOpacity="0.95"
+                            stroke="#f59e0b"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x="0"
+                            y="3"
+                            textAnchor="middle"
+                            fill="#78350f"
+                            fontSize="9"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                          >
+                            {segDist.toFixed(1)}m
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Closing segment distance (if closed) */}
+                    {isMeasureClosed && measurePoints.length >= 3 && (() => {
+                      const pLast = measurePoints[measurePoints.length - 1];
+                      const p0 = measurePoints[0];
+                      const closingDist = Math.hypot(p0.x - pLast.x, p0.y - pLast.y) / pixelsPerMeter;
+                      return (
+                        <g transform={`translate(${(pLast.x + p0.x) / 2}, ${(pLast.y + p0.y) / 2 - 12})`}>
+                          <rect
+                            x="-22"
+                            y="-9"
+                            width="44"
+                            height="18"
+                            rx="5"
+                            fill="#ffffff"
+                            fillOpacity="0.95"
+                            stroke="#10b981"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x="0"
+                            y="3"
+                            textAnchor="middle"
+                            fill="#065f46"
+                            fontSize="9"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                          >
+                            {closingDist.toFixed(1)}m
+                          </text>
+                        </g>
+                      );
+                    })()}
+
+                    {/* Placed point vertices */}
+                    {measurePoints.map((p, idx) => {
+                      const isFirst = idx === 0;
+                      const isNearStart = Boolean(
+                        isFirst &&
+                        !isMeasureClosed &&
+                        measurePoints.length >= 3 &&
+                        measureMousePos &&
+                        Math.hypot(measureMousePos.x - p.x, measureMousePos.y - p.y) < 24
+                      );
+
+                      return (
+                        <g key={`ms-pt-${idx}`} transform={`translate(${p.x}, ${p.y})`}>
+                          {isNearStart && (
+                            <circle
+                              r="15"
+                              fill="none"
+                              stroke="#10b981"
+                              strokeWidth="2"
+                              strokeDasharray="4 2"
+                              className="animate-spin"
+                            />
+                          )}
+                          <circle
+                            r={isNearStart ? 9 : isFirst && measurePoints.length >= 3 && !isMeasureClosed ? 8 : 5}
+                            fill={isNearStart ? "#10b981" : isFirst && measurePoints.length >= 3 && !isMeasureClosed ? "#059669" : "#f59e0b"}
+                            stroke="#ffffff"
+                            strokeWidth="2"
+                            className={isFirst && measurePoints.length >= 3 && !isMeasureClosed ? "animate-pulse" : ""}
+                          />
+                          <text
+                            x="0"
+                            y="-9"
+                            textAnchor="middle"
+                            fill="#ffffff"
+                            fontSize="9"
+                            fontFamily="sans-serif"
+                            fontWeight="bold"
+                            stroke="#0f172a"
+                            strokeWidth="2"
+                            paintOrder="stroke"
+                          >
+                            {isFirst && !isMeasureClosed && measurePoints.length >= 3 ? "Tutup" : `M${idx + 1}`}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </>
+                )}
+              </svg>
+
+              {/* Centroid Area Card for Closed Polygon */}
+              {isMeasureClosed && measureCentroid && (
+                <div
+                  className="absolute -translate-x-1/2 -translate-y-1/2 z-35 p-2.5 px-3.5 rounded-2xl bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_24px_rgba(245,158,11,0.22)] text-center pointer-events-none select-none animate-fadeIn"
+                  style={{ left: `${measureCentroid.x}px`, top: `${measureCentroid.y}px` }}
+                >
+                  <div className="flex items-center justify-center gap-1 text-[8.5px] font-bold text-amber-800 uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-[13px] text-amber-600">square_foot</span>
+                    <span>Luas Area Terukur</span>
+                  </div>
+                  <div className="font-title text-base font-extrabold text-slate-900 font-code-metric mt-0.5">
+                    {measureArea.toFixed(1)} <span className="text-xs font-normal text-slate-500">m²</span>
+                  </div>
+                  <div className="text-[9px] font-bold text-slate-500 font-code-metric mt-0.5">
+                    Keliling: {measureTotalDistance.toFixed(1)}m • {measurePoints.length} Sisi
+                  </div>
+                </div>
+              )}
+
+              {/* Floating Action Bar */}
+              {measurePoints.length > 0 && (
+                <div
+                  className="absolute z-35 flex items-center gap-1.5 p-1.5 rounded-full bg-white/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(245,158,11,0.18)] border border-amber-200/90 pointer-events-auto animate-fadeIn select-none"
+                  style={{
+                    left: `${measurePoints[measurePoints.length - 1].x}px`,
+                    top: `${Math.max(24, measurePoints[measurePoints.length - 1].y - 36)}px`,
+                    transform: "translate(-50%, -100%)",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Stats Pill */}
+                  <div className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-950 border border-amber-200 text-[10px] font-code-metric flex items-center gap-1.5 font-bold">
+                    <span>📏 {measureTotalDistance.toFixed(1)}m</span>
+                    {measurePoints.length >= 3 && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-emerald-800">📐 {measureArea.toFixed(1)}m²</span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Close Polygon Button (if >= 3 points and not closed) */}
+                  {!isMeasureClosed && measurePoints.length >= 3 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMeasureClosed(true);
+                        showToast("Poligon tertutup! Luas area berhasil dihitung.");
+                      }}
+                      className="px-2.5 py-1 rounded-full bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+                      title="Tutup Titik Ujung ke Ujung untuk Menghitung Luas Area"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">polyline</span>
+                      <span>Tutup Area</span>
+                    </button>
+                  )}
+
+                  {/* Convert to Roof Facet Button (if closed) */}
+                  {isMeasureClosed && measurePoints.length >= 3 && (
+                    <button
+                      type="button"
+                      onClick={handleConvertMeasureToFacet}
+                      className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-500 text-amber-950 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-xs border border-amber-300"
+                      title="Ubah Hasil Pengukuran Menjadi Bidang Atap Proyek"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">add_circle</span>
+                      <span>Jadikan Bidang Atap</span>
+                    </button>
+                  )}
+
+                  {/* Reset (↺) Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMeasurePoints([]);
+                      setIsMeasureClosed(false);
+                      showToast("Pengukuran direset");
+                    }}
+                    className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                    title="Reset Titik Pengukuran (↺)"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">refresh</span>
+                  </button>
+
+                  {/* Finish (✓) Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMeasurePoints([]);
+                      setIsMeasureClosed(false);
+                      setCadTool("select");
+                      showToast("Pengukuran selesai");
+                    }}
+                    className="w-7 h-7 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-xs"
+                    title="Selesai Pengukuran (✓)"
+                  >
+                    <span className="material-symbols-outlined text-[16px] font-bold">check</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Real Earth Satellite & OpenStreetMap (OSM) Live Map Container */}
           <div id="studio-leaflet-map" className="absolute inset-0 w-full h-full z-0 pointer-events-auto" />
 
@@ -1715,15 +4078,233 @@ function StudioPageContent() {
 
           {/* Floating Toast Notification */}
           {cadToast && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-800 border border-slate-200/90 shadow-xl text-xs font-semibold flex items-center gap-2 animate-fadeIn">
-              <span className="material-symbols-outlined text-amber-500 text-[16px]">info</span>
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-800 border border-amber-200/80 shadow-[0_4px_20px_rgba(245,158,11,0.12)] text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+              <span className="material-symbols-outlined text-amber-500 text-[15px]">info</span>
               <span>{cadToast}</span>
             </div>
           )}
 
+          {/* Floating Tool Banner: Delete Vertex Mode */}
+          {cadTool === "delete_vertex" && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-rose-200/90 shadow-[0_8px_30px_rgba(244,63,94,0.12),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn">
+              <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                <span className="material-symbols-outlined text-[13px]">remove_circle</span>
+              </div>
+              <span className="font-medium text-slate-700">
+                Hapus Simpul • <strong className="text-rose-900 font-bold">{getFacetVertices(activeFacet).length} titik</strong> (klik simpul merah)
+              </span>
+              <button
+                type="button"
+                disabled={getFacetVertices(activeFacet).length <= 3}
+                onClick={() => deleteLastVertex()}
+                className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold transition flex items-center gap-1 ${
+                  getFacetVertices(activeFacet).length > 3
+                    ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
+                }`}
+                title="Hapus simpul terakhir yang dibuat"
+              >
+                <span className="material-symbols-outlined text-[12px]">backspace</span>
+                <span>Hapus Terakhir</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCadTool("select")}
+                className="px-2.5 py-0.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition cursor-pointer"
+              >
+                Selesai
+              </button>
+            </div>
+          )}
+
+          {/* Floating Tool Banner: Measure / CAD Overview Mode */}
+          {cadTool === "measure" && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn">
+              <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                <span className="material-symbols-outlined text-[13px]">straighten</span>
+              </div>
+              <span className="font-medium text-slate-700">
+                {isMeasureClosed ? (
+                  <>
+                    Poligon Terukur • Luas: <strong className="font-code-metric text-emerald-800 font-bold">{measureArea.toFixed(1)} m²</strong> • Keliling: <strong className="font-code-metric text-amber-900 font-bold">{measureTotalDistance.toFixed(1)}m</strong>
+                  </>
+                ) : measurePoints.length > 0 ? (
+                  <>
+                    Ukur Garis Bebas • Jarak: <strong className="font-code-metric text-amber-900 font-bold">{measureTotalDistance.toFixed(1)}m</strong>
+                    {measurePoints.length >= 3 && (
+                      <span className="text-[11px] text-slate-500 ml-1">(Klik titik awal untuk menutup area)</span>
+                    )}
+                  </>
+                ) : selectedFacetIds.length > 0 ? (
+                  <>
+                    Dimensi CAD • <strong className="text-slate-900">{activeFacet.name}</strong>
+                  </>
+                ) : (
+                  "Mode Penggaris • Klik peta untuk ukur panjang/luas atau pilih bidang atap"
+                )}
+              </span>
+              {isMeasureClosed && measurePoints.length >= 3 && (
+                <button
+                  type="button"
+                  onClick={handleConvertMeasureToFacet}
+                  className="px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-500 text-amber-950 text-[10.5px] font-bold transition cursor-pointer border border-amber-300"
+                >
+                  + Jadikan Bidang Atap
+                </button>
+              )}
+              {measurePoints.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMeasurePoints([]);
+                    setIsMeasureClosed(false);
+                  }}
+                  className="px-2 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10.5px] font-semibold transition cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMeasurePoints([]);
+                  setIsMeasureClosed(false);
+                  setCadTool("select");
+                }}
+                className="px-2.5 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300/80 text-[10.5px] font-bold transition cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {/* AI Model Scanning Radar Animation Overlay */}
+          {isAiScanning && (
+            <div className="absolute inset-0 pointer-events-none z-35 flex flex-col items-center justify-center bg-slate-950/20 backdrop-blur-[1.5px] animate-fadeIn">
+              <div className="flex flex-col items-center gap-3 p-5 rounded-3xl bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_12px_40px_rgba(245,158,11,0.25)] text-slate-800 text-center max-w-xs animate-scaleIn">
+                <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-700 shadow-inner">
+                  <span className="material-symbols-outlined text-[28px] animate-spin">radar</span>
+                </div>
+                <div>
+                  <h4 className="font-title font-extrabold text-sm text-slate-900 m-0">Memindai Citra Satelit AI...</h4>
+                  <p className="text-[11px] text-slate-500 m-0 mt-0.5">Mendeteksi kontur dan luas bidang atap secara otomatis</p>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-amber-500 h-full w-2/3 animate-pulse rounded-full" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Detection Floating Mode Guidance Banners */}
+          {showDetectedRoofs && facets.length === 0 && !isAiScanning && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
+                <span className="material-symbols-outlined text-[15px]">psychology</span>
+              </span>
+              <span className="font-medium text-slate-800">
+                <strong>{detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length} Bidang atap terdeteksi AI</strong>. Klik bidang di peta untuk memasang panel surya.
+              </span>
+            </div>
+          )}
+
+          {showDetectedRoofs && facets.length > 0 && !selectionDone && !isAiScanning && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shrink-0">
+                <span className="material-symbols-outlined text-[14px]">check_circle</span>
+              </span>
+              <span className="font-medium text-slate-800 truncate">
+                <strong>{facets.length} Bidang terpilih</strong> (Panel surya aktif)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDetectedRoofs(false);
+                  setSelectionDone(true);
+                  showToast("✨ Desain diterapkan! Poligon atap yang tidak dipilih disembunyikan.");
+                }}
+                className="px-3 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 font-bold text-[11px] shadow-xs border border-amber-300 transition cursor-pointer shrink-0"
+                title="Sembunyikan poligon deteksi atap lainnya"
+              >
+                Selesai Memilih
+              </button>
+            </div>
+          )}
+
           {/* Interactive Multi-Roof Surface Polygons & Solar Arrays */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none z-20">
+          <div className="absolute inset-0 overflow-hidden pointer-events-none z-25">
+            {/* 1. Google Sunroof Style Heatmap Polygons for Detected Satellite Roofs (Unselected) */}
+            {showDetectedRoofs &&
+              detectedRoofsList
+                .filter((roof) => !facets.some((f) => f.id === roof.id))
+                .map((roof) => {
+              const screenPos = getFacetScreenPosition(roof as any);
+              const styleLeft = screenPos ? `${screenPos.x}px` : `calc(50% + ${roof.offsetX}px)`;
+              const styleTop = screenPos ? `${screenPos.y}px` : `calc(50% + ${roof.offsetY}px)`;
+              const polyWidth = Math.max(16, Math.round(roof.ridge * pixelsPerMeter));
+              const polyHeight = Math.max(16, Math.round(roof.slope * pixelsPerMeter));
+              const verts = roof.vertices || [
+                { x: -roof.ridge / 2, y: -roof.slope / 2 },
+                { x: roof.ridge / 2, y: -roof.slope / 2 },
+                { x: roof.ridge / 2, y: roof.slope / 2 },
+                { x: -roof.ridge / 2, y: roof.slope / 2 },
+              ];
+
+              const svgPoints = verts
+                .map(
+                  (v) =>
+                    `${polyWidth / 2 + v.x * pixelsPerMeter},${
+                      polyHeight / 2 + v.y * pixelsPerMeter
+                    }`
+                )
+                .join(" ");
+
+              return (
+                <div
+                  key={roof.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectDetectedRoof(roof);
+                  }}
+                  className="absolute pointer-events-auto cursor-pointer group select-none transition-all duration-300 hover:scale-[1.03] z-10"
+                  style={{
+                    left: styleLeft,
+                    top: styleTop,
+                    width: `${polyWidth}px`,
+                    height: `${polyHeight}px`,
+                    transform: `translate(-50%, -50%) rotate(${roof.rotation}deg)`,
+                  }}
+                  title={`Klik untuk memilih atap ini (${roof.name}, ${roof.area.toFixed(1)} m²)`}
+                >
+                  <svg className="w-full h-full overflow-visible">
+                    <polygon
+                      points={svgPoints}
+                      fill="rgba(245, 158, 11, 0.22)"
+                      stroke="#F59E0B"
+                      strokeWidth="3.5"
+                      strokeDasharray="6,3"
+                      strokeLinejoin="round"
+                      className="group-hover:fill-amber-400/35 group-hover:stroke-amber-400 group-hover:stroke-[4.5] transition-all filter drop-shadow-[0_2px_12px_rgba(245,158,11,0.35)]"
+                    />
+                  </svg>
+
+                  {/* Floating Mini Tag on Hover or Normal (Luas area & AI Confidence badge) */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-90 group-hover:opacity-100 transition-opacity gap-0.5">
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-900/90 text-amber-200 font-mono text-[10px] font-bold shadow-sm whitespace-nowrap border border-amber-300/40 backdrop-blur-xs flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[11px] text-amber-400">roofing</span>
+                      <span>{Math.round(roof.area)} m²</span>
+                    </span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400/90 text-amber-950 font-bold text-[8.5px] shadow-2xs opacity-0 group-hover:opacity-100 transition-opacity">
+                      Akurasi {roof.confidence}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* 2. Active Facets & Solar PV Arrays */}
             {facets.map((facet) => {
+              const isSelected = selectedFacetIds.includes(facet.id);
               const isActive = facet.id === activeFacetId;
               const fMetrics = computeFacetMetrics(
                 facet,
@@ -1737,8 +4318,30 @@ function StudioPageContent() {
               const screenPos = getFacetScreenPosition(facet);
               const styleLeft = screenPos ? `${screenPos.x}px` : `calc(50% + ${facet.offsetX}px)`;
               const styleTop = screenPos ? `${screenPos.y}px` : `calc(50% + ${facet.offsetY}px)`;
-              const polyWidth = Math.max(16, Math.round(facet.ridge * pixelsPerMeter));
-              const polyHeight = Math.max(16, Math.round(facet.slope * pixelsPerMeter));
+              const facetVerts = getFacetVertices(facet);
+              const bounds = polygonBounds(facetVerts);
+              const realRidge = Math.max(facet.ridge, bounds.width);
+              const realSlope = Math.max(facet.slope, bounds.height);
+              const polyWidth = Math.max(16, Math.round(realRidge * pixelsPerMeter));
+              const polyHeight = Math.max(16, Math.round(realSlope * pixelsPerMeter));
+              const polyClipPath = `polygon(${facetVerts
+                .map(
+                  (v) =>
+                    `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        Math.round(((polyWidth / 2 + v.x * pixelsPerMeter) / polyWidth) * 100)
+                      )
+                    )}% ${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        Math.round(((polyHeight / 2 + v.y * pixelsPerMeter) / polyHeight) * 100)
+                      )
+                    )}%`
+                )
+                .join(",")})`;
 
               return (
                 <div
@@ -1758,7 +4361,7 @@ function StudioPageContent() {
                         : cadTool === "edit_polygon"
                           ? "crosshair"
                           : "default",
-                    zIndex: isActive ? 25 : 15,
+                    zIndex: isSelected ? 25 : 15,
                   }}
                   onMouseDown={(e) => {
                     if (cadTool === "select" || cadTool === "edit_polygon") {
@@ -1778,170 +4381,314 @@ function StudioPageContent() {
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!isActive) {
-                      setActiveFacetId(facet.id);
-                      showToast(`Beralih ke ${facet.name}`);
-                    }
+                    setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
+                    setActiveFacetId(facet.id);
+                    showToast(`Memilih ${facet.name || "bidang atap"}`);
                   }}
                 >
                   {/* Outer Roof Boundary */}
-                  <div
-                    className={`absolute inset-0 rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? "bg-sky-950/35 border-2 border-sky-400/90 shadow-[0_0_35px_rgba(2,132,199,0.45)] ring-1 ring-sky-300/40"
-                        : "bg-slate-900/40 border-2 border-dashed border-emerald-400/60 hover:border-amber-400/80 hover:bg-slate-900/60 cursor-pointer"
-                    } ${
-                      facet.shape === "l-shape"
-                        ? "[clip-path:polygon(0_0,65%_0,65%_42%,100%_42%,100%_100%,0_100%)]"
-                        : facet.shape === "trapezoid"
-                          ? "[clip-path:polygon(15%_0,85%_0,100%_100%,0_100%)]"
-                          : ""
-                    }`}
-                  >
-                    {/* Top Ridge Tag */}
-                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-md flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-10">
-                      <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-amber-500" : "bg-emerald-500"}`} />
-                      <span className="font-code-metric text-[11px] font-bold text-slate-900">
-                        {facet.ridge.toFixed(2)} m
-                      </span>
-                      <span className="text-[9.5px] text-slate-400">
-                        Panjang Atap
-                      </span>
-                    </div>
+                  <div className="absolute inset-0 transition-all duration-200 pointer-events-auto">
+                    {/* SVG Outline for the exact polygon boundary (Universal for Rectangle, Trapezoid, L-shape, Custom Polygon) */}
+                    <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none z-10">
+                      {/* Exact Roof Perimeter Polygon */}
+                      <polygon
+                        points={facetVerts
+                          .map(
+                            (v) =>
+                              `${polyWidth / 2 + v.x * pixelsPerMeter},${
+                                polyHeight / 2 + v.y * pixelsPerMeter
+                              }`
+                          )
+                          .join(" ")}
+                        fill={
+                          isSelected
+                            ? isActive
+                              ? "rgba(14, 165, 233, 0.16)"
+                              : "rgba(14, 165, 233, 0.09)"
+                            : "rgba(15, 23, 42, 0.45)"
+                        }
+                        stroke={isSelected ? "#38bdf8" : "#10b981"}
+                        strokeWidth={isSelected ? "3" : "2"}
+                        strokeDasharray={isSelected ? "none" : "4 3"}
+                        strokeLinejoin="round"
+                        className={isSelected ? "filter drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]" : ""}
+                      />
 
-                    {/* Right Slope Tag */}
-                    {isActive && (
-                      <div className="absolute -right-28 top-1/2 -translate-y-1/2 px-2.5 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-md flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-10">
-                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                        <span className="font-code-metric text-[11px] font-bold text-slate-900">
-                          {facet.slope.toFixed(2)} m
+                      {/* Setback dashed outline (Yellow dashed inset polygon, perfectly follows the exact shape for ALL templates & custom polygons!) */}
+                      {isSelected && facet.setback > 0 && (() => {
+                        const setbackPoly = insetPolygon(facetVerts, facet.setback);
+                        if (!setbackPoly || setbackPoly.length < 3) return null;
+                        return (
+                          <polygon
+                            points={setbackPoly
+                              .map(
+                                (v) =>
+                                  `${polyWidth / 2 + v.x * pixelsPerMeter},${
+                                    polyHeight / 2 + v.y * pixelsPerMeter
+                                  }`
+                              )
+                              .join(" ")}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            strokeLinejoin="round"
+                          />
+                        );
+                      })()}
+                    </svg>
+
+                    {/* Top Ridge Tag (Scaled cleanly without clutter - rectangular roofs only) */}
+                    {isSelected && facet.shape === "rectangle" && (
+                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-sm flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-25">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        <span className="font-code-metric text-[10px] font-bold text-slate-900">
+                          {facet.ridge.toFixed(1)} m
                         </span>
-                        <span className="text-[9.5px] text-slate-400">Lebar Atap</span>
+                        {pixelsPerMeter >= 20 && (
+                          <span className="text-[9px] text-slate-400">Panjang</span>
+                        )}
                       </div>
                     )}
 
-                    {/* Setback Boundary (Scaled physically to meters) */}
-                    <div
-                      className="absolute rounded-md border-2 border-dashed border-amber-400/80 bg-emerald-500/[0.02] pointer-events-none transition-all duration-200 z-20"
-                      style={{
-                        top: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        left: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        right: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        bottom: `${Math.round((facet.setback + facet.gutter) * pixelsPerMeter)}px`,
-                      }}
-                    >
-                      {isActive && (
-                        <div className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded bg-amber-500 text-white font-code-metric text-[8px] font-bold shadow-md flex items-center gap-1 backdrop-blur-xs border border-amber-300/60 z-20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-200" />
-                          <span>Setback {facet.setback.toFixed(2)}m</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Gutter Strip (Scaled physically to meters) */}
-                    <div
-                      className="absolute bottom-0 left-0 right-0 bg-sky-500/20 border-t border-dashed border-sky-400/80 flex items-center justify-center px-2 pointer-events-none transition-all duration-200 overflow-hidden"
-                      style={{ height: `${Math.max(6, Math.round(facet.gutter * pixelsPerMeter))}px` }}
-                    >
-                      <span className="text-[7.5px] font-bold text-sky-200 uppercase tracking-wider flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[10px]">water_drop</span>
-                        (JALUR TALANG AIR ({facet.gutter.toFixed(2)}M))
-                      </span>
-                    </div>
-
-                    {/* Dynamic PV Solar Grid (Scaled physically to meters) */}
-                    <div
-                      className="absolute p-0.5 grid gap-1 z-20"
-                      style={{
-                        top: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        left: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        right: `${Math.round(facet.setback * pixelsPerMeter)}px`,
-                        bottom: `${Math.round((facet.setback + facet.gutter) * pixelsPerMeter)}px`,
-                        gridTemplateColumns: `repeat(${fMetrics.cols}, minmax(0, 1fr))`,
-                        gridTemplateRows: `repeat(${fMetrics.rows}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {Array.from({ length: fMetrics.rows }).map((_, r) =>
-                        Array.from({ length: fMetrics.cols }).map((__, c) => {
-                          const key = `${r}_${c}`;
-                          const isOut =
-                            (facet.shape === "l-shape" &&
-                              c >= Math.ceil(fMetrics.cols * 0.65) &&
-                              r < Math.floor(fMetrics.rows * 0.42)) ||
-                            (facet.shape === "trapezoid" && r === 0 && (c === 0 || c === fMetrics.cols - 1));
-
-                          if (isOut) return <div key={key} className="opacity-0 pointer-events-none" />;
-
-                          let state: SlotState = facet.slotOverrides[key] || "active";
-                          const obstacleRow = Math.min(fMetrics.rows - 1, 1);
-                          const obstacleCol = Math.max(1, Math.floor((fMetrics.cols - 2) / 2));
-
-                          if (!facet.slotOverrides[key]) {
-                            if (
-                              facet.hasHvac &&
-                              obstacleFilterActive &&
-                              r === obstacleRow &&
-                              (c === obstacleCol || c === obstacleCol + 1)
-                            ) {
-                              state = "hvac";
-                            } else if (facet.hasSkylight && r === 0 && c === Math.min(1, fMetrics.cols - 1)) {
-                              state = "skylight";
-                            }
-                          }
-
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={(ev) => {
-                                ev.stopPropagation();
-                                if (isActive) {
-                                  handleSlotClick(key);
-                                } else {
-                                  setActiveFacetId(facet.id);
-                                }
-                              }}
-                              className={`rounded-xs transition-all flex items-center justify-center cursor-pointer border ${
-                                state === "active"
-                                  ? "bg-slate-900/90 border-sky-400 hover:border-amber-400 shadow-2xs"
-                                  : state === "skylight"
-                                    ? "bg-amber-500/50 border-amber-400"
-                                    : state === "hvac"
-                                      ? "bg-rose-600/70 border-rose-400"
-                                      : "bg-slate-800/20 border-dashed border-slate-600"
-                              }`}
-                              title={`Slot (${r + 1},${c + 1}): ${state}`}
-                            >
-                              {state === "active" ? (
-                                <div className="w-full h-full flex flex-col justify-center items-center py-0.5">
-                                  <div className="w-full h-px bg-sky-300/30 mb-0.5" />
-                                  <span className="text-[6.5px] font-bold text-sky-200">{facet.modulePower}W</span>
-                                </div>
-                              ) : state === "skylight" ? (
-                                <span className="text-[6.5px] font-bold text-amber-200">SKY</span>
-                              ) : state === "hvac" ? (
-                                <span className="text-[6.5px] font-bold text-white">AC</span>
-                              ) : null}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Diagonal Measure Overlay */}
-                    {isActive && cadTool === "measure" && (
-                      <svg className="absolute inset-0 w-full h-full pointer-events-none z-30 overflow-visible">
-                        <line x1="0" y1="0" x2="100%" y2="100%" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 3" />
-                        <rect x="35%" y="45%" width="90" height="20" rx="4" fill="#0f172a" stroke="#f59e0b" strokeWidth="1" />
-                        <text x="50%" y="56%" textAnchor="middle" fontSize="10" fill="#fef08a" fontFamily="Inter" fontWeight="700">
-                          Diag: {Math.sqrt(facet.ridge * facet.ridge + facet.slope * facet.slope).toFixed(2)}m
-                        </text>
-                      </svg>
+                    {/* Right Slope Tag (Scaled cleanly without clutter - rectangular roofs only) */}
+                    {isSelected && facet.shape === "rectangle" && (
+                      <div className="absolute -right-20 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-sm flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-25">
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                        <span className="font-code-metric text-[10px] font-bold text-slate-900">
+                          {facet.slope.toFixed(1)} m
+                        </span>
+                        {pixelsPerMeter >= 20 && (
+                          <span className="text-[9px] text-slate-400">Lebar</span>
+                        )}
+                      </div>
                     )}
+
+                    {/* Gutter Strip (Scaled physically to meters) - for standard rectangular roofs only */}
+                    {facet.shape === "rectangle" && facet.gutter > 0 && (
+                      <div
+                        className="absolute bottom-0 left-0 right-0 bg-sky-500/20 border-t border-dashed border-sky-400/80 flex items-center justify-center px-2 pointer-events-none transition-all duration-200 overflow-hidden"
+                        style={{ height: `${Math.max(4, Math.round(facet.gutter * pixelsPerMeter))}px` }}
+                      >
+                        {pixelsPerMeter >= 22 && (
+                          <span className="text-[7.5px] font-bold text-sky-200 uppercase tracking-wider flex items-center gap-1 truncate">
+                            <span className="material-symbols-outlined text-[10px]">water_drop</span>
+                            TALANG ({facet.gutter.toFixed(2)}M)
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Dynamic PV Solar Panels (Each panel rendered complete and intact) */}
+                    <div className="absolute inset-0 pointer-events-none z-20">
+                      {fMetrics.validSlots.map((slot) => {
+                        const pixelCenterLeft = polyWidth / 2 + slot.x * pixelsPerMeter;
+                        const pixelCenterTop = polyHeight / 2 + slot.y * pixelsPerMeter;
+                        const pixelW = slot.w * pixelsPerMeter;
+                        const pixelH = slot.l * pixelsPerMeter;
+                        const slotRot = slot.rotationDeg || 0;
+                        const key = slot.key;
+
+                        const state: SlotState = slot.state ?? facet.slotOverrides[key] ?? "active";
+
+                        const showCellWattage = pixelsPerMeter >= 26;
+                        const isMicroCell = pixelsPerMeter < 16;
+
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              if (isActive) {
+                                handleSlotClick(key);
+                              } else {
+                                setActiveFacetId(facet.id);
+                              }
+                            }}
+                            className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden pointer-events-auto ${
+                              obstacleBrush ? "cursor-crosshair ring-1 ring-amber-300" : "cursor-pointer"
+                            } ${
+                              state === "active"
+                                ? "bg-gradient-to-b from-[#0B1528] via-[#0F1C36] to-[#0A1325] border-sky-400/50 hover:border-amber-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] hover:scale-[1.02]"
+                                : state === "skylight"
+                                  ? "bg-amber-500/50 border-amber-400"
+                                  : state === "hvac"
+                                    ? "bg-rose-600/70 border-rose-400"
+                                    : "bg-slate-900/35 border-2 border-dashed border-sky-400/40 hover:border-amber-400 hover:bg-amber-400/15"
+                            }`}
+                            style={{
+                              left: `${Math.round(pixelCenterLeft)}px`,
+                              top: `${Math.round(pixelCenterTop)}px`,
+                              width: `${Math.max(4, Math.round(pixelW))}px`,
+                              height: `${Math.max(4, Math.round(pixelH))}px`,
+                              transform: `translate(-50%, -50%) rotate(${slotRot}deg)`,
+                            }}
+                            title={
+                              state === "active"
+                                ? `Panel Aktif (${slot.r + 1},${slot.c + 1}): ${facet.modulePower}W • Klik untuk matikan`
+                                : state === "empty"
+                                  ? `Slot Kosong (${slot.r + 1},${slot.c + 1}) • Klik untuk pasang modul surya`
+                                  : `Rintangan Atap: ${state.toUpperCase()}`
+                            }
+                          >
+                            {state === "active" ? (
+                              <div className="w-full h-full flex flex-col justify-center items-center relative pointer-events-none">
+                                {/* Silicon Wafer Busbar Lines */}
+                                <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                                {showCellWattage && (
+                                  <span className="text-[6.5px] font-bold text-sky-200/95 tracking-tighter truncate px-0.5 leading-none">
+                                    {facet.modulePower}W
+                                  </span>
+                                )}
+                                <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                              </div>
+                            ) : state === "skylight" ? (
+                              <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-amber-300" : "text-[6.5px] font-bold text-amber-200"}`}>
+                                {!isMicroCell && "SKY"}
+                              </span>
+                            ) : state === "hvac" ? (
+                              <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-rose-300" : "text-[6.5px] font-bold text-white"}`}>
+                                {!isMicroCell && "AC"}
+                              </span>
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center pointer-events-none opacity-60 hover:opacity-100">
+                                <span className="material-symbols-outlined text-[10px] text-sky-400/70">add</span>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Unselected Facet Area in Center (Luas area saja, tanpa nama poligon) */}
+                    {!isSelected && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-900/85 text-amber-200 font-mono text-[10px] font-bold shadow-xs whitespace-nowrap border border-amber-300/40 backdrop-blur-xs">
+                          {Math.round(fMetrics.grossArea)} m²
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Single Clean Floating Array Capacity Badge (Hidden in measure mode to avoid badge collision) */}
+                    {isSelected && cadTool !== "measure" && (
+                      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/95 text-white shadow-md border border-sky-400/40 backdrop-blur-md flex items-center gap-1.5 pointer-events-none whitespace-nowrap z-25">
+                        <span className="text-[10px] font-bold text-amber-300">{fMetrics.modulesFitted} Panel</span>
+                        <span className="text-slate-500 text-[9px]">•</span>
+                        <span className="text-[10px] font-bold text-sky-200 font-code-metric">{(fMetrics.actualKwp).toFixed(2)} kWp</span>
+                        {selectedFacetIds.length > 1 && (
+                          <span className="text-[8.5px] font-bold text-emerald-400 bg-emerald-950/80 px-1 rounded border border-emerald-400/30">✓</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* CAD Measure Overview (Edge Dimensions & Radiant Soft Glow Specs Card) */}
+                    {isSelected && cadTool === "measure" && (() => {
+                      const shapeLabel =
+                        facet.shape === "rectangle"
+                          ? "Persegi"
+                          : facet.shape === "trapezoid"
+                          ? "Trapesium / Limas"
+                          : facet.shape === "l-shape"
+                          ? "Bentuk L"
+                          : facet.shape === "custom_polygon"
+                          ? `Poligon Bebas (${facetVerts.length} Titik)`
+                          : `Bentuk ${facet.shape}`;
+                      const totalPerimeter = polygonPerimeter(facetVerts);
+
+                      return (
+                        <>
+                          {/* 1. Subtle, Sleek Edge Length Badges along Perimeter */}
+                          {facetVerts.map((v1, idx) => {
+                            const v2 = facetVerts[(idx + 1) % facetVerts.length];
+                            const mx = polyWidth / 2 + ((v1.x + v2.x) / 2) * pixelsPerMeter;
+                            const my = polyHeight / 2 + ((v1.y + v2.y) / 2) * pixelsPerMeter;
+                            const edgeLen = Math.hypot(v2.x - v1.x, v2.y - v1.y);
+                            return (
+                              <div
+                                key={`cad-edge-${idx}`}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 z-35 pointer-events-none"
+                                style={{ left: `${mx}px`, top: `${my}px` }}
+                              >
+                                <span className="px-1.5 py-0.5 rounded-full bg-white/95 text-slate-800 border border-amber-300/80 shadow-2xs font-mono text-[8.5px] font-bold whitespace-nowrap backdrop-blur-md">
+                                  {edgeLen.toFixed(1)}m
+                                </span>
+                              </div>
+                            );
+                          })}
+
+                          {/* 2. Streamlined, Non-Overwhelming CAD Dimension Card */}
+                          <div
+                            className="absolute top-[calc(100%+20px)] left-1/2 -translate-x-1/2 z-40 w-72 p-3.5 rounded-2xl bg-white/95 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 pointer-events-auto animate-fadeIn select-none"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {/* Card Header */}
+                            <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-5 h-5 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+                                  <span className="material-symbols-outlined text-[13px]">architecture</span>
+                                </span>
+                                <span className="font-title text-xs font-bold text-slate-900 truncate">
+                                  {facet.name}
+                                </span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[8.5px] font-bold font-code-metric shrink-0">
+                                {shapeLabel}
+                              </span>
+                            </div>
+
+                            {/* Hero Area Display (Shoelace Polygon Method) */}
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-50/70 via-white to-emerald-50/40 border border-amber-200/60 mb-2">
+                              <div className="flex items-baseline justify-between text-[9px] font-bold">
+                                <span className="text-slate-500 uppercase tracking-wider">Luas Riil Poligon</span>
+                                <span className="text-emerald-800 font-code-metric">Efektif: {fMetrics.netArea.toFixed(1)} m²</span>
+                              </div>
+                              <div className="flex items-baseline gap-1 mt-0.5">
+                                <span className="font-title text-xl font-extrabold text-slate-900 font-code-metric">
+                                  {fMetrics.grossArea.toFixed(1)}
+                                </span>
+                                <span className="text-xs font-bold text-slate-500">m²</span>
+                              </div>
+                              <span className="text-[8.5px] text-slate-400 block mt-0.5">
+                                Dihitung presisi dari {facetVerts.length} titik koordinat bidang
+                              </span>
+                            </div>
+
+                            {/* 2-Column Minimal Dimension Grid */}
+                            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                              <div className="bg-[#FAF9F5] p-2 rounded-xl border border-amber-150">
+                                <span className="text-slate-400 block text-[8px] font-bold uppercase tracking-wider">Total Keliling</span>
+                                <span className="font-bold text-slate-800 font-code-metric text-[11px] block mt-0.5">
+                                  {totalPerimeter.toFixed(1)} m
+                                </span>
+                                <span className="text-[8px] text-slate-400">Keliling batas atap</span>
+                              </div>
+
+                              <div className="bg-[#FAF9F5] p-2 rounded-xl border border-amber-150">
+                                <span className="text-slate-400 block text-[8px] font-bold uppercase tracking-wider">Bentang Rentang</span>
+                                <span className="font-bold text-slate-800 font-code-metric text-[11px] block mt-0.5">
+                                  {bounds.width.toFixed(1)}m × {bounds.height.toFixed(1)}m
+                                </span>
+                                <span className="text-[8px] text-slate-400">Span terluar bidang</span>
+                              </div>
+                            </div>
+
+                            {/* Compact Parameter Footnote */}
+                            <div className="flex items-center justify-between text-[9px] text-slate-500 pt-2 mt-2 border-t border-slate-100 font-code-metric">
+                              <span>Setback: {(facet.setback || 0.5).toFixed(1)}m</span>
+                              <span>•</span>
+                              <span>Celah: {((facet.panelGap ?? 0.02) * 100).toFixed(0)}cm</span>
+                              <span>•</span>
+                              <span className="font-bold text-amber-900">{fMetrics.modulesFitted} Modul ({fMetrics.actualKwp.toFixed(1)} kWp)</span>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
-                  {/* Precision Handles (Active Only) */}
-                  {isActive && (
+                  {/* Precision Handles (Selected Only) */}
+                  {isSelected && (
                     <>
                       {/* Top Rotation Handle */}
                       <div
@@ -1971,99 +4718,214 @@ function StudioPageContent() {
                         <div className="w-px h-3 bg-slate-400/80" />
                       </div>
 
-                      {/* Corner Handles (Exact match Image 2: Cyan circle with white dot) */}
-                      <div
-                        className={`cad-handle absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20 ${
-                          cadTool === "edit_polygon" ? "ring-4 ring-cyan-300/80 animate-pulse scale-110" : ""
-                        }`}
-                        title="Tarik Sudut Kiri-Atas"
-                      >
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
-                      <div
-                        className={`cad-handle absolute -top-2 -right-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20 ${
-                          cadTool === "edit_polygon" ? "ring-4 ring-cyan-300/80 animate-pulse scale-110" : ""
-                        }`}
-                        title="Tarik Sudut Kanan-Atas"
-                      >
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
-                      <div
-                        className={`cad-handle absolute -bottom-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20 ${
-                          cadTool === "edit_polygon" ? "ring-4 ring-cyan-300/80 animate-pulse scale-110" : ""
-                        }`}
-                        title="Tarik Sudut Kiri-Bawah"
-                      >
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
+                      {/* Figma-Style Dynamic Vertex Handles & Edge Midpoint Add Buttons */}
+                      {cadTool === "delete_vertex" ? (
+                        <>
+                          {/* Dedicated Vertex Deletion Handles */}
+                          {facetVerts.map((v, idx) => {
+                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
+                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
+                            const canDelete = facetVerts.length > 3;
+                            return (
+                              <div
+                                key={`v-del-${idx}`}
+                                className={`cad-handle absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-lg flex items-center justify-center cursor-pointer group border-2 border-white z-40 transition-transform ${
+                                  canDelete
+                                    ? "bg-rose-500 hover:bg-rose-600 text-white ring-4 ring-rose-400/80 hover:scale-130 animate-pulse"
+                                    : "bg-slate-400 text-slate-200 ring-2 ring-slate-300 cursor-not-allowed opacity-60"
+                                }`}
+                                style={{ left: `${vx}px`, top: `${vy}px` }}
+                                title={
+                                  canDelete
+                                    ? `Simpul ${idx + 1} (${v.x.toFixed(1)}m, ${v.y.toFixed(1)}m). Klik untuk menghapus titik ini.`
+                                    : "Minimal poligon harus memiliki 3 simpul!"
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (canDelete) {
+                                    deleteVertex(idx);
+                                  } else {
+                                    showToast("Minimal poligon harus memiliki 3 simpul!");
+                                  }
+                                }}
+                              >
+                                <span className="material-symbols-outlined text-[13px] font-bold">close</span>
+                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-rose-950/95 text-[8.5px] font-bold text-rose-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
+                                  Hapus P{idx + 1}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : cadTool === "edit_polygon" ? (
+                        <>
+                          {/* 1. All Polygon Vertices (Draggable Cyan Handles) */}
+                          {facetVerts.map((v, idx) => {
+                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
+                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
+                            return (
+                              <div
+                                key={`v-${idx}`}
+                                className="cad-handle absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg flex items-center justify-center cursor-move group border-2 border-white hover:scale-125 transition-transform z-35 ring-4 ring-cyan-300/80 animate-pulse pointer-events-auto"
+                                style={{ left: `${vx}px`, top: `${vy}px` }}
+                                title={`Simpul ${idx + 1} (${v.x.toFixed(2)}m, ${v.y.toFixed(2)}m). Geser untuk ubah bentuk, dobel klik untuk hapus.`}
+                                onMouseDown={(e) => startVertexDrag(e, facet.id, idx)}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteVertex(idx);
+                                }}
+                              >
+                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-900/90 text-[8.5px] font-bold text-cyan-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
+                                  P{idx + 1} ({v.x.toFixed(1)}m, {v.y.toFixed(1)}m)
+                                </span>
+                              </div>
+                            );
+                          })}
 
-                      {/* Bottom-Right Handle (Active Resizer for Ridge and Slope) */}
-                      <div
-                        className={`cad-handle absolute -bottom-2 -right-2 w-5 h-5 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20 ${
-                          cadTool === "edit_polygon" ? "ring-4 ring-cyan-300/90 animate-pulse scale-125" : ""
-                        }`}
-                        title="Tarik Sudut Kanan-Bawah untuk Merubah Panjang & Lebar Atap"
-                        onMouseDown={(e) =>
-                          startDrag(
-                            e,
-                            facet.id,
-                            "br",
-                            facet.ridge,
-                            facet.slope,
-                            facet.rotation,
-                            facet.offsetX,
-                            facet.offsetY,
-                            facet.lat || -6.595038,
-                            facet.lng || 106.797241
-                          )
-                        }
-                      >
-                        <div className="w-2 h-2 rounded-full bg-white" />
-                      </div>
+                          {/* 2. Edge Midpoints: (+) Add Vertex Button Centered Precisely on the Edge Line */}
+                          {facetVerts.map((v1, idx) => {
+                            const v2 = facetVerts[(idx + 1) % facetVerts.length];
+                            const mx = polyWidth / 2 + ((v1.x + v2.x) / 2) * pixelsPerMeter;
+                            const my = polyHeight / 2 + ((v1.y + v2.y) / 2) * pixelsPerMeter;
+                            const edgeLen = Math.hypot(v2.x - v1.x, v2.y - v1.y);
+                            const edgePx = edgeLen * pixelsPerMeter;
 
-                      {/* Right Edge Handle (Length Resizer) */}
-                      <div
-                        className="cad-handle absolute top-1/2 -right-2.5 -translate-y-1/2 w-4 h-6 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ew-resize hover:scale-110 transition-all z-20"
-                        title="Tarik Sisi Kanan (Ubah Panjang/Ridge)"
-                        onMouseDown={(e) =>
-                          startDrag(
-                            e,
-                            facet.id,
-                            "r",
-                            facet.ridge,
-                            facet.slope,
-                            facet.rotation,
-                            facet.offsetX,
-                            facet.offsetY,
-                            facet.lat || -6.595038,
-                            facet.lng || 106.797241
-                          )
-                        }
-                      >
-                        <div className="w-0.5 h-3 bg-white rounded-full" />
-                      </div>
+                            // Prevent overlapping clutter when edge is small on screen
+                            if (edgePx < 24) return null;
 
-                      {/* Bottom Edge Handle (Width Resizer) */}
-                      <div
-                        className="cad-handle absolute left-1/2 -bottom-2.5 -translate-x-1/2 w-6 h-4 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ns-resize hover:scale-110 transition-all z-20"
-                        title="Tarik Sisi Bawah (Ubah Lebar/Slope)"
-                        onMouseDown={(e) =>
-                          startDrag(
-                            e,
-                            facet.id,
-                            "b",
-                            facet.ridge,
-                            facet.slope,
-                            facet.rotation,
-                            facet.offsetX,
-                            facet.offsetY,
-                            facet.lat || -6.595038,
-                            facet.lng || 106.797241
-                          )
-                        }
-                      >
-                        <div className="w-3 h-0.5 bg-white rounded-full" />
-                      </div>
+                            return (
+                              <div
+                                key={`edge-${idx}`}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 z-35 pointer-events-auto flex items-center justify-center group/edge"
+                                style={{ left: `${mx}px`, top: `${my}px` }}
+                              >
+                                {/* Exact Real-World Length Badge positioned slightly above, centered horizontally */}
+                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-slate-900/95 text-cyan-200 font-code-metric text-[8px] font-bold shadow-xs whitespace-nowrap border border-cyan-400/40 pointer-events-none opacity-90 group-hover/edge:opacity-100 transition-opacity">
+                                  {edgeLen.toFixed(1)}m
+                                </span>
+
+                                {/* Figma-style (+) button dead center on (mx, my) exactly on the line! */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addVertexAtEdge(idx);
+                                  }}
+                                  className="w-5 h-5 rounded-full bg-white text-cyan-700 border-2 border-cyan-500 shadow-md flex items-center justify-center text-xs font-black hover:scale-125 hover:bg-cyan-50 active:scale-95 transition-all cursor-pointer ring-2 ring-cyan-200/70"
+                                  title={`Klik untuk menambah titik simpul baru tepat di garis sisi ini (${edgeLen.toFixed(1)}m)`}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : facet.shape !== "rectangle" ? (
+                        <>
+                          {/* Exact Vertex Points for Custom / Non-rectangular Polygons in Select/Move mode */}
+                          {facetVerts.map((v, idx) => {
+                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
+                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
+                            return (
+                              <div
+                                key={`v-sel-${idx}`}
+                                className="cad-handle absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg flex items-center justify-center cursor-move group border-2 border-white hover:scale-125 transition-transform z-35 ring-4 ring-cyan-300/80 pointer-events-auto"
+                                style={{ left: `${vx}px`, top: `${vy}px` }}
+                                title={`Simpul ${idx + 1} (${v.x.toFixed(1)}m, ${v.y.toFixed(1)}m). Geser titik ini untuk menyesuaikan bentuk.`}
+                                onMouseDown={(e) => startVertexDrag(e, facet.id, idx)}
+                              >
+                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-900/90 text-[8.5px] font-bold text-cyan-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
+                                  P{idx + 1}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          {/* Standard Corner Handles when in Select mode */}
+                          <div
+                            className="cad-handle absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20"
+                            title="Tarik Sudut Kiri-Atas"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          </div>
+                          <div
+                            className="cad-handle absolute -top-2 -right-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20"
+                            title="Tarik Sudut Kanan-Atas"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          </div>
+                          <div
+                            className="cad-handle absolute -bottom-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20"
+                            title="Tarik Sudut Kiri-Bawah"
+                          >
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          </div>
+                          <div
+                            className="cad-handle absolute -bottom-2 -right-2 w-5 h-5 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20"
+                            title="Tarik Sudut Kanan-Bawah untuk Merubah Panjang & Lebar Atap"
+                            onMouseDown={(e) =>
+                              startDrag(
+                                e,
+                                facet.id,
+                                "br",
+                                facet.ridge,
+                                facet.slope,
+                                facet.rotation,
+                                facet.offsetX,
+                                facet.offsetY,
+                                facet.lat || -6.595038,
+                                facet.lng || 106.797241
+                              )
+                            }
+                          >
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                          </div>
+                          <div
+                            className="cad-handle absolute top-1/2 -right-2.5 -translate-y-1/2 w-4 h-6 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ew-resize hover:scale-110 transition-all z-20"
+                            title="Tarik Sisi Kanan (Ubah Panjang/Ridge)"
+                            onMouseDown={(e) =>
+                              startDrag(
+                                e,
+                                facet.id,
+                                "r",
+                                facet.ridge,
+                                facet.slope,
+                                facet.rotation,
+                                facet.offsetX,
+                                facet.offsetY,
+                                facet.lat || -6.595038,
+                                facet.lng || 106.797241
+                              )
+                            }
+                          >
+                            <div className="w-0.5 h-3 bg-white rounded-full" />
+                          </div>
+                          <div
+                            className="cad-handle absolute left-1/2 -bottom-2.5 -translate-x-1/2 w-6 h-4 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ns-resize hover:scale-110 transition-all z-20"
+                            title="Tarik Sisi Bawah (Ubah Lebar/Slope)"
+                            onMouseDown={(e) =>
+                              startDrag(
+                                e,
+                                facet.id,
+                                "b",
+                                facet.ridge,
+                                facet.slope,
+                                facet.rotation,
+                                facet.offsetX,
+                                facet.offsetY,
+                                facet.lat || -6.595038,
+                                facet.lng || 106.797241
+                              )
+                            }
+                          >
+                            <div className="w-3 h-0.5 bg-white rounded-full" />
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -2078,14 +4940,14 @@ function StudioPageContent() {
               type="button"
               onClick={() => {
                 setCadTool("select");
-                showToast("Mode Pilih & Geser Poligon Aktif");
+                showToast("Mode Pilih & Geser aktif");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "select"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
-              title="Pilih & Geser Poligon (Move)"
+              title="Pilih & Geser Poligon"
             >
               <span className="material-symbols-outlined text-[19px]">near_me</span>
             </button>
@@ -2096,7 +4958,7 @@ function StudioPageContent() {
               onClick={() => {
                 setCadTool("edit_polygon");
                 setActiveTab("geometry");
-                showToast("Mode Edit Simpul & Dimensi Poligon");
+                showToast("Mode Edit Simpul aktif");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "edit_polygon"
@@ -2108,82 +4970,87 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">polyline</span>
             </button>
 
-            {/* 3. Rectangle Tool */}
+            {/* 3. Pen Tool (Custom Polygon Point-by-Point) */}
             <button
               type="button"
               onClick={() => {
-                setRoofShape("rectangle");
-                showToast("Bentuk Poligon: Persegi (Gable)");
+                setCadTool("pen");
+                setPenPoints([]);
+                showToast("Mode Pen Tool aktif");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                activeFacet.shape === "rectangle" && cadTool !== "select" && cadTool !== "edit_polygon" && cadTool !== "measure"
+                cadTool === "pen"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
-              title="Bentuk Persegi Standar"
+              title="Pen Tool: Gambar Poligon Bebas"
             >
-              <span className="material-symbols-outlined text-[19px]">crop_landscape</span>
+              <span className="material-symbols-outlined text-[19px]">edit</span>
             </button>
 
-            {/* 4. Measure */}
+            {/* 4. Delete Vertex Tool (Hapus Titik Poligon) */}
             <button
               type="button"
               onClick={() => {
-                setCadTool(cadTool === "measure" ? "select" : "measure");
-                showToast(cadTool === "measure" ? "Mode pengukuran dimatikan" : "Mode Penggaris & Ukur Dimensi CAD");
+                const nextTool = cadTool === "delete_vertex" ? "select" : "delete_vertex";
+                setCadTool(nextTool);
+                showToast(
+                  nextTool === "delete_vertex"
+                    ? "Mode Hapus Simpul aktif"
+                    : "Mode Hapus Simpul dinonaktifkan"
+                );
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+                cadTool === "delete_vertex"
+                  ? "bg-gradient-to-r from-rose-200 via-amber-200 to-rose-200 text-rose-950 font-bold shadow-[0_2px_8px_rgba(244,63,94,0.25),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-rose-300/80"
+                  : "text-slate-600 hover:text-rose-600 hover:bg-rose-50/70"
+              }`}
+              title="Hapus Titik Simpul Poligon"
+            >
+              <span className="material-symbols-outlined text-[19px]">remove_circle_outline</span>
+            </button>
+
+            {/* 5. Measure & CAD Overview Tool */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextTool = cadTool === "measure" ? "select" : "measure";
+                setCadTool(nextTool);
+                if (nextTool !== "measure") {
+                  setMeasurePoints([]);
+                  setIsMeasureClosed(false);
+                }
+                showToast(
+                  nextTool === "measure"
+                    ? "Mode Penggaris & Dimensi CAD aktif"
+                    : "Mode pengukuran dinonaktifkan"
+                );
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "measure"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
-              title="Ukur Jarak & Dimensi Diagonal"
+              title="Penggaris & Dimensi CAD"
             >
               <span className="material-symbols-outlined text-[19px]">straighten</span>
             </button>
 
-            <div className="w-6 h-px bg-slate-200 my-0.5" />
-
-            {/* Zoom In, Zoom Out */}
+            {/* 6. AI Rooftop Detection Tool (Under Ruler) */}
             <button
               type="button"
-              onClick={() => {
-                setZoomScale((z) => Math.min(2.2, z + 0.15));
-                if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
-              }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
-              title="Perbesar (Zoom In)"
+              onClick={handleRunAiDetection}
+              disabled={isAiScanning}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+                showDetectedRoofs || isAiScanning
+                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.25),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
+                  : "text-slate-600 hover:text-amber-700 hover:bg-amber-50/70"
+              }`}
+              title="Pindai Bidang Atap dengan Model AI (Computer Vision)"
             >
-              <span className="material-symbols-outlined text-[19px]">add</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setZoomScale((z) => Math.max(0.6, z - 0.15));
-                if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
-              }}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
-              title="Perkecil (Zoom Out)"
-            >
-              <span className="material-symbols-outlined text-[19px]">remove</span>
-            </button>
-          </div>
-
-          {/* Bottom Left: Compass Rose (Exact Match Image 2) */}
-          <div className="absolute bottom-6 left-4 z-30">
-            <button
-              type="button"
-              onClick={() => {
-                if (mapInstanceRef.current) {
-                  mapInstanceRef.current.setView([activeFacet.lat || -6.595038, activeFacet.lng || 106.797241], 21);
-                }
-                showToast("Peta diorientasikan ke Utara & dipusatkan ke atap");
-              }}
-              className="w-10 h-10 rounded-full bg-white/95 text-slate-800 border border-slate-200 shadow-md flex flex-col items-center justify-center hover:border-amber-400 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              title="Orientasi Utara & Pusatkan ke Atap"
-            >
-              <span className="text-[10px] font-black font-mono text-slate-900 leading-none">N</span>
-              <span className="material-symbols-outlined text-[13px] text-amber-500 -mt-0.5">navigation</span>
+              <span className={`material-symbols-outlined text-[19px] ${isAiScanning ? "animate-spin text-amber-900" : "text-amber-800"}`}>
+                {isAiScanning ? "sync" : "psychology"}
+              </span>
             </button>
           </div>
         </div>
@@ -2208,18 +5075,45 @@ function StudioPageContent() {
             </span>
           </button>
 
-          <div className="w-full lg:w-[380px] shrink-0 h-full flex flex-col overflow-hidden bg-white">
+          <div className="w-full lg:w-[380px] shrink-0 h-full flex flex-col overflow-hidden bg-[#FAF9F5]">
             {/* Eco-Forest Diorama & Ribbon */}
-            <div className="p-3 pb-2.5 bg-slate-50/70 border-b border-slate-200 shrink-0">
+            <div className="p-3 pb-2.5 bg-white/80 border-b border-amber-200/50 shrink-0">
               <div className="relative w-full h-28 rounded-xl bg-gradient-to-b from-sky-200/90 via-sky-100/60 to-emerald-100/80 border border-sky-200/80 overflow-hidden shadow-inner flex flex-col justify-between p-2">
-                <div className="relative z-10 flex items-start justify-between w-full">
-                  <div>
-                    <span className="text-[10px] font-semibold text-sky-950/70 block leading-tight">Dampak ekologis</span>
-                    <span className="text-[11px] text-sky-900/60 block leading-tight mt-0.5">reduksi emisi setara</span>
-                    <span className="text-[15px] font-bold text-slate-900 tracking-tight leading-none mt-0.5 block">
-                      {calc.treesEquivalent.toLocaleString("id-ID")} pohon
-                    </span>
-                  </div>
+                <div className="relative z-10 w-full">
+                  {roiHoverYear !== null ? (
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold text-emerald-950 block leading-tight">
+                          Proyeksi Kumulatif Pohon
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-950 border border-emerald-400/40 text-[9px] font-bold">
+                          Tahun ke-{roiHoverYear.toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-emerald-900/70 leading-tight">
+                          serapan karbon setara
+                        </span>
+                        <span className="text-[13px] font-bold text-emerald-950 tracking-tight font-code-metric">
+                          {displayTreesCount.toLocaleString("id-ID")} pohon
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-[10px] font-semibold text-sky-950/70 block leading-tight">
+                        Dampak ekologis proyek
+                      </span>
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-sky-900/70 leading-tight">
+                          reduksi emisi setara
+                        </span>
+                        <span className="text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
+                          {calc.treesEquivalent.toLocaleString("id-ID")} pohon / thn
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="absolute inset-x-0 bottom-0 h-24 pointer-events-none">
@@ -2271,47 +5165,59 @@ function StudioPageContent() {
 
                     <path d="M 0 52 Q 85 36, 170 46 T 340 40 L 340 95 L 0 95 Z" fill="url(#hillGradBack)" opacity="0.85" />
                     <g>
-                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "back").map((cfg, idx) => (
-                        <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
-                          <g
-                            className={`eco-tree-stem ${idx < activeTreeCount / 3 ? "sprouted" : "dormant"}`}
-                          >
-                            <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
-                              {renderTreeSvg(cfg.type)}
+                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "back").map((cfg) => {
+                        const isSprouted = cfg.growRank <= activeTreeCount;
+                        return (
+                          <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
+                            <g
+                              className={`eco-tree-stem ${isSprouted ? "sprouted" : "dormant"}`}
+                              style={{ transitionDelay: isSprouted ? `${((cfg.growRank - 1) % 4) * 60}ms` : "0ms" }}
+                            >
+                              <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
+                                {renderTreeSvg(cfg.type)}
+                              </g>
                             </g>
                           </g>
-                        </g>
-                      ))}
+                        );
+                      })}
                     </g>
 
                     <path d="M 0 64 Q 80 48, 165 58 T 340 52 L 340 95 L 0 95 Z" fill="url(#hillGradMid)" opacity="0.95" />
                     <g>
-                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "mid").map((cfg, idx) => (
-                        <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
-                          <g
-                            className={`eco-tree-stem ${idx < activeTreeCount / 3 ? "sprouted" : "dormant"}`}
-                          >
-                            <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
-                              {renderTreeSvg(cfg.type)}
+                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "mid").map((cfg) => {
+                        const isSprouted = cfg.growRank <= activeTreeCount;
+                        return (
+                          <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
+                            <g
+                              className={`eco-tree-stem ${isSprouted ? "sprouted" : "dormant"}`}
+                              style={{ transitionDelay: isSprouted ? `${((cfg.growRank - 1) % 4) * 60}ms` : "0ms" }}
+                            >
+                              <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
+                                {renderTreeSvg(cfg.type)}
+                              </g>
                             </g>
                           </g>
-                        </g>
-                      ))}
+                        );
+                      })}
                     </g>
 
                     <path d="M 0 76 Q 95 64, 190 72 T 340 68 L 340 95 L 0 95 Z" fill="url(#hillGradFront)" />
                     <g>
-                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "front").map((cfg, idx) => (
-                        <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
-                          <g
-                            className={`eco-tree-stem ${idx < activeTreeCount / 3 ? "sprouted" : "dormant"}`}
-                          >
-                            <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
-                              {renderTreeSvg(cfg.type)}
+                      {ECO_TREE_CONFIGS.filter((t) => t.layer === "front").map((cfg) => {
+                        const isSprouted = cfg.growRank <= activeTreeCount;
+                        return (
+                          <g key={cfg.id} transform={`translate(${cfg.x}, ${cfg.y}) scale(${cfg.scale})`}>
+                            <g
+                              className={`eco-tree-stem ${isSprouted ? "sprouted" : "dormant"}`}
+                              style={{ transitionDelay: isSprouted ? `${((cfg.growRank - 1) % 4) * 60}ms` : "0ms" }}
+                            >
+                              <g className={`eco-breeze-${(cfg.id % 3) + 1}`}>
+                                {renderTreeSvg(cfg.type)}
+                              </g>
                             </g>
                           </g>
-                        </g>
-                      ))}
+                        );
+                      })}
                     </g>
 
                     {/* Drifting Falling Leaves */}
@@ -2335,7 +5241,7 @@ function StudioPageContent() {
               </div>
 
               {/* Metrics Ribbon */}
-              <div className="grid grid-cols-4 divide-x divide-slate-200 bg-white rounded-xl border border-slate-200 shadow-xs py-2 px-0.5 mt-2">
+              <div className="grid grid-cols-4 divide-x divide-amber-200/60 bg-white rounded-2xl border border-amber-200/50 shadow-2xs py-2 px-0.5 mt-2">
                 <div className="flex flex-col items-center text-center px-1">
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kapasitas</span>
                   <div className="flex items-baseline justify-center gap-0.5">
@@ -2374,18 +5280,18 @@ function StudioPageContent() {
               </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="grid grid-cols-3 bg-white border-b border-slate-200 px-3 pt-2">
+            {/* Navigation Tabs (Unified Soft Amber Pills) */}
+            <div className="grid grid-cols-3 bg-[#FAF9F5] border-b border-amber-200/50 p-2 gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab("geometry")}
-                className={`pb-2.5 text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeTab === "geometry"
-                    ? "text-amber-600 font-bold border-b-2 border-amber-600"
-                    : "text-slate-500 hover:text-slate-800 font-medium border-b-2 border-transparent"
+                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
                 }`}
               >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "geometry" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "geometry" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
                   1
                 </span>
                 <span>Geometri</span>
@@ -2393,13 +5299,13 @@ function StudioPageContent() {
               <button
                 type="button"
                 onClick={() => setActiveTab("pvarray")}
-                className={`pb-2.5 text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeTab === "pvarray"
-                    ? "text-amber-600 font-bold border-b-2 border-amber-600"
-                    : "text-slate-500 hover:text-slate-800 font-medium border-b-2 border-transparent"
+                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
                 }`}
               >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "pvarray" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "pvarray" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
                   2
                 </span>
                 <span>Modul Surya</span>
@@ -2407,13 +5313,13 @@ function StudioPageContent() {
               <button
                 type="button"
                 onClick={() => setActiveTab("financials")}
-                className={`pb-2.5 text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   activeTab === "financials"
-                    ? "text-amber-600 font-bold border-b-2 border-amber-600"
-                    : "text-slate-500 hover:text-slate-800 font-medium border-b-2 border-transparent"
+                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
                 }`}
               >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "financials" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "financials" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
                   3
                 </span>
                 <span>Finansial</span>
@@ -2425,42 +5331,86 @@ function StudioPageContent() {
               {activeTab === "geometry" && (
                 <div className="p-4 space-y-4">
                   {/* Multi-Polygon Facet Switcher Strip */}
-                  <div className="rounded-xl bg-slate-100/90 p-2.5 border border-slate-200 space-y-2">
+                  <div className="rounded-2xl bg-white/80 p-3 border border-amber-200/50 shadow-2xs space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[16px] text-amber-600">layers</span>
-                        <span className="font-title text-xs font-bold text-slate-900">Bidang Atap ({facets.length})</span>
+                        <span className="font-title text-xs font-bold text-slate-900">
+                          Bidang Atap ({selectedFacetIds.length}/{facets.length})
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={addNewFacet}
-                        className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-95 text-amber-950 text-[10.5px] font-bold flex items-center gap-1 transition shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 cursor-pointer"
-                        title="Tambah Bidang Atap Baru"
-                      >
-                        <span className="material-symbols-outlined text-[14px] text-amber-900">add</span>
-                        <span>Tambah Bidang</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={selectedFacetIds.length === facets.length ? unselectAllFacets : selectAllFacets}
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-[10px] font-bold border border-slate-200 transition cursor-pointer"
+                          title={selectedFacetIds.length === facets.length ? "Batal pilih semua bidang" : "Pilih semua bidang atap"}
+                        >
+                          {selectedFacetIds.length === facets.length ? "Batal Pilih" : "Pilih Semua"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={addNewFacet}
+                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-95 text-amber-950 text-[10.5px] font-bold flex items-center gap-1 transition shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 cursor-pointer"
+                          title="Tambah Bidang Atap Baru"
+                        >
+                          <span className="material-symbols-outlined text-[14px] text-amber-900">add</span>
+                          <span>Tambah Bidang</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Horizontal Pill Strip for Facets */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-none">
                       {facets.map((facet, idx) => {
+                        const isSelected = selectedFacetIds.includes(facet.id);
                         const isActive = facet.id === activeFacetId;
                         return (
                           <div
                             key={facet.id}
-                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium shrink-0 transition-all cursor-pointer ${
-                              isActive
-                                ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                                : "bg-white/80 hover:bg-white text-slate-700 border-slate-200/80"
+                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-medium shrink-0 transition-all ${
+                              isSelected
+                                ? isActive
+                                  ? "bg-amber-100/90 text-amber-950 border-amber-300 font-bold shadow-2xs"
+                                  : "bg-amber-50/70 hover:bg-amber-100/70 text-amber-900 border-amber-200/90 font-semibold"
+                                : "bg-white/90 hover:bg-white text-slate-500 border-slate-200/90 opacity-80"
                             }`}
-                            onClick={() => setActiveFacetId(facet.id)}
                           >
-                            <span className={`w-2 h-2 rounded-full ${isActive ? "bg-amber-600" : "bg-slate-400"}`} />
-                            <span className="font-bold">{facet.name || `Bidang #${idx + 1}`}</span>
-                            <span className={`text-[10px] ${isActive ? "text-amber-900" : "text-slate-400"}`}>
-                              ({facet.ridge.toFixed(1)}m × {facet.slope.toFixed(1)}m)
-                            </span>
+                            {/* Tombol Centang untuk Multiselect */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFacetSelection(facet.id);
+                              }}
+                              className={`w-4 h-4 rounded flex items-center justify-center transition-all cursor-pointer ${
+                                isSelected
+                                  ? "bg-amber-500 text-white shadow-2xs hover:bg-amber-600"
+                                  : "border-2 border-slate-300 hover:border-amber-400 bg-white"
+                              }`}
+                              title={isSelected ? "Batalkan centang bidang ini" : "Centang bidang ini untuk multiselect"}
+                            >
+                              {isSelected && (
+                                <span className="material-symbols-outlined text-[12px] font-black">check</span>
+                              )}
+                            </button>
+
+                            {/* Label & Dimensi (Klik untuk fokus aktif ke bidang ini) */}
+                            <div
+                              className="flex items-center gap-1.5 cursor-pointer select-none"
+                              onClick={() => {
+                                setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
+                                setActiveFacetId(facet.id);
+                                showToast(`Fokus ke ${facet.name || `Bidang #${idx + 1}`}`);
+                              }}
+                              title="Klik untuk memilih & mengedit parameter bidang ini"
+                            >
+                              <span className="font-bold text-slate-800">{facet.name || `Bidang #${idx + 1}`}</span>
+                              <span className={`text-[10px] ${isSelected ? "text-amber-800 font-medium" : "text-slate-400"}`}>
+                                ({facet.ridge.toFixed(1)}m × {facet.slope.toFixed(1)}m)
+                              </span>
+                            </div>
+
                             {facets.length > 1 && (
                               <button
                                 type="button"
@@ -2478,17 +5428,107 @@ function StudioPageContent() {
                         );
                       })}
                     </div>
+
+                    {/* Helper Banner when 0 Facets in Project vs 0 Selected */}
+                    {facets.length === 0 ? (
+                      <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-[16px]">psychology</span>
+                          </span>
+                          <div>
+                            <span className="font-bold text-slate-900 block text-xs">Deteksi Bidang Atap AI</span>
+                            <span className="text-[10.5px] text-slate-500 block">Pilih bidang atap di peta atau di bawah untuk memasang panel surya</span>
+                          </div>
+                        </div>
+                        {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200/60">
+                            {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).map((detected) => (
+                              <button
+                                key={detected.id}
+                                type="button"
+                                onClick={() => selectDetectedRoof(detected)}
+                                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-950 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-amber-600">roofing</span>
+                                <span>{detected.name}</span>
+                                <span className="text-amber-800 text-[10px] font-mono">({Math.round(detected.area)} m²)</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      selectedFacetIds.length === 0 && (
+                        <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-300/80 text-amber-950 text-xs flex items-center justify-between gap-2 shadow-2xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-amber-600 text-[18px]">info</span>
+                            <span className="text-[11px] font-medium">Belum ada bidang dipilih. Klik centang pada bidang di atas atau klik atap di peta untuk kalkulasi &amp; pohon.</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={selectAllFacets}
+                            className="px-2 py-1 rounded-lg bg-amber-300 hover:bg-amber-400 text-amber-950 font-bold text-[10.5px] transition shrink-0 cursor-pointer"
+                          >
+                            Pilih Semua
+                          </button>
+                        </div>
+                      )
+                    )}
+
+                    {/* Atap Terdeteksi Satelit AI Lainnya (Jika ada dan showDetectedRoofs aktif) */}
+                    {showDetectedRoofs && facets.length > 0 && detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length > 0 && (
+                      <div className="pt-2 border-t border-amber-100/70 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10.5px] font-bold text-slate-500 block">
+                            Atap Terdeteksi Satelit AI:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowDetectedRoofs(false);
+                              setSelectionDone(true);
+                              showToast("Poligon kandidat lainnya disembunyikan");
+                            }}
+                            className="text-[10.5px] font-bold text-amber-800 hover:underline cursor-pointer"
+                          >
+                            Selesai Memilih ✕
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).map((detected) => (
+                            <button
+                              key={detected.id}
+                              type="button"
+                              onClick={() => selectDetectedRoof(detected)}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200/80 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
+                              title={`Pilih atap ini: ${detected.name} (${detected.area.toFixed(1)} m²)`}
+                            >
+                              <span className="material-symbols-outlined text-[14px] text-amber-600">roofing</span>
+                              <span className="font-semibold">{detected.name}</span>
+                              <span className="text-amber-700 font-mono text-[10px]">({Math.round(detected.area)} m²)</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Shape Presets & Polygon Editing */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3.5">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
                       <span className="font-title text-xs font-bold text-slate-900">Alat Edit Poligon &amp; Bentuk</span>
-                      <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-bold font-code-metric">
-                        {roofShape}
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold font-code-metric">
+                        {roofShape === "rectangle"
+                          ? "Persegi"
+                          : roofShape === "l-shape"
+                            ? "Bentuk L"
+                            : roofShape === "trapezoid"
+                              ? "Limasan"
+                              : "Poligon Bebas"}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-4 gap-1.5">
                       <button
                         type="button"
                         onClick={() => setRoofShape("rectangle")}
@@ -2497,6 +5537,7 @@ function StudioPageContent() {
                             ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
                             : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
                         }`}
+                        title="Ubah ke bentuk atap Persegi Panjang standar"
                       >
                         <span className="material-symbols-outlined text-[16px]">crop_landscape</span>
                         <span className="text-[10px] font-bold">Persegi</span>
@@ -2509,6 +5550,7 @@ function StudioPageContent() {
                             ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
                             : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
                         }`}
+                        title="Ubah ke bentuk atap Bentuk L bersudut"
                       >
                         <span className="material-symbols-outlined text-[16px]">rounded_corner</span>
                         <span className="text-[10px] font-bold">Bentuk L</span>
@@ -2521,9 +5563,23 @@ function StudioPageContent() {
                             ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
                             : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
                         }`}
+                        title="Ubah ke bentuk atap Limasan / Trapesium miring"
                       >
                         <span className="material-symbols-outlined text-[16px]">change_history</span>
                         <span className="text-[10px] font-bold">Limasan</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRoofShape("custom_polygon")}
+                        className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                          roofShape === "custom_polygon"
+                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
+                            : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
+                        }`}
+                        title="Bebas edit setiap sudut poligon mirip Figma"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">polyline</span>
+                        <span className="text-[10px] font-bold">Bebas</span>
                       </button>
                     </div>
 
@@ -2572,54 +5628,51 @@ function StudioPageContent() {
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-medium text-slate-600">Posisi Koordinat Poligon</span>
                         <span className="font-code-metric text-[10px] text-slate-500">
-                          X: {offsetX}px, Y: {offsetY}px
+                          X: {activeFacet.offsetX || 0}px, Y: {activeFacet.offsetY || 0}px
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
                           <button
                             type="button"
-                            onClick={() => setOffsetX((x) => x - 10)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
-                            title="Geser Kiri"
+                            onClick={() => nudgeFacet(-10, 0)}
+                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
+                            title="Geser Kiri (10px)"
                           >
                             <span className="material-symbols-outlined text-[14px]">arrow_left</span>
                           </button>
                           <div className="flex flex-col gap-0.5">
                             <button
                               type="button"
-                              onClick={() => setOffsetY((y) => y - 10)}
-                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
-                              title="Geser Atas"
+                              onClick={() => nudgeFacet(0, -10)}
+                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
+                              title="Geser Atas (10px)"
                             >
                               <span className="material-symbols-outlined text-[12px]">arrow_drop_up</span>
                             </button>
                             <button
                               type="button"
-                              onClick={() => setOffsetY((y) => y + 10)}
-                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
-                              title="Geser Bawah"
+                              onClick={() => nudgeFacet(0, 10)}
+                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
+                              title="Geser Bawah (10px)"
                             >
                               <span className="material-symbols-outlined text-[12px]">arrow_drop_down</span>
                             </button>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setOffsetX((x) => x + 10)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
-                            title="Geser Kanan"
+                            onClick={() => nudgeFacet(10, 0)}
+                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
+                            title="Geser Kanan (10px)"
                           >
                             <span className="material-symbols-outlined text-[14px]">arrow_right</span>
                           </button>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setOffsetX(0);
-                            setOffsetY(0);
-                            showToast("Poligon dipusatkan ke atap");
-                          }}
-                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
+                          onClick={centerFacetOnRoof}
+                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-white border border-slate-200 hover:bg-amber-50 hover:border-amber-300 text-slate-700 hover:text-amber-950 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer active:scale-95"
+                          title="Pusatkan poligon ke titik tengah atap"
                         >
                           <span className="material-symbols-outlined text-[14px]">filter_center_focus</span>
                           <span>Pusatkan ke Atap</span>
@@ -2628,44 +5681,139 @@ function StudioPageContent() {
                     </div>
 
                     {/* Obstacles Detection & Management */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/70">
+                    <div className="space-y-2 pt-1 border-t border-slate-200/70">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-medium text-slate-600">Deteksi &amp; Rintangan Atap</span>
                         <span className="font-code-metric text-[10px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                          {(hasHvac ? 1 : 0) + (hasSkylight ? 1 : 0)} Rintangan Aktif
+                          {(hasHvac ? 1 : 0) +
+                            (hasSkylight ? 1 : 0) +
+                            Object.values(activeFacet.slotOverrides || {}).filter((s) => s !== "active").length}{" "}
+                          Rintangan Aktif
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleObstacle("hvac")}
-                          className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            hasHvac
-                              ? "bg-amber-50 text-amber-900 border-amber-300 shadow-2xs"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[15px]">{hasHvac ? "check" : "ac_unit"}</span>
-                          <span>{hasHvac ? "HVAC Aktif (AC)" : "+ HVAC Chiller"}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleObstacle("skylight")}
-                          className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            hasSkylight
-                              ? "bg-sky-50 text-sky-900 border-sky-300 shadow-2xs"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[15px]">{hasSkylight ? "check" : "grid_4x4"}</span>
-                          <span>{hasSkylight ? "Skylight Aktif" : "+ Skylight Kaca"}</span>
-                        </button>
+
+                      {/* AI Automatic Detection */}
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-slate-500 font-semibold block">Deteksi Otomatis AI:</span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleObstacle("hvac")}
+                            className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              hasHvac
+                                ? "bg-amber-50 text-amber-900 border-amber-300 shadow-2xs"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[15px]">{hasHvac ? "check" : "ac_unit"}</span>
+                            <span>{hasHvac ? "AC / HVAC Aktif" : "+ AC / HVAC"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleObstacle("skylight")}
+                            className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                              hasSkylight
+                                ? "bg-sky-50 text-sky-900 border-sky-300 shadow-2xs"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[15px]">{hasSkylight ? "check" : "grid_4x4"}</span>
+                            <span>{hasSkylight ? "Skylight Aktif" : "+ Skylight Kaca"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Manual Add Obstacles (Interactive Canvas Brush) */}
+                      <div className="space-y-1 pt-1.5 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-slate-500 font-semibold">Tambah Manual (Kuas Interaktif):</span>
+                          {Object.keys(activeFacet.slotOverrides || {}).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSlotOverrides({});
+                                showToast("Semua rintangan manual direset");
+                              }}
+                              className="text-rose-600 hover:underline cursor-pointer font-bold flex items-center gap-0.5"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">restart_alt</span>
+                              Reset Manual
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = obstacleBrush === "hvac" ? null : "hvac";
+                              setObstacleBrush(next);
+                              if (next) showToast("Kuas AC Aktif: Klik slot panel di peta untuk pasang/hapus");
+                            }}
+                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
+                              obstacleBrush === "hvac"
+                                ? "bg-amber-100 text-amber-950 border-amber-400 font-bold shadow-2xs ring-1 ring-amber-400"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                            title="Tandai AC / Outdoor Chiller manual"
+                          >
+                            <span className="material-symbols-outlined text-[14px] text-amber-600">ac_unit</span>
+                            <span className="text-[9.5px]">Kuas AC</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = obstacleBrush === "skylight" ? null : "skylight";
+                              setObstacleBrush(next);
+                              if (next) showToast("Kuas Skylight Aktif: Klik slot panel di peta untuk pasang/hapus");
+                            }}
+                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
+                              obstacleBrush === "skylight"
+                                ? "bg-sky-100 text-sky-950 border-sky-400 font-bold shadow-2xs ring-1 ring-sky-400"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                            title="Tandai Skylight Kaca manual"
+                          >
+                            <span className="material-symbols-outlined text-[14px] text-sky-600">grid_4x4</span>
+                            <span className="text-[9.5px]">Kuas Kaca</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = obstacleBrush === "empty" ? null : "empty";
+                              setObstacleBrush(next);
+                              if (next) showToast("Kuas Void Aktif: Klik slot panel untuk dikosongkan");
+                            }}
+                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
+                              obstacleBrush === "empty"
+                                ? "bg-slate-200 text-slate-900 border-slate-400 font-bold shadow-2xs ring-1 ring-slate-400"
+                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                            }`}
+                            title="Hapus / Kosongkan slot panel (Void)"
+                          >
+                            <span className="material-symbols-outlined text-[14px] text-slate-500">block</span>
+                            <span className="text-[9.5px]">Kuas Kosong</span>
+                          </button>
+                        </div>
+                        {obstacleBrush && (
+                          <div className="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-[10px] text-amber-950 flex items-center justify-between animate-fadeIn">
+                            <span className="truncate">
+                              Klik panel di atap: <strong>{obstacleBrush === "hvac" ? "AC" : obstacleBrush === "skylight" ? "Skylight" : "Void"}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setObstacleBrush(null)}
+                              className="text-amber-800 hover:text-amber-950 font-bold shrink-0 ml-1 cursor-pointer"
+                            >
+                              ✕ Tutup
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* Surface Dimensions */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-title text-xs font-bold text-slate-900">Dimensi &amp; Parameter Bidang</span>
                       <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-code-metric text-[10px] font-bold">
@@ -2726,7 +5874,7 @@ function StudioPageContent() {
                   </div>
 
                   {/* Pitch Calibration & Vector CAD Diagram */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-amber-600 text-[18px]">architecture</span>
@@ -2895,7 +6043,7 @@ function StudioPageContent() {
                   </div>
 
                   {/* Azimuth Dial Section (Interactive Navigational Compass 3D) */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">explore</span>
@@ -3035,11 +6183,41 @@ function StudioPageContent() {
                           <span className="material-symbols-outlined text-[13px]">rotate_right</span>
                         </button>
                       </div>
+
+                      {/* Grid Integration to Compass Azimuth Toggle */}
+                      <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-amber-600">sync</span>
+                            Integrasikan Grid ke Azimuth
+                          </span>
+                          <span className="text-[9.5px] text-slate-500 leading-tight">
+                            {alignToAzimuth
+                              ? "Grid susunan & sudut tiap panel otomatis berputar searah jarum kompas"
+                              : "Grid sejajar rusuk atap (flush mounted tanpa rotasi azimuth)"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAlignToAzimuth(!alignToAzimuth)}
+                          className={`px-2.5 py-1 rounded-full text-[10.5px] font-bold border transition cursor-pointer flex items-center gap-1 shrink-0 ${
+                            alignToAzimuth
+                              ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300 shadow-2xs"
+                              : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                          }`}
+                          title="Klik untuk menyalakan/mematikan penyesuaian rotasi grid otomatis mengikuti kompas"
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {alignToAzimuth ? "check_circle" : "cancel"}
+                          </span>
+                          <span>{alignToAzimuth ? "Aktif" : "Mati"}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   {/* Batas Keamanan & Jalur Talang */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-sky-600 text-[18px]">crop_free</span>
@@ -3136,7 +6314,7 @@ function StudioPageContent() {
               {activeTab === "pvarray" && (
                 <div className="p-4 space-y-4">
                   {/* Module Selection Card */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-title text-xs font-bold text-slate-900">Pilihan Modul Surya</span>
                       <span className="material-symbols-outlined text-amber-600 text-[18px]">solar_power</span>
@@ -3168,7 +6346,7 @@ function StudioPageContent() {
                   </div>
 
                   {/* Penyesuaian Jumlah Modul Surya */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-amber-600 text-[18px]">tune</span>
@@ -3262,7 +6440,7 @@ function StudioPageContent() {
                   </div>
 
                   {/* Pengaturan Tata Letak Modul */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-title text-xs font-bold text-slate-900">Pengaturan Tata Letak Modul</span>
                       <span className="material-symbols-outlined text-slate-400 text-[16px]">grid_view</span>
@@ -3275,28 +6453,48 @@ function StudioPageContent() {
                         <button
                           type="button"
                           onClick={() => setOrientation("portrait")}
-                          className={`py-1.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                             orientation === "portrait"
                               ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
                               : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
                           }`}
                         >
                           <span className="material-symbols-outlined text-[15px]">stay_current_portrait</span>
-                          <span>Potret (Tegak)</span>
+                          <span>Potret ({calc.portraitSlotsCount})</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setOrientation("landscape")}
-                          className={`py-1.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                             orientation === "landscape"
                               ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
                               : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
                           }`}
                         >
                           <span className="material-symbols-outlined text-[15px]">stay_current_landscape</span>
-                          <span>Lanskap (Mendatar)</span>
+                          <span>Lanskap ({calc.landscapeSlotsCount})</span>
                         </button>
                       </div>
+
+                      {calc.portraitSlotsCount !== calc.landscapeSlotsCount && (
+                        <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-amber-50/90 border border-amber-200/80 text-[10.5px] text-amber-950">
+                          <span className="flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px] text-amber-600">auto_awesome</span>
+                            <span>
+                              {calc.bestOrientation === "portrait" ? "Potret" : "Lanskap"} muat lebih banyak (+{Math.abs(calc.portraitSlotsCount - calc.landscapeSlotsCount)} panel)
+                            </span>
+                          </span>
+                          {orientation !== calc.bestOrientation && (
+                            <button
+                              type="button"
+                              onClick={() => setOrientation(calc.bestOrientation)}
+                              className="font-bold underline text-amber-700 hover:text-amber-950 cursor-pointer ml-1"
+                            >
+                              Terapkan
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Clearance Gap */}
@@ -3352,7 +6550,7 @@ function StudioPageContent() {
                   </div>
 
                   {/* Arsitektur Inverter */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-title text-xs font-bold text-slate-900">Arsitektur Inverter</span>
                       <span className="material-symbols-outlined text-amber-600 text-[18px]">electric_meter</span>
@@ -3410,8 +6608,8 @@ function StudioPageContent() {
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Total Modul</span>
-                        <span className="font-bold text-slate-900 text-sm">{calc.modulesFitted} Unit</span>
+                        <span className="text-[10px] text-slate-500 block">Total Modul Terpilih</span>
+                        <span className="font-bold text-slate-900 text-sm font-code-metric">{calc.totalModulesFitted} Unit</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-500 block">Formasi Grid</span>
@@ -3423,7 +6621,7 @@ function StudioPageContent() {
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-500 block">Luas Total Array</span>
-                        <span className="font-bold text-slate-900 text-sm font-code-metric">{(calc.modulesFitted * calc.currentSpec.w * calc.currentSpec.l).toFixed(1)} m²</span>
+                        <span className="font-bold text-slate-900 text-sm font-code-metric">{(calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l).toFixed(1)} m²</span>
                       </div>
                     </div>
                     <div className="pt-1 border-t border-slate-100 flex justify-between items-center text-[10px]">
@@ -3456,139 +6654,283 @@ function StudioPageContent() {
 
               {activeTab === "financials" && (
                 <div className="p-4 space-y-4">
-                  {/* Tariff & Bill */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  {/* Card 1: Parameter Tarif & Tagihan PLN */}
+                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Parameter Tarif &amp; Tagihan PLN</span>
-                      <span className="material-symbols-outlined text-amber-600 text-[18px]">bolt</span>
-                    </div>
-                    <select
-                      value={plnTariff}
-                      onChange={(e) => setPlnTariff(Number(e.target.value))}
-                      className="w-full p-2 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer"
-                    >
-                      <option value="1700">R-2 / TR (3.500 – 5.500 VA) — Rp 1.700/kWh</option>
-                      <option value="1444.7">R-1 / TR (1.300 – 2.200 VA) — Rp 1.444,70/kWh</option>
-                      <option value="1444.7">B-2 / TR Bisnis Komersial — Rp 1.444,70/kWh</option>
-                    </select>
-
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-slate-600 font-medium">Tagihan Listrik Bulanan</span>
-                        <span className="font-code-metric font-extrabold text-slate-900">{formatRp(monthlyBill)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                          <span className="material-symbols-outlined text-[17px]">bolt</span>
+                        </span>
+                        <div>
+                          <span className="font-title text-xs font-bold text-slate-900 block">Parameter Tarif &amp; Tagihan PLN</span>
+                          <span className="text-[10px] text-slate-400">Sesuaikan golongan tarif &amp; rekening listrik Anda</span>
+                        </div>
                       </div>
-                      <input
-                        type="range"
-                        min="500000"
-                        max="15000000"
-                        step="100000"
-                        value={monthlyBill}
-                        onChange={(e) => setMonthlyBill(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                      />
-                      <div className="flex justify-between items-center text-[10px] text-slate-500 pt-0.5">
-                        <span>Pengeluaran Listrik PLN Tahunan:</span>
-                        <span className="font-bold text-slate-800 font-code-metric">{formatRp(monthlyBill * 12)}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-code-metric">
+                        {plnTariff ? `Rp ${Number(plnTariff).toLocaleString("id-ID")}/kWh` : ""}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-slate-600 block">Golongan Tarif Listrik</label>
+                      <select
+                        value={plnTariff}
+                        onChange={(e) => setPlnTariff(Number(e.target.value))}
+                        className="w-full p-2.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200/50 transition"
+                      >
+                        <option value="1700">R-2 / TR (3.500 – 5.500 VA Rumah Tangga) — Rp 1.700/kWh</option>
+                        <option value="1444.7">R-1 / TR (1.300 – 2.200 VA Rumah Tangga) — Rp 1.444,70/kWh</option>
+                        <option value="1699.53">R-3 / TR (&gt; 6.600 VA Rumah Tangga Besar) — Rp 1.699,53/kWh</option>
+                        <option value="1444.7">B-2 / TR (6.600 VA – 200 kVA Bisnis Menengah) — Rp 1.444,70/kWh</option>
+                        <option value="1114.74">B-3 / TM (&gt; 200 kVA Bisnis / Mall / Hotel) — Rp 1.114,74/kWh</option>
+                        <option value="1114.74">I-3 / TM (&gt; 200 kVA Industri / Pabrik / Gudang) — Rp 1.114,74/kWh</option>
+                        <option value="996.74">I-4 / TT (&gt; 30.000 kVA Industri Skala Besar) — Rp 996,74/kWh</option>
+                      </select>
+                    </div>
+
+                    {/* Dual Input: Manual Numeric Field + Interactive Slider up to 100M */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-semibold text-slate-700">Tagihan Listrik per Bulan</label>
+                        <span className="text-[9.5px] text-slate-400 font-medium">Batas s/d Rp 100 Juta</span>
+                      </div>
+
+                      {/* Manual Currency Input */}
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3 text-xs font-bold text-amber-700 select-none">Rp</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={isTypingBill ? manualBillInput : monthlyBill.toLocaleString("id-ID")}
+                          onFocus={() => {
+                            setIsTypingBill(true);
+                            setManualBillInput(monthlyBill.toString());
+                          }}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, "");
+                            setManualBillInput(raw);
+                            const num = Number(raw);
+                            if (!isNaN(num) && num > 0) {
+                              setMonthlyBill(Math.min(100_000_000, num));
+                            }
+                          }}
+                          onBlur={() => {
+                            setIsTypingBill(false);
+                            const num = Number(manualBillInput.replace(/\D/g, ""));
+                            if (!isNaN(num) && num >= 100_000) {
+                              setMonthlyBill(Math.min(100_000_000, Math.max(100_000, num)));
+                            } else if (!num) {
+                              setMonthlyBill(500_000);
+                            }
+                          }}
+                          className="w-full pl-9 pr-14 py-2 rounded-xl bg-white border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-200/50 text-right font-code-metric text-sm font-extrabold text-slate-900 tracking-wide transition shadow-2xs"
+                          placeholder="2.800.000"
+                        />
+                        <span className="absolute right-3 text-[10px] text-slate-400 font-semibold select-none">/ bulan</span>
+                      </div>
+
+                      {/* Interactive Range Slider */}
+                      <div className="pt-1">
+                        <input
+                          type="range"
+                          min="500000"
+                          max="100000000"
+                          step="250000"
+                          value={monthlyBill}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setMonthlyBill(val);
+                            setManualBillInput(val.toString());
+                          }}
+                          className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                        <div className="flex justify-between items-center text-[9px] text-slate-400 font-code-metric pt-0.5">
+                          <span>Rp 500 Rb</span>
+                          <span>Rp 25 Jt</span>
+                          <span>Rp 50 Jt</span>
+                          <span>Rp 100 Jt</span>
+                        </div>
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { label: "2 Jt", val: 2_000_000 },
+                          { label: "5 Jt", val: 5_000_000 },
+                          { label: "15 Jt", val: 15_000_000 },
+                          { label: "35 Jt", val: 35_000_000 },
+                          { label: "50 Jt", val: 50_000_000 },
+                          { label: "100 Jt (Industri)", val: 100_000_000 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.val}
+                            type="button"
+                            onClick={() => {
+                              setMonthlyBill(preset.val);
+                              setManualBillInput(preset.val.toString());
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-bold border transition cursor-pointer ${
+                              monthlyBill === preset.val
+                                ? "bg-amber-100 text-amber-900 border-amber-300 shadow-2xs"
+                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Summary Footnote */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100 font-code-metric">
+                        <span>Konsumsi: ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh / bln</span>
+                        <span>Pengeluaran PLN: <strong>{formatRp(monthlyBill * 12)}</strong> / thn</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Dampak Lingkungan & Penyerapan Karbon */}
-                  <div className="rounded-xl bg-slate-50 border border-slate-200 overflow-hidden shadow-2xs">
-                    <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-emerald-600 text-[18px]">forest</span>
-                        <span className="font-title text-xs font-bold text-emerald-950">Dampak Lingkungan &amp; Penyerapan Karbon</span>
-                      </div>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Standar ESDM 2024
-                      </span>
-                    </div>
-
-                    <div className="p-3 grid grid-cols-2 gap-3 divide-x divide-slate-200 bg-white">
-                      <div className="flex flex-col items-center text-center gap-0.5">
-                        <p className="text-[10px] text-slate-500 font-semibold">Reduksi Emisi CO2</p>
-                        <p className="text-sm font-extrabold text-emerald-700">
-                          {calc.co2ReductionTon.toFixed(1)} <span className="text-xs font-normal text-slate-500">Ton / thn</span>
-                        </p>
-                        <span className="text-[9px] text-emerald-600 font-medium">Berdasarkan 0.80 kg/kWh</span>
-                      </div>
-                      <div className="flex flex-col items-center text-center gap-0.5">
-                        <p className="text-[10px] text-slate-500 font-semibold">Ekivalen Penanaman Pohon</p>
-                        <p className="text-sm font-extrabold text-sky-700">
-                          {calc.treesEquivalent.toLocaleString("id-ID")} <span className="text-xs font-normal text-slate-500">Pohon</span>
-                        </p>
-                        <span className="text-[9px] text-sky-600 font-medium">Serapan ~22 kg/pohon/thn</span>
-                      </div>
-                    </div>
-
-                    <div className="px-3 py-2 bg-emerald-50/70 border-t border-emerald-100 flex items-center justify-between text-[10px] text-emerald-900 font-medium">
-                      <span className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[14px] text-emerald-600">park</span>
-                        <span>Simulasi hutan hidup aktif pada visualizer atas</span>
-                      </span>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Live Studio
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Savings & Payback */}
-                  <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-200 space-y-3">
+                  {/* Card 2: Komparasi Tagihan & Penghematan Listrik */}
+                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Performa Finansial &amp; ROI</span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                        -{calc.coveragePct}% Beban PLN
+                      <div>
+                        <span className="font-title text-xs font-bold text-slate-900 block">
+                          Komparasi Tagihan &amp; Penghematan
+                        </span>
+                        <span className="text-[10px] text-slate-400">Sebelum vs Pasca Pemasangan PLTS Atap</span>
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border font-code-metric ${
+                        calc.coveragePct > 0
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                          : "bg-slate-100 text-slate-500 border-slate-200"
+                      }`}>
+                        {calc.coveragePct > 0 ? `Hemat ${calc.coveragePct}%` : "0% PLTS"}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2.5 pt-0.5">
-                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
-                        <span className="text-[10px] text-emerald-800 font-semibold block">Penghematan Bulanan</span>
-                        <span className="font-title text-sm font-extrabold text-emerald-700 block mt-0.5">
+
+                    {/* Side-by-Side Comparison */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-slate-500">Sebelum PLTS</span>
+                          <span className="text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">PLN Penuh</span>
+                        </div>
+                        <div className="font-title text-sm font-extrabold text-slate-900 font-code-metric">
+                          {formatRp(monthlyBill)}
+                        </div>
+                        <div className="text-[9.5px] text-slate-400 font-code-metric">
+                          ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh / bln
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-semibold text-emerald-900">Tagihan Baru PLN</span>
+                          <span className="text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900">
+                            Hemat {calc.coveragePct}%
+                          </span>
+                        </div>
+                        <div className="font-title text-sm font-extrabold text-emerald-700 font-code-metric">
+                          {formatRp(calc.newMonthlyBill)}
+                        </div>
+                        <div className="text-[9.5px] text-emerald-800 font-code-metric">
+                          Turun {formatRp(calc.cappedSaving)} / bln
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stacked Comparative Progress Bar */}
+                    <div className="space-y-1 pt-0.5">
+                      <div className="flex justify-between items-center text-[10px] text-slate-600 font-medium">
+                        <span>Porsi Penghematan Mandiri:</span>
+                        <span className="font-bold text-emerald-700 font-code-metric">
+                          {formatRp(calc.cappedSaving)} / bln ({calc.coveragePct}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex border border-slate-200">
+                        {calc.coveragePct > 0 && (
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500 flex items-center justify-center text-[8.5px] font-bold text-white tracking-tight"
+                            style={{ width: `${calc.coveragePct}%` }}
+                            title={`Produksi Surya: ${Math.round(calc.monthlyGenKwh)} kWh (${formatRp(calc.cappedSaving)})`}
+                          >
+                            {calc.coveragePct >= 20 ? `${calc.coveragePct}% PLTS` : ""}
+                          </div>
+                        )}
+                        <div
+                          className="h-full bg-slate-200/90 transition-all duration-500 flex items-center justify-center text-[8.5px] font-bold text-slate-600 tracking-tight"
+                          style={{ width: `${100 - calc.coveragePct}%` }}
+                          title={`Sisa Tagihan PLN: ${formatRp(calc.newMonthlyBill)}`}
+                        >
+                          {100 - calc.coveragePct >= 25 ? `Sisa PLN (${100 - calc.coveragePct}%)` : ""}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-[9px] text-slate-400 font-code-metric pt-0.5">
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>Produksi: ~{Math.round(calc.monthlyGenKwh)} kWh</span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                          <span>Sisa Tagihan: {formatRp(calc.newMonthlyBill)}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3-Column Cumulative Summary */}
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 text-center">
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Hemat / Bulan</span>
+                        <span className="font-title text-xs font-extrabold text-emerald-700 block mt-0.5 font-code-metric">
                           {formatRp(calc.cappedSaving)}
                         </span>
-                        <span className="font-code-metric text-[9px] text-emerald-800">/ bulan rata-rata</span>
                       </div>
-                      <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5">
-                        <span className="text-[10px] text-amber-800 font-semibold block">Payback Period</span>
-                        <span className="font-title text-sm font-extrabold text-amber-700 block mt-0.5">
-                          {calc.paybackYears ? calc.paybackYears.toFixed(1) : "—"} Tahun
+                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Hemat 1 Tahun</span>
+                        <span className="font-title text-xs font-extrabold text-emerald-700 block mt-0.5 font-code-metric">
+                          {formatRp(calc.annualSaving)}
                         </span>
-                        <span className="font-code-metric text-[9px] text-amber-800">IRR {calc.irr}%</span>
                       </div>
-                    </div>
-                    <div className="rounded-lg bg-white border border-slate-200 p-2.5 flex justify-between items-center">
-                      <div>
-                        <span className="text-[10px] text-slate-500 block font-medium">Estimasi Hemat 25 Tahun</span>
-                        <span className="font-title text-sm font-extrabold text-slate-900">{formatRp(calc.cumulative25)}</span>
+                      <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                        <span className="text-[9px] text-emerald-700 font-bold uppercase tracking-wider block">Hemat 25 Tahun</span>
+                        <span className="font-title text-xs font-extrabold text-emerald-800 block mt-0.5 font-code-metric">
+                          {formatRp(calc.cumulative25)}
+                        </span>
                       </div>
-                      <span className="material-symbols-outlined text-emerald-600 text-[24px]">savings</span>
                     </div>
                   </div>
 
-                  {/* Interactive ROI Chart & 2x2 Strip */}
-                  <div className="rounded-xl bg-white border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                  {/* Card 3: Proyeksi Arus Kas & Titik Impas (BEP) */}
+                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-emerald-600 text-[17px]">trending_up</span>
-                          Proyeksi Arus Kas Bersih Kumulatif
+                          <span className="material-symbols-outlined text-emerald-600 text-[18px]">trending_up</span>
+                          Proyeksi Arus Kas &amp; BEP
                         </span>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">Analisis Finansial 25 Tahun &amp; Titik Impas (BEP)</span>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">Analisis Finansial 25 Tahun &amp; Titik Impas</span>
                       </div>
                       <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200/90 px-2.5 py-1 rounded-full text-emerald-800 text-[10px] font-bold shadow-2xs whitespace-nowrap shrink-0">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>BEP: Thn {calc.bepYear}</span>
+                        <span>
+                          {calc.bepYear > 0 && calc.bepYear <= 25
+                            ? `BEP: Thn ${calc.bepYear.toFixed(1)}`
+                            : calc.totalCapex === 0
+                            ? "Tanpa Modal"
+                            : "BEP &gt; 25 Thn"}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Spacious 2x2 Real-time Inspector Stat Strip */}
-                    <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200/90 text-left">
+                    {/* Interactive 2x2 Real-time Inspector Stat Strip */}
+                    <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-left">
                       <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
                         <div className="flex items-center justify-between">
                           <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider">Tahun Proyeksi</span>
                           <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full ${
-                            currentInspectCashFlow >= 0 ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : currentInspectYear === calc.bepYear ? "bg-amber-100 text-amber-800 border border-amber-200" : "bg-rose-100 text-rose-800 border border-rose-200"
+                            currentInspectCashFlow >= 0
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : currentInspectYear === calc.bepYear
+                              ? "bg-amber-100 text-amber-800 border border-amber-200"
+                              : "bg-rose-100 text-rose-800 border border-rose-200"
                           }`}>
                             {currentInspectCashFlow >= 0 ? "Profit" : currentInspectYear === calc.bepYear ? "BEP" : "Investasi"}
                           </span>
@@ -3600,7 +6942,7 @@ function StudioPageContent() {
 
                       <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
                         <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block">Arus Kas Bersih</span>
-                        <span className={`font-title text-xs font-extrabold block mt-1 ${
+                        <span className={`font-title text-xs font-extrabold block mt-1 font-code-metric ${
                           currentInspectCashFlow >= 0 ? "text-emerald-600" : "text-amber-600"
                         }`}>
                           {formatRp(currentInspectCashFlow)}
@@ -3622,7 +6964,7 @@ function StudioPageContent() {
                       </div>
                     </div>
 
-                    {/* Interactive Chart */}
+                    {/* Interactive SVG Chart */}
                     <div
                       className="relative w-full h-44 bg-gradient-to-b from-slate-50/60 via-white to-slate-50/60 rounded-xl border border-slate-200/90 p-2 overflow-hidden select-none cursor-crosshair shadow-2xs"
                       onMouseMove={handleChartMouseMove}
@@ -3640,8 +6982,8 @@ function StudioPageContent() {
                           </linearGradient>
                           <linearGradient id="roiCurveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                             <stop offset="0%" stopColor="#ef4444" />
-                            <stop offset="18%" stopColor="#f59e0b" />
-                            <stop offset="22%" stopColor="#10b981" />
+                            <stop offset={`${Math.max(0, (bepRatio - 0.04) * 100).toFixed(1)}%`} stopColor="#f59e0b" />
+                            <stop offset={`${(bepRatio * 100).toFixed(1)}%`} stopColor="#10b981" />
                             <stop offset="100%" stopColor="#059669" />
                           </linearGradient>
                         </defs>
@@ -3673,12 +7015,15 @@ function StudioPageContent() {
                         </g>
 
                         {/* BEP Marker */}
-                        <g transform={`translate(${mapChartX(calc.bepYear)}, ${zeroY})`}>
-                          <circle cx="0" cy="0" r="4.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
-                          <text x="0" y="-8" textAnchor="middle" fontSize="7.5" fill="#b45309" fontFamily="Inter" fontWeight="800">
-                            ⭐ BEP
-                          </text>
-                        </g>
+                        {calc.bepYear > 0 && calc.bepYear <= 25 && calc.annualSaving > 0 && (
+                          <g transform={`translate(${mapChartX(effectiveBep)}, ${zeroY})`}>
+                            <circle cx="0" cy="0" r="4.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                            <rect x="-24" y="-19" width="48" height="13" rx="4" fill="#fffbeb" stroke="#f59e0b" strokeWidth="0.8" />
+                            <text x="0" y="-10" textAnchor="middle" fontSize="7" fill="#b45309" fontFamily="Inter" fontWeight="800">
+                              ⭐ BEP {calc.bepYear.toFixed(1)} Thn
+                            </text>
+                          </g>
+                        )}
 
                         {/* Interactive crosshair */}
                         <line
@@ -3718,9 +7063,9 @@ function StudioPageContent() {
                           key={btn.yr}
                           type="button"
                           onClick={() => setRoiHoverYear(btn.yr)}
-                          className={`p-1 rounded border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                          className={`p-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center justify-center ${
                             currentInspectYear === btn.yr
-                              ? "bg-amber-50 border-amber-300 text-amber-900"
+                              ? "bg-amber-100/80 border-amber-300 text-amber-900 shadow-2xs"
                               : "bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700"
                           }`}
                         >
@@ -3731,48 +7076,58 @@ function StudioPageContent() {
                     </div>
                   </div>
 
-                  {/* Collapsible CAPEX Cost Breakdown */}
-                  <div className="rounded-xl bg-slate-50 border border-slate-200 overflow-hidden">
+                  {/* Card 4: Rincian Modal CAPEX Proyek (Collapsible) */}
+                  <div className="rounded-2xl bg-white/90 backdrop-blur-md border border-amber-200/60 overflow-hidden shadow-2xs">
                     <button
                       type="button"
                       onClick={() => setCapexCollapsed((c) => !c)}
-                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer"
                     >
                       <div>
-                        <span className="font-title text-xs font-bold text-slate-900 block">Rincian Investasi CAPEX</span>
+                        <span className="font-title text-xs font-bold text-slate-900 block">Rincian Modal CAPEX Proyek</span>
                         <span className="font-code-metric text-[11px] text-slate-500 font-semibold">Total: {formatRp(calc.totalCapex)}</span>
                       </div>
-                      <span
-                        className={`material-symbols-outlined text-slate-400 transition-transform duration-200 text-[20px] ${
-                          capexCollapsed ? "" : "rotate-180"
-                        }`}
-                      >
-                        expand_more
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-code-metric">
+                          {calc.totalModulesFitted} Modul ({calc.actualKwp.toFixed(2)} kWp)
+                        </span>
+                        <span
+                          className={`material-symbols-outlined text-slate-400 transition-transform duration-200 text-[20px] ${
+                            capexCollapsed ? "" : "rotate-180"
+                          }`}
+                        >
+                          expand_more
+                        </span>
+                      </div>
                     </button>
 
                     {!capexCollapsed && (
-                      <div className="px-3.5 pb-3.5 space-y-1.5 border-t border-slate-200/80 animate-fadeIn">
-                        <div className="pt-2 divide-y divide-slate-200/70 text-xs">
-                          <div className="py-1 flex justify-between items-center">
-                            <span className="text-slate-600">Modul Surya ({calc.modulesFitted}x {modulePower}W)</span>
+                      <div className="px-3.5 pb-3.5 space-y-2 border-t border-slate-100 animate-fadeIn">
+                        <div className="pt-2 divide-y divide-slate-100 text-xs">
+                          <div className="py-1.5 flex justify-between items-center">
+                            <span className="text-slate-600">Modul Surya ({calc.totalModulesFitted}x Modul {modulePower}W)</span>
                             <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costModules)}</span>
                           </div>
-                          <div className="py-1 flex justify-between items-center">
+                          <div className="py-1.5 flex justify-between items-center">
                             <span className="text-slate-600">Inverter &amp; Kelistrikan AC/DC ({inverterType === "string" ? "Central String" : "Microinverter"})</span>
                             <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInverter)}</span>
                           </div>
-                          <div className="py-1 flex justify-between items-center">
+                          <div className="py-1.5 flex justify-between items-center">
                             <span className="text-slate-600">Sistem Racking Aluminium</span>
                             <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costRacking)}</span>
                           </div>
-                          <div className="py-1 flex justify-between items-center">
-                            <span className="text-slate-600">Instalasi, Net-Metering &amp; SLO</span>
+                          <div className="py-1.5 flex justify-between items-center">
+                            <span className="text-slate-600">Instalasi, Net-Metering &amp; Sertifikat SLO</span>
                             <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInstall)}</span>
                           </div>
-                          <div className="pt-2 mt-1 flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200 font-bold">
-                            <span className="text-slate-950">Total Investasi</span>
-                            <span className="font-code-metric text-sky-700">{formatRp(calc.totalCapex)}</span>
+                          <div className="pt-2.5 mt-1.5 flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200 font-bold">
+                            <div>
+                              <span className="text-slate-950 block text-xs">Total Modal Investasi</span>
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                Payback: {calc.paybackYears ? `${calc.paybackYears.toFixed(1)} Thn` : "—"} • IRR: {calc.irr}%
+                              </span>
+                            </div>
+                            <span className="font-code-metric text-sm text-sky-700">{formatRp(calc.totalCapex)}</span>
                           </div>
                         </div>
                       </div>
@@ -3822,7 +7177,7 @@ function StudioPageContent() {
           RIWAYAT POLIGON DRAWER (From History Button in Capsule)
           ======================================================= */}
       {historyDrawerOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end animate-fadeIn print:hidden">
           <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col p-5 overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2">
@@ -3898,11 +7253,11 @@ function StudioPageContent() {
           PENGATURAN PROFIL MODAL
           ======================================================= */}
       {profileModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn print:hidden">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-purple-600 text-[20px]">person</span>
+                <span className="material-symbols-outlined text-amber-600 text-[20px]">person</span>
                 <h3 className="font-title font-bold text-slate-900 text-sm">Profil &amp; Pengaturan Akun</h3>
               </div>
               <button
@@ -3915,13 +7270,13 @@ function StudioPageContent() {
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 font-bold text-sm flex items-center justify-center border border-amber-300">
-                  {biodata?.name ? biodata.name.slice(0, 2).toUpperCase() : "MR"}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#FAF9F5] border border-amber-200/50">
+                <div className="w-12 h-12 rounded-full bg-amber-200 text-amber-950 font-bold text-sm flex items-center justify-center border border-amber-300">
+                  {initials}
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">{biodata?.name || "Mabirizky"}</h4>
-                  <p className="text-slate-500">{biodata?.email || "mabirizky05@gmail.com"}</p>
+                  <h4 className="font-bold text-slate-900 text-sm">{biodata?.name || "Pengguna SunSight"}</h4>
+                  <p className="text-slate-500">{biodata?.email || "user@sunsight.id"}</p>
                 </div>
               </div>
 
@@ -3929,9 +7284,9 @@ function StudioPageContent() {
                 <label className="text-[11px] font-medium text-slate-500">Nama Lengkap</label>
                 <input
                   type="text"
-                  value={biodata?.name || "Mabirizky"}
+                  value={biodata?.name || "Pengguna SunSight"}
                   onChange={(e) => setBiodata((b) => (b ? { ...b, name: e.target.value } : null))}
-                  className="w-full p-2 rounded-lg bg-slate-50 border border-slate-200 font-medium"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-medium focus:bg-white focus:border-amber-400 focus:outline-none"
                 />
               </div>
 
@@ -3940,8 +7295,8 @@ function StudioPageContent() {
                 <input
                   type="email"
                   disabled
-                  value={biodata?.email || "mabirizky05@gmail.com"}
-                  className="w-full p-2 rounded-lg bg-slate-100 border border-slate-200 font-medium text-slate-500"
+                  value={biodata?.email || "user@sunsight.id"}
+                  className="w-full p-2.5 rounded-xl bg-slate-100 border border-slate-200 font-medium text-slate-500"
                 />
               </div>
 
@@ -3951,7 +7306,7 @@ function StudioPageContent() {
                   type="text"
                   value={biodata?.location || addressInput}
                   onChange={(e) => setBiodata((b) => (b ? { ...b, location: e.target.value } : null))}
-                  className="w-full p-2 rounded-lg bg-slate-50 border border-slate-200 font-medium"
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-medium focus:bg-white focus:border-amber-400 focus:outline-none"
                 />
               </div>
             </div>
@@ -4004,9 +7359,17 @@ function StudioPageContent() {
         onClose={() => setProposalOpen(false)}
         result={simulationResultForModal}
         parameters={simulationParamsForModal}
-        latitude="-6.5955"
-        longitude="106.7995"
+        latitude={activeFacet.lat ? activeFacet.lat.toFixed(6) : "-6.595500"}
+        longitude={activeFacet.lng ? activeFacet.lng.toFixed(6) : "106.799500"}
         biodata={biodata}
+        cumulative25={calc.cumulative25}
+        irr={calc.irr}
+        newMonthlyBill={calc.newMonthlyBill}
+        coveragePct={calc.coveragePct}
+        totalFacetsCount={facets.length}
+        modulePower={modulePower}
+        activeFacetName={activeFacet.name}
+        monthlyGenKwh={calc.monthlyGenKwh}
       />
     </div>
   );

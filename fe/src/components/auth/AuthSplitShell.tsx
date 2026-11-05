@@ -34,9 +34,9 @@ export function AuthSplitShell({
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Mascot interaction states:
-  // "idle": shines happily alone (no cloud in the way!), tracks cursor gaze & blinks naturally
+  // "idle": shines happily alone, buoyant hover, tracks cursor gaze & blinks naturally
   // "kepo": leans curiously toward form when typing name/email/phone
-  // "pwd_hidden": cloud flies in to cover sun; sun ducks down behind cloud with closed sleepy eyes (︶ ︶)
+  // "pwd_hidden": cloud slides in to cover sun; sun ducks down behind cloud with closed sleepy eyes (◡ ◡)
   // "pwd_peek": sun tilts head & pops up over the cloud crest with cute little paws holding the cloud rim!
   // "pwd_approve": sun nods up & down happily (^‿^) approving the password with sparkles & green check!
   // "pwd_retreat": sun ducks back down into the cloud, paws retract, and closes eyes again
@@ -51,23 +51,23 @@ export function AuthSplitShell({
     mascotStateRef.current = mascotState;
   }, [mascotState]);
 
-  // Interactive password hide-and-seek loop
+  // Interactive password hide-and-seek loop (Smooth, cute & playful!)
   const startPasswordCycle = useCallback(() => {
     if (pwdCycleTimerRef.current) clearTimeout(pwdCycleTimerRef.current);
 
     const stepHidden = () => {
       setMascotState("pwd_hidden");
-      pwdCycleTimerRef.current = setTimeout(stepPeek, 1500);
+      pwdCycleTimerRef.current = setTimeout(stepPeek, 1400);
     };
 
     const stepPeek = () => {
       setMascotState("pwd_peek");
-      pwdCycleTimerRef.current = setTimeout(stepApprove, 1000);
+      pwdCycleTimerRef.current = setTimeout(stepApprove, 1100);
     };
 
     const stepApprove = () => {
       setMascotState("pwd_approve");
-      pwdCycleTimerRef.current = setTimeout(stepRetreat, 1400);
+      pwdCycleTimerRef.current = setTimeout(stepRetreat, 1300);
     };
 
     const stepRetreat = () => {
@@ -96,7 +96,7 @@ export function AuthSplitShell({
         current === "pwd_approve" ||
         current === "pwd_retreat"
       ) {
-        return; // Password loop handles pupil position
+        return; // Password loop handles pupil positions
       }
 
       const svg = svgRef.current;
@@ -112,7 +112,7 @@ export function AuthSplitShell({
       const angle = Math.atan2(dy, dx);
       const distRatio = Math.min(1, Math.hypot(dx, dy) / 240);
 
-      const maxPupilOffset = 4.5;
+      const maxPupilOffset = 4.2;
       const targetX = Math.cos(angle) * maxPupilOffset * distRatio;
       const targetY = Math.sin(angle) * (maxPupilOffset * 0.75) * distRatio;
 
@@ -143,7 +143,7 @@ export function AuthSplitShell({
       } else if (el.tagName === "INPUT" || el.tagName === "SELECT") {
         stopPasswordCycle();
         setMascotState("kepo");
-        setGaze({ x: 4.5, y: 1.2 });
+        setGaze({ x: 4.2, y: 0.8 });
       }
     };
 
@@ -160,7 +160,7 @@ export function AuthSplitShell({
         } else if (stillInInput) {
           stopPasswordCycle();
           setMascotState("kepo");
-          setGaze({ x: 4.5, y: 1.2 });
+          setGaze({ x: 4.2, y: 0.8 });
         } else {
           stopPasswordCycle();
           setMascotState("idle");
@@ -190,7 +190,7 @@ export function AuthSplitShell({
         if (mascotStateRef.current !== "kepo") {
           setMascotState("kepo");
         }
-        setGaze({ x: 4.5, y: 1.2 });
+        setGaze({ x: 4.2, y: 0.8 });
       }
     };
 
@@ -240,39 +240,41 @@ export function AuthSplitShell({
   const isPeekingOrApproving = isPwdPeek || isPwdApprove;
 
   // Sun transforms:
-  // - hidden: sunken low behind cloud (58px)
-  // - peek: pops up with head tilted (10px, rotate 5deg), clearing the cloud top dip!
-  // - approve: elevated and nodding up & down with sun-nodding class
-  // - retreat: slides back down into the cloud (55px)
+  // - idle: cheerful buoyant tilt (-14deg) matching reference photo
+  // - kepo: leans forward towards form (rotate 4deg)
+  // - hidden: ducked down behind cloud
+  // - peek: pops up with head tilted (rotate 5deg)
+  // - approve: happy upright nod
+  // - retreat: slides back down into the cloud
   const sunTransform = isPwdHidden
     ? "translate(0px, 58px) scale(0.95)"
     : isPwdPeek
-    ? "translate(10px, 10px) rotate(5deg)"
+    ? "translate(8px, 12px) rotate(5deg)"
     : isPwdApprove
-    ? "translate(10px, 8px)"
+    ? "translate(0px, 8px) rotate(0deg)"
     : isPwdRetreat
     ? "translate(0px, 55px) scale(0.95)"
     : isKepo
-    ? "translate(16px, -4px) rotate(4deg)"
+    ? "translate(14px, -4px) rotate(4deg)"
     : isExcited
-    ? "translateY(-14px) scale(1.06)"
-    : "translate(0px, 0px)";
+    ? "translateY(-14px) rotate(-14deg) scale(1.06)"
+    : "translate(0px, 0px) rotate(-14deg)";
 
   // Cloud ONLY appears in password mode! In idle / kepo it stays hidden down below with opacity 0.
-  const cloudTransform = isPasswordMode ? "translateY(0px) scale(1)" : "translateY(75px) scale(0.85)";
+  const cloudTransform = isPasswordMode ? "translateY(0px) scale(1)" : "translateY(80px) scale(0.85)";
 
-  // Pupil offsets: in peeking, looks hard right (+5.5px) towards the password field
-  const currentPupilX = isPwdPeek ? 5.5 : isKepo ? 4.5 : gaze.x;
-  const currentPupilY = isPwdPeek ? 1.0 : isKepo ? 1.2 : gaze.y;
+  // Pupil offsets: in peeking, looks warmly right towards the password field
+  const currentPupilX = isPwdPeek ? 4.8 : isKepo ? 4.2 : gaze.x;
+  const currentPupilY = isPwdPeek ? 0.8 : isKepo ? 0.8 : gaze.y;
 
   return (
     <section
       ref={containerRef}
-      className="min-h-screen w-full bg-gradient-to-br from-[#FAF8F5] via-[#F6F2EA] to-[#FAF7F2] p-4 sm:p-6 lg:p-8 flex flex-col justify-between select-none relative overflow-x-hidden font-sans text-slate-800"
+      className="min-h-screen w-full bg-gradient-to-br from-[#FAF5EC] via-[#F6F0E4] to-[#FAF4EB] p-4 sm:p-6 lg:p-8 flex flex-col justify-between select-none relative overflow-x-hidden font-sans text-slate-800"
     >
       {/* Soft Ambient Warm Sunlight Glows in Background */}
       <div className="absolute top-1/4 left-10 w-96 h-96 bg-amber-200/25 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-20 w-80 h-80 bg-yellow-100/30 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-20 w-80 h-80 bg-orange-100/25 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Split Layout: Stretches corner to corner across full screen */}
       <div className="w-full flex-1 flex flex-col lg:flex-row items-stretch justify-between gap-6 lg:gap-10 relative z-10">
@@ -295,7 +297,7 @@ export function AuthSplitShell({
 
           {/* Center Stage: Frosted Glass Mascot Canvas */}
           <div className="my-auto w-full flex items-center justify-center p-2 sm:p-6">
-            <div className="w-full max-w-[500px] p-6 sm:p-8 rounded-[36px] bg-white/45 backdrop-blur-xl border border-white/80 shadow-[0_12px_40px_rgba(245,158,11,0.04)] flex items-center justify-center">
+            <div className="w-full max-w-[500px] p-6 sm:p-8 rounded-[36px] bg-white/50 backdrop-blur-xl border border-white/80 shadow-[0_12px_40px_rgba(235,94,40,0.05)] flex items-center justify-center">
               
               <svg
                 ref={svgRef}
@@ -304,364 +306,280 @@ export function AuthSplitShell({
                 aria-label="Maskot Matahari SunSight"
               >
                 <defs>
-                  {/* Rich Warm Honey Sun Gradient */}
-                  <linearGradient id="sunBodyGrad" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#FEF08A" />
-                    <stop offset="45%" stopColor="#FBBF24" />
-                    <stop offset="100%" stopColor="#F59E0B" />
-                  </linearGradient>
-
-                  {/* Soft Pure Cloud Gradient */}
-                  <linearGradient id="cloudGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#FFFFFF" />
-                    <stop offset="65%" stopColor="#F8FAFC" />
-                    <stop offset="100%" stopColor="#E2E8F0" />
-                  </linearGradient>
-
-                  {/* Soft Warm Radial Aura */}
+                  {/* Soft Warm Radial Aura behind Sun */}
                   <radialGradient id="sunAura" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#FEF08A" stopOpacity="0.45" />
-                    <stop offset="65%" stopColor="#FDE68A" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="#FEF3C7" stopOpacity="0" />
+                    <stop offset="0%" stopColor="#FB923C" stopOpacity="0.28" />
+                    <stop offset="60%" stopColor="#FDBA74" stopOpacity="0.10" />
+                    <stop offset="100%" stopColor="#FED7AA" stopOpacity="0" />
                   </radialGradient>
                 </defs>
 
                 {/* Soft Warm Radial Aura behind Sun */}
-                <circle cx="250" cy="155" r="140" fill="url(#sunAura)" />
-
-                {/* Whimsical Background Sparkle Stars */}
-                <path
-                  d="M 105 75 Q 105 85 95 85 Q 105 85 105 95 Q 105 85 115 85 Q 105 85 105 75 Z"
-                  fill="#FBBF24"
-                  opacity="0.35"
-                />
-                <path
-                  d="M 400 85 Q 400 95 390 95 Q 400 95 400 105 Q 400 95 410 95 Q 400 95 400 85 Z"
-                  fill="#FBBF24"
-                  opacity="0.35"
-                />
-
-                {/* Ambient Mini Floating Clouds */}
-                <g transform="translate(45, 115)" opacity="0.45" className="cloud-gentle-float">
-                  <path
-                    d="M 20 25 C 10 25 5 18 12 12 C 15 5 28 5 32 10 C 38 6 48 10 46 18 C 52 20 50 25 42 25 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
-                <g transform="translate(390, 150)" opacity="0.45" className="cloud-gentle-float">
-                  <path
-                    d="M 20 25 C 10 25 5 18 12 12 C 15 5 28 5 32 10 C 38 6 48 10 46 18 C 52 20 50 25 42 25 Z"
-                    fill="#FFFFFF"
-                  />
-                </g>
+                <circle cx="250" cy="160" r="145" fill="url(#sunAura)" />
 
                 {/* ===================================================
-                    1. THE CHIBI SUN (Sunny)
+                    FLUFFY CARTOON CLOUDS (BACKGROUND)
                     =================================================== */}
-                <g
-                  className={`mascot-transition ${isPwdApprove ? "sun-nodding" : ""}`}
-                  style={{
-                    transform: sunTransform,
-                    transformOrigin: "250px 155px",
-                  }}
-                >
-                  {/* Chubby Pill Capsule Sun Rays (Soft, Rounded, Premium) */}
-                  <g className="sun-rays-spinner">
-                    {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg, i) => (
-                      <rect
-                        key={deg}
-                        x="243"
-                        y="66"
-                        width="14"
-                        height="26"
-                        rx="7"
-                        fill={i % 2 === 0 ? "#F59E0B" : "#FBBF24"}
-                        stroke="#D97706"
-                        strokeWidth="1.2"
-                        transform={`rotate(${deg} 250 155)`}
-                      />
-                    ))}
-                  </g>
-
-                  {/* Sun Body Circle */}
-                  <circle
-                    cx="250"
-                    cy="155"
-                    r="64"
-                    fill="url(#sunBodyGrad)"
-                    stroke="#D97706"
-                    strokeWidth="3.2"
-                  />
-
-                  {/* Soft Light Highlight Sheen on Top-Left */}
-                  <ellipse
-                    cx="228"
-                    cy="124"
-                    rx="18"
-                    ry="9"
+                {/* Top Left Cloud */}
+                <g className="cloud-puffy-1" opacity="0.95">
+                  <path
+                    d="M 40 65 
+                       C 25 65 15 50 25 38 
+                       C 25 24 40 18 52 25 
+                       C 62 14 80 16 88 28 
+                       C 98 28 106 36 104 46 
+                       C 112 55 106 65 92 65 Z"
                     fill="#FFFFFF"
-                    opacity="0.36"
-                    transform="rotate(-28 228 124)"
                   />
+                </g>
 
-                  {/* =================================================
-                      FACE ELEMENTS
-                      ================================================= */}
-                  <g>
-                    {/* Cute Rosy Peach Blush Cheeks */}
-                    <ellipse
-                      cx="214"
-                      cy="164"
-                      rx="9.5"
-                      ry="6"
-                      fill="#FB7185"
-                      className="mascot-transition"
-                      opacity={isPwdApprove ? 0.95 : isKepo ? 0.85 : 0.7}
+                {/* Top Right Cloud */}
+                <g className="cloud-puffy-2" opacity="0.95">
+                  <path
+                    d="M 390 68 
+                       C 375 68 368 54 376 44 
+                       C 376 30 392 24 404 30 
+                       C 414 18 434 20 442 32 
+                       C 452 32 462 42 458 52 
+                       C 466 60 460 68 446 68 Z"
+                    fill="#FFFFFF"
+                  />
+                </g>
+
+                {/* Mid-Left Fluffy Cloud */}
+                <g className="cloud-puffy-3" opacity="0.88">
+                  <path
+                    d="M 25 240 
+                       C 12 240 5 228 14 218 
+                       C 14 206 28 200 38 206 
+                       C 46 196 64 198 70 208 
+                       C 80 208 86 216 84 224 
+                       C 90 232 84 240 72 240 Z"
+                    fill="#FFFFFF"
+                  />
+                </g>
+
+                {/* Mid-Right Fluffy Cloud */}
+                <g className="cloud-puffy-2" opacity="0.88">
+                  <path
+                    d="M 410 245 
+                       C 398 245 390 234 398 225 
+                       C 398 214 410 208 420 214 
+                       C 428 204 444 206 450 215 
+                       C 458 215 464 222 462 230 
+                       C 468 237 462 245 450 245 Z"
+                    fill="#FFFFFF"
+                  />
+                </g>
+
+                {/* Whimsical Ambient Sparkle Stars */}
+                <path
+                  d="M 115 80 Q 115 88 107 88 Q 115 88 115 96 Q 115 88 123 88 Q 115 88 115 80 Z"
+                  fill="#FBBF24"
+                  opacity="0.45"
+                />
+                <path
+                  d="M 390 95 Q 390 103 382 103 Q 390 103 390 111 Q 390 103 398 103 Q 390 103 390 95 Z"
+                  fill="#FBBF24"
+                  opacity="0.45"
+                />
+
+                {/* ===================================================
+                    1. THE ADORABLE SUN MASCOT (Starburst Corona & Smiling Face)
+                    =================================================== */}
+                <g className={mascotState === "idle" ? "sun-gentle-hover" : isPwdApprove ? "sun-gentle-nod" : ""}>
+                  <g
+                    className="mascot-smooth-transition"
+                    style={{
+                      transform: sunTransform,
+                      transformOrigin: "250px 160px",
+                    }}
+                  >
+                    {/* 8-Pointed Starburst Corona with Smooth Inward Curved Scoops */}
+                    <path
+                      d="M 250.0 54.0 A 60 60 0 0 0 325.0 85.0 A 60 60 0 0 0 356.0 160.0 A 60 60 0 0 0 325.0 235.0 A 60 60 0 0 0 250.0 266.0 A 60 60 0 0 0 175.0 235.0 A 60 60 0 0 0 144.0 160.0 A 60 60 0 0 0 175.0 85.0 A 60 60 0 0 0 250.0 54.0 Z"
+                      fill="#FA8223"
+                      className="sun-corona-breathe"
                     />
-                    <ellipse
-                      cx="286"
-                      cy="164"
-                      rx="9.5"
-                      ry="6"
-                      fill="#FB7185"
-                      className="mascot-transition"
-                      opacity={isPwdApprove ? 0.95 : isKepo ? 0.85 : 0.7}
-                    />
 
-                    {/* EYES */}
-                    {isSleeping ? (
-                      /* Sleepy Closed Arcs (︶ ︶) while hidden behind cloud */
-                      <g className="mascot-transition">
-                        <path
-                          d="M 218 149 Q 228 159 238 149"
-                          fill="none"
-                          stroke="#78350F"
-                          strokeWidth="3.2"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d="M 262 149 Q 272 159 282 149"
-                          fill="none"
-                          stroke="#78350F"
-                          strokeWidth="3.2"
-                          strokeLinecap="round"
-                        />
-                      </g>
-                    ) : isPwdApprove ? (
-                      /* Joyful Happy Squint Arcs (^‿^) while approving */
-                      <g className="mascot-transition">
-                        <path
-                          d="M 218 153 Q 228 141 238 153"
-                          fill="none"
-                          stroke="#78350F"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d="M 262 153 Q 272 141 282 153"
-                          fill="none"
-                          stroke="#78350F"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                        />
-                      </g>
-                    ) : (
-                      /* Open Eyes (Idle, Kepo, or Peeking) */
-                      <g>
-                        {/* Left Eye */}
+                    {/* Concentric Sunshine Yellow Face Circle */}
+                    <circle cx="250" cy="160" r="70" fill="#FFDA27" />
+
+                    {/* =================================================
+                        FACE ELEMENTS (Cute, Expressive & Lively)
+                        ================================================= */}
+                    <g>
+                      {/* Big Warm Orange Round Blush Cheeks */}
+                      <circle cx="206" cy="168" r="13" fill="#FA8223" />
+                      <circle cx="294" cy="168" r="13" fill="#FA8223" />
+
+                      {/* EYES */}
+                      {isSleeping ? (
+                        /* Sleepy Closed Arcs (◡ ◡) while hidden behind cloud */
                         <g>
-                          <ellipse
-                            cx="228"
-                            cy="147"
-                            rx="10.5"
-                            ry={isBlinking ? 1.5 : 12.5}
-                            fill="#FFFFFF"
-                            stroke="#D97706"
-                            strokeWidth="1.2"
-                            className="mascot-transition"
+                          <path
+                            d="M 215 150 Q 222 157 229 150"
+                            fill="none"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
                           />
-                          {!isBlinking && (
-                            <g
-                              className="mascot-pupil-transition"
-                              transform={`translate(${currentPupilX}, ${currentPupilY})`}
-                              style={{
-                                transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
-                              }}
-                            >
-                              <circle cx="228" cy="147" r={isPwdPeek ? 6.2 : 5.2} fill="#18191C" />
-                              <circle cx="230.2" cy="145" r="1.8" fill="#FFFFFF" />
-                              <circle cx="226.5" cy="149" r="0.9" fill="#FFFFFF" />
-                            </g>
-                          )}
+                          <path
+                            d="M 271 150 Q 278 157 285 150"
+                            fill="none"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
+                          />
                         </g>
-
-                        {/* Right Eye */}
+                      ) : isBlinking ? (
+                        /* Natural Quick Blink Slits */
                         <g>
-                          <ellipse
-                            cx="272"
-                            cy="147"
-                            rx="10.5"
-                            ry={isBlinking ? 1.5 : 12.5}
-                            fill="#FFFFFF"
-                            stroke="#D97706"
-                            strokeWidth="1.2"
-                            className="mascot-transition"
+                          <line
+                            x1="215"
+                            y1="150"
+                            x2="229"
+                            y2="150"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
                           />
-                          {!isBlinking && (
-                            <g
-                              className="mascot-pupil-transition"
-                              transform={`translate(${currentPupilX}, ${currentPupilY})`}
-                              style={{
-                                transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
-                              }}
-                            >
-                              <circle cx="272" cy="147" r={isPwdPeek ? 6.2 : 5.2} fill="#18191C" />
-                              <circle cx="274.2" cy="145" r="1.8" fill="#FFFFFF" />
-                              <circle cx="270.5" cy="149" r="0.9" fill="#FFFFFF" />
-                            </g>
-                          )}
+                          <line
+                            x1="271"
+                            y1="150"
+                            x2="285"
+                            y2="150"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
+                          />
                         </g>
-                      </g>
-                    )}
+                      ) : isPwdApprove ? (
+                        /* Joyful squint happy curves (^‿^) */
+                        <g>
+                          <path
+                            d="M 215 150 Q 222 143 229 150"
+                            fill="none"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
+                          />
+                          <path
+                            d="M 271 150 Q 278 143 285 150"
+                            fill="none"
+                            stroke="#1F1D1A"
+                            strokeWidth="3.2"
+                            strokeLinecap="round"
+                          />
+                        </g>
+                      ) : (
+                        /* Open Cute Round Black Bead Eyes with Smooth Gaze Tracking */
+                        <g
+                          className="pupil-smooth-transition"
+                          style={{
+                            transform: `translate(${currentPupilX}px, ${currentPupilY}px)`,
+                          }}
+                        >
+                          <circle cx="222" cy="150" r="6.5" fill="#1F1D1A" />
+                          <circle cx="278" cy="150" r="6.5" fill="#1F1D1A" />
+                        </g>
+                      )}
 
-                    {/* MOUTH */}
-                    {isSleeping ? (
-                      <path
-                        d="M 246 166 Q 250 169 254 166"
-                        fill="none"
-                        stroke="#78350F"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                      />
-                    ) : isPwdApprove ? (
-                      <g className="mascot-transition">
-                        <path d="M 240 163 Q 250 178 260 163 Z" fill="#78350F" />
-                        <path d="M 244 171 Q 250 177 256 171 Z" fill="#FB7185" />
-                      </g>
-                    ) : isPwdPeek ? (
-                      <ellipse cx="252" cy="166" rx="3.5" ry="3.5" fill="#78350F" />
-                    ) : isKepo ? (
-                      <ellipse cx="251" cy="166" rx="4.5" ry="5.5" fill="#78350F" />
-                    ) : (
-                      <path
-                        d="M 241 162 Q 250 171 259 162"
-                        fill="none"
-                        stroke="#78350F"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                      />
-                    )}
-                  </g>
-
-                  {/* APPROVAL SPARKLES & BADGE (During pwd_approve) */}
-                  {isPwdApprove && (
-                    <g className="sparkle-pop">
-                      {/* Top Right Sparkle Star */}
-                      <path
-                        d="M 315 95 Q 315 103 307 103 Q 315 103 315 111 Q 315 103 323 103 Q 315 103 315 95 Z"
-                        fill="#F59E0B"
-                      />
-                      {/* Top Left Sparkle Star */}
-                      <path
-                        d="M 185 100 Q 185 107 178 107 Q 185 107 185 114 Q 185 107 192 107 Q 185 107 185 100 Z"
-                        fill="#F59E0B"
-                      />
-                      {/* Green Approved Check Badge */}
-                      <g transform="translate(305, 116)">
-                        <circle cx="10" cy="10" r="10" fill="#10B981" stroke="#FFFFFF" strokeWidth="2" />
+                      {/* MOUTH */}
+                      {isSleeping ? (
                         <path
-                          d="M 6 10 L 9 13 L 14 7"
+                          d="M 244 168 Q 250 171 256 168"
                           fill="none"
-                          stroke="#FFFFFF"
-                          strokeWidth="2.2"
+                          stroke="#1F1D1A"
+                          strokeWidth="2.5"
                           strokeLinecap="round"
-                          strokeLinejoin="round"
                         />
-                      </g>
+                      ) : isPwdApprove ? (
+                        <path
+                          d="M 235 165 Q 250 184 265 165"
+                          fill="none"
+                          stroke="#1F1D1A"
+                          strokeWidth="4.2"
+                          strokeLinecap="round"
+                        />
+                      ) : (
+                        /* Sweet Clean Curved Line Smile (◡) */
+                        <path
+                          d="M 235 165 Q 250 182 265 165"
+                          fill="none"
+                          stroke="#1F1D1A"
+                          strokeWidth="4.2"
+                          strokeLinecap="round"
+                        />
+                      )}
                     </g>
-                  )}
+
+                    {/* Celebratory sparkles when password is approved */}
+                    {isPwdApprove && (
+                      <g className="sparkle-pop">
+                        <path
+                          d="M 210 110 Q 210 118 202 118 Q 210 118 210 126 Q 210 118 218 118 Q 210 118 210 110 Z"
+                          fill="#F59E0B"
+                        />
+                        <path
+                          d="M 290 110 Q 290 118 282 118 Q 290 118 290 126 Q 290 118 298 118 Q 290 118 290 110 Z"
+                          fill="#F59E0B"
+                        />
+                      </g>
+                    )}
+                  </g>
                 </g>
 
                 {/* ===================================================
-                    2. FLUFFY CLOUD (ONLY APPEARS IN PASSWORD MODE)
+                    2. FLUFFY CARTOON CLOUD (ACTIVE IN PASSWORD MODE)
                     =================================================== */}
                 <g
-                  className="cloud-transition"
+                  className="cloud-spring-transition"
                   style={{
                     transform: cloudTransform,
                     opacity: isPasswordMode ? 1 : 0,
                     pointerEvents: "none",
                   }}
                 >
-                  {/* Soft Ground Shadow below Cloud */}
-                  <ellipse cx="250" cy="305" rx="140" ry="9" fill="#78350F" opacity="0.08" />
+                  {/* Soft Warm Ground Shadow */}
+                  <ellipse cx="250" cy="315" rx="145" ry="9" fill="#FA8223" opacity="0.1" />
 
-                  {/* Plump Cloud Silhouette */}
+                  {/* Fluffy Bubbly Puffy Cloud Body */}
                   <path
-                    d="M 145 275
-                       C 125 275 110 260 110 238
-                       C 110 216 126 200 148 202
-                       C 158 174 192 160 225 172
-                       C 240 152 280 152 300 172
-                       C 322 165 352 178 358 202
-                       C 380 212 388 238 375 260
-                       C 366 274 350 278 332 278
-                       L 160 278
-                       C 150 278 145 275 145 275 Z"
-                    fill="url(#cloudGrad)"
-                    stroke="#BAE6FD"
-                    strokeWidth="3.5"
+                    d="M 130 285
+                       C 105 285 90 262 105 242
+                       C 105 220 126 205 148 214
+                       C 162 190 196 182 220 196
+                       C 235 186 265 186 280 196
+                       C 304 182 338 190 352 214
+                       C 374 205 395 220 395 242
+                       C 410 262 395 285 370 285 Z"
+                    fill="#FFFFFF"
+                    stroke="#FDE68A"
+                    strokeWidth="2.5"
                     strokeLinejoin="round"
                   />
 
-                  {/* Cloud Top Puff Highlight Shines */}
-                  <path
-                    d="M 205 170 C 217 162 235 164 245 172"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="3.2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 276 164 C 288 160 302 164 310 172"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="3.2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 138 210 C 142 202 152 200 160 204"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
+                  {/* Soft Tactile Cloud Puffs Highlights */}
+                  <path d="M 195 194 C 205 188 220 190 228 196" fill="none" stroke="#FEF3C7" strokeWidth="3" strokeLinecap="round" />
+                  <path d="M 272 196 C 280 190 295 188 305 194" fill="none" stroke="#FEF3C7" strokeWidth="3" strokeLinecap="round" />
 
                   {/* Soft Pink Blush on the Cloud */}
-                  <ellipse cx="172" cy="248" rx="8" ry="4.5" fill="#FDA4AF" opacity="0.4" />
-                  <ellipse cx="328" cy="248" rx="8" ry="4.5" fill="#FDA4AF" opacity="0.4" />
+                  <ellipse cx="150" cy="250" rx="10" ry="6" fill="#FDA4AF" opacity="0.5" />
+                  <ellipse cx="350" cy="250" rx="10" ry="6" fill="#FDA4AF" opacity="0.5" />
 
-                  {/* =================================================
-                      3. CUTE CHUBBY PAWS (Holding the Cloud Top Rim)
-                      Visible specifically when PEAKING & APPROVING!
-                      ================================================= */}
+                  {/* Cute Yellow Paws Resting on Cloud Rim */}
                   <g
-                    className="mascot-transition"
+                    className={`mascot-smooth-transition ${isPwdPeek ? "paws-wiggle" : ""}`}
                     style={{
-                      opacity: isPeekingOrApproving ? 1 : 0,
-                      transform: isPeekingOrApproving ? "translateY(0px)" : "translateY(12px)",
+                      opacity: isPwdPeek ? 1 : 0,
+                      transform: isPwdPeek ? "translateY(0px)" : "translateY(12px)",
                     }}
                   >
                     {/* Left Paw */}
-                    <g transform="translate(210, 180)">
-                      <ellipse cx="0" cy="0" rx="11" ry="8" fill="#FBBF24" stroke="#D97706" strokeWidth="2.4" />
-                      <circle cx="-3" cy="-2" r="2.2" fill="#FEF08A" />
-                    </g>
+                    <ellipse cx="204" cy="198" rx="12" ry="8.5" fill="#FFDA27" stroke="#FA8223" strokeWidth="2.5" />
                     {/* Right Paw */}
-                    <g transform="translate(288, 180)">
-                      <ellipse cx="0" cy="0" rx="11" ry="8" fill="#FBBF24" stroke="#D97706" strokeWidth="2.4" />
-                      <circle cx="3" cy="-2" r="2.2" fill="#FEF08A" />
-                    </g>
+                    <ellipse cx="296" cy="198" rx="12" ry="8.5" fill="#FFDA27" stroke="#FA8223" strokeWidth="2.5" />
                   </g>
                 </g>
               </svg>
@@ -673,33 +591,33 @@ export function AuthSplitShell({
         </div>
 
         {/* =====================================================
-            RIGHT: MODERN CRISP AUTH CARD (Docked in the Right Corner)
+            RIGHT: MODERN CRISP AUTH CARD (Compact, Balanced & Centered)
             ===================================================== */}
-        <div className="w-full lg:w-[460px] xl:w-[490px] bg-white/95 backdrop-blur-2xl rounded-[32px] border border-white/90 shadow-[0_16px_48px_rgba(245,158,11,0.06)] px-6 sm:px-10 py-7 sm:py-8 flex flex-col justify-between shrink-0">
+        <div className="w-full lg:w-[450px] xl:w-[480px] self-center my-auto bg-white/95 backdrop-blur-2xl rounded-[32px] border border-white/90 shadow-[0_16px_48px_rgba(245,158,11,0.06)] px-6 sm:px-9 py-7 sm:py-8 flex flex-col justify-center shrink-0">
           
           {/* Header with SunSight Brand */}
-          <div className="text-center pb-1">
+          <div className="text-center pb-2">
             <Link
               href="/"
-              className="inline-flex items-center justify-center mb-4 hover:scale-102 transition cursor-pointer"
+              className="inline-flex items-center justify-center mb-3 hover:scale-102 transition cursor-pointer"
               title="SunSight Beranda"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="SunSight" className="h-8.5 w-auto" />
+              <img src="/logo.svg" alt="SunSight" className="h-8 w-auto" />
             </Link>
 
-            <h1 className="text-2xl sm:text-[26px] font-extrabold text-slate-900 font-title tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-[25px] font-extrabold text-slate-900 font-title tracking-tight leading-tight">
               {title}
             </h1>
-            <p className="text-xs sm:text-[13px] text-slate-500 mt-1">{subtitle}</p>
+            <p className="text-xs sm:text-[13px] text-slate-500 mt-1.5 leading-relaxed max-w-sm mx-auto">{subtitle}</p>
           </div>
 
           {/* Form Content Slot */}
-          <div className="my-auto py-2">{children}</div>
+          <div className="mt-3">{children}</div>
 
           {/* Footer Slot */}
           {bottomSlot !== undefined && (
-            <div className="text-center text-xs text-slate-500 pt-3 border-t border-slate-100/80">
+            <div className="text-center text-xs text-slate-500 mt-4 pt-3.5 border-t border-slate-100">
               {bottomSlot}
             </div>
           )}
