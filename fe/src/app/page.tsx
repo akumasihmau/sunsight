@@ -832,6 +832,7 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
 
 function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
   const [activeFacetIdx, setActiveFacetIdx] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
   const carouselRef = useRef<HTMLDivElement | null>(null);
 
   const facets = useMemo(() => {
@@ -870,6 +871,28 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
     }
   };
 
+  // Reset slide if project changes
+  useEffect(() => {
+    setActiveFacetIdx(0);
+    if (carouselRef.current) {
+      carouselRef.current.scrollTo({ left: 0, behavior: "instant" });
+    }
+  }, [proj.id]);
+
+  const hasMultiple = facets.length > 1;
+
+  // Autoplay carousel if multiple polygons/facets exist, pausing on hover/interaction
+  useEffect(() => {
+    if (!hasMultiple || isHovered) return;
+
+    const timer = setInterval(() => {
+      const nextIdx = (activeFacetIdx + 1) % facets.length;
+      scrollToFacet(nextIdx);
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [hasMultiple, isHovered, activeFacetIdx, facets.length]);
+
   const handleScroll = () => {
     if (!carouselRef.current) return;
     const { scrollLeft, clientWidth } = carouselRef.current;
@@ -893,10 +916,14 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
     scrollToFacet(nextIdx);
   };
 
-  const hasMultiple = facets.length > 1;
-
   return (
-    <section className="xl:col-span-4 h-[260px] bg-white rounded-[22px] p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs group">
+    <section
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setIsHovered(false)}
+      className="xl:col-span-4 h-[260px] bg-white rounded-[22px] p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden shadow-2xs group"
+    >
       {/* Carousel Track */}
       <div
         ref={carouselRef}

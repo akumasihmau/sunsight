@@ -4086,7 +4086,7 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Delete Vertex Mode */}
           {cadTool === "delete_vertex" && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-rose-200/90 shadow-[0_8px_30px_rgba(244,63,94,0.12),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-rose-200/90 shadow-[0_8px_30px_rgba(244,63,94,0.12),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
               <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
                 <span className="material-symbols-outlined text-[13px]">remove_circle</span>
               </div>
@@ -4119,7 +4119,7 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Measure / CAD Overview Mode */}
           {cadTool === "measure" && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
               <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
                 <span className="material-symbols-outlined text-[13px]">straighten</span>
               </div>
@@ -4196,9 +4196,9 @@ function StudioPageContent() {
             </div>
           )}
 
-          {/* AI Detection Floating Mode Guidance Banners */}
+          {/* AI Detection Floating Mode Guidance Banners (Bottom-Docked to avoid navbar overlap) */}
           {showDetectedRoofs && facets.length === 0 && !isAiScanning && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
                 <span className="material-symbols-outlined text-[15px]">psychology</span>
               </span>
@@ -4209,7 +4209,7 @@ function StudioPageContent() {
           )}
 
           {showDetectedRoofs && facets.length > 0 && !selectionDone && !isAiScanning && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shrink-0">
                 <span className="material-symbols-outlined text-[14px]">check_circle</span>
               </span>
