@@ -144,7 +144,7 @@ export default function RegisterPage() {
         monthlyBillIdr: defaultBill,
       });
 
-      router.push("/");
+      router.push("/onboarding");
     } catch (caught) {
       const parsed = parseAuthError(caught, "register");
       setAlert(parsed.alert);

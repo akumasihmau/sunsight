@@ -7,7 +7,9 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type React
 import { BogorProjectsMap } from "@/components/BogorProjectsMap";
 import { LandingView } from "@/components/landing/LandingView";
 import { ProposalModal } from "@/components/studio/ProposalModal";
-import { type SimulationParameters, type SimulationResult } from "@/lib/api";
+import { MascotDashboardTour } from "@/components/dashboard/MascotDashboardTour";
+import { SunnyMascot } from "@/components/mascot/SunnyMascot";
+import { api, type SimulationParameters, type SimulationResult } from "@/lib/api";
 import { useHasToken, useStoredBiodata } from "@/lib/profile";
 
 type DashboardNavTab = "overview" | "history" | "calculator";
@@ -1072,21 +1074,51 @@ function HomePageContent() {
     setActiveTabState(tab);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
-      if (tab === "overview") {
-        url.searchParams.delete("tab");
-      } else {
-        url.searchParams.set("tab", tab);
+      const currentParam = url.searchParams.get("tab") || "overview";
+      if (currentParam !== tab) {
+        if (tab === "overview") {
+          url.searchParams.delete("tab");
+        } else {
+          url.searchParams.set("tab", tab);
+        }
+        window.history.replaceState(null, "", url.toString());
       }
-      window.history.replaceState(null, "", url.toString());
     }
   }, []);
 
+  const handleTourSwitchTab = useCallback(
+    (target: "map" | "calc" | "history") => {
+      const tab: DashboardNavTab =
+        target === "map" ? "overview" : target === "calc" ? "calculator" : "history";
+      setActiveTab(tab);
+    },
+    [setActiveTab]
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
+  const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>(SAVED_PROJECTS);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(SAVED_PROJECTS[0].id);
-  const [shapeFilter, setShapeFilter] = useState<string>("all");
   const [proposalOpen, setProposalOpen] = useState(false);
   const [activePillarModal, setActivePillarModal] = useState<"hemat" | "mandiri" | "bersih" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  // Sync saved projects with localStorage if available
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("sunsight.saved_projects");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSavedProjects(parsed);
+          }
+        }
+      } catch {
+        // Fallback to initial projects
+      }
+    }
+  }, []);
 
   // Interactive Location & Geolocation States
   const [activeLocation, setActiveLocation] = useState({
@@ -1169,25 +1201,56 @@ function HomePageContent() {
         .join("")
     : "PS";
 
+  // Delete project from saved projects
+  const handleDeleteProject = useCallback(
+    (id: string, name: string) => {
+      if (!window.confirm(`Hapus proyek "${name}" dari riwayat?`)) return;
+
+      setSavedProjects((prev) => {
+        const updated = prev.filter((p) => p.id !== id);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("sunsight.saved_projects", JSON.stringify(updated));
+          } catch {
+            // Ignore error
+          }
+        }
+        if (selectedProjectId === id) {
+          if (updated.length > 0) {
+            setSelectedProjectId(updated[0].id);
+          }
+        }
+        return updated;
+      });
+
+      const numId = Number(id);
+      if (!Number.isNaN(numId) && numId > 0) {
+        // If it's a backend saved simulation, trigger API delete
+        api.deleteSimulation(numId).catch(() => {});
+      }
+
+      showToast(`Proyek "${name}" berhasil dihapus dari riwayat.`);
+    },
+    [selectedProjectId, showToast]
+  );
+
   // Active Project for Bento display
   const activeProj = useMemo(() => {
-    return SAVED_PROJECTS.find((p) => p.id === selectedProjectId) || SAVED_PROJECTS[0];
-  }, [selectedProjectId]);
+    return savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || SAVED_PROJECTS[0];
+  }, [savedProjects, selectedProjectId]);
 
-  // Filtered projects for history list
+  // Filtered projects for history list (without category/shape filter)
   const filteredProjects = useMemo(() => {
-    return SAVED_PROJECTS.filter((p) => {
-      const matchQuery =
-        !searchQuery.trim() ||
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.district.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchShape = shapeFilter === "all" || p.roofShape === shapeFilter;
-
-      return matchQuery && matchShape;
+    return savedProjects.filter((p) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.address.toLowerCase().includes(q) ||
+        p.district.toLowerCase().includes(q)
+      );
     });
-  }, [searchQuery, shapeFilter]);
+  }, [savedProjects, searchQuery]);
 
   // Dynamic Calculator Metrics
   const calcMetrics = useMemo(() => {
@@ -1490,7 +1553,21 @@ function HomePageContent() {
           </nav>
 
           <div className="flex items-center gap-2">
+            {/* Tombol Panduan Sunny (?) */}
+            <button
+              type="button"
+              onClick={() => setTourOpen(true)}
+              className="w-11 h-11 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-amber-800 flex items-center justify-center transition shadow-xs border border-slate-200/60 cursor-pointer group"
+              title="Bantuan & Panduan Beranda bersama Sunny"
+              aria-label="Panduan Beranda"
+            >
+              <span className="material-symbols-outlined text-[20px] text-slate-600 group-hover:text-amber-600 transition-colors">
+                help
+              </span>
+            </button>
+
             <Link
+              id="dashboard-studio-btn"
               href="/studio"
               className="h-11 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold flex items-center gap-2 transition shadow-xs hover:text-amber-600 group"
               title="Buka Studio CAD"
@@ -1502,6 +1579,7 @@ function HomePageContent() {
             </Link>
 
             <Link
+              id="dashboard-profile-btn"
               href="/profile"
               className="w-11 h-11 rounded-full bg-white hover:bg-slate-50 flex items-center justify-center transition shadow-xs group border border-slate-200/60"
               title="Profil & akun"
@@ -1530,7 +1608,7 @@ function HomePageContent() {
             TAB 1: BERANDA (Bento dashboard)
             ===================================================== */}
         {activeTab === "overview" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 animate-fadeIn">
+          <div id="dashboard-bento-hero" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 animate-fadeIn">
             {/* Card A — Proyek aktif */}
             <section className="xl:col-span-4 h-[260px] bg-white rounded-[22px] p-5 flex flex-col justify-between relative overflow-hidden">
               <CardHeader
@@ -1915,17 +1993,17 @@ function HomePageContent() {
             </div>
 
             {/* Projects list + map */}
-            <section className="md:col-span-2 xl:col-span-8 bg-white rounded-[22px] p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 xl:h-[384px]">
+            <section id="dashboard-map-section" className="md:col-span-2 xl:col-span-8 bg-white rounded-[22px] p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 xl:h-[384px]">
               <div className="flex flex-col p-2 min-h-0">
                 <CardHeader
                   title="Proyek"
-                  subtitle={`${SAVED_PROJECTS.length} tersimpan`}
+                  subtitle={`${savedProjects.length} tersimpan`}
                   onAction={() => setActiveTab("history")}
                   actionLabel="Lihat semua proyek"
                 />
 
                 <ul className="mt-3 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1.5">
-                  {SAVED_PROJECTS.map((proj, idx) => {
+                  {savedProjects.map((proj, idx) => {
                     const active = proj.id === selectedProjectId;
                     return (
                       <li key={proj.id}>
@@ -2001,7 +2079,7 @@ function HomePageContent() {
               {/* Real Leaflet Map of Kota Bogor */}
               <div className="relative min-h-[300px] h-full rounded-[18px] overflow-hidden">
                 <BogorProjectsMap
-                  projects={SAVED_PROJECTS}
+                  projects={savedProjects}
                   selectedProjectId={selectedProjectId}
                   onSelectProject={setSelectedProjectId}
                   roofScore={roofScore}
@@ -2016,8 +2094,8 @@ function HomePageContent() {
             TAB 2: RIWAYAT POLIGON & DESAIN ATAP
             ===================================================== */}
         {activeTab === "history" && (
-          <div className="space-y-4 animate-fadeIn">
-            {/* Top Filter Bar */}
+          <div id="dashboard-history-section" className="space-y-4 animate-fadeIn">
+            {/* Top Search & Actions Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-[22px] p-3.5 shadow-xs">
               <div className="flex items-center gap-2 pl-2">
                 <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
@@ -2025,36 +2103,13 @@ function HomePageContent() {
                 </span>
                 <div>
                   <h2 className="text-sm font-semibold text-slate-900 leading-tight">Riwayat Proyek</h2>
-                  <p className="text-[11px] text-slate-400 leading-tight">{SAVED_PROJECTS.length} rancangan atap tersimpan</p>
+                  <p className="text-[11px] text-slate-400 leading-tight">{savedProjects.length} rancangan atap tersimpan</p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Shape Filter Pills */}
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-full text-xs">
-                  {[
-                    { id: "all", label: "Semua" },
-                    { id: "rectangle", label: "Pelana" },
-                    { id: "l-shape", label: "Sudut L" },
-                    { id: "hip", label: "Limasan" },
-                  ].map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setShapeFilter(s.id)}
-                      className={`h-7 px-3.5 rounded-full text-xs transition cursor-pointer ${
-                        shapeFilter === s.id
-                          ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                          : "text-slate-500 hover:text-slate-900 font-medium"
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
                 {/* Quick Search */}
-                <div className="relative w-48 sm:w-56">
+                <div className="relative flex-1 sm:w-72">
                   <span className="material-symbols-outlined text-[16px] text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">
                     search
                   </span>
@@ -2062,7 +2117,7 @@ function HomePageContent() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Cari proyek atau alamat..."
+                    placeholder="Cari nama proyek atau alamat..."
                     className="w-full h-9 pl-8 pr-3 rounded-full bg-slate-100 text-xs text-slate-900 placeholder:text-slate-400 outline-none border-0 border-none focus:ring-0"
                   />
                 </div>
@@ -2168,6 +2223,15 @@ function HomePageContent() {
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
+                            onClick={() => handleDeleteProject(proj.id, proj.name)}
+                            className="w-8 h-8 rounded-full border border-slate-200/80 hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
+                            title="Hapus proyek ini dari riwayat"
+                            aria-label="Hapus proyek"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setSelectedProjectId(proj.id);
                               setProposalOpen(true);
@@ -2198,7 +2262,7 @@ function HomePageContent() {
             TAB 3: KALKULATOR TARIF & ANALISIS ROI
             ===================================================== */}
         {activeTab === "calculator" && (
-          <div className="space-y-4 animate-fadeIn">
+          <div id="dashboard-calculator-section" className="space-y-4 animate-fadeIn">
             {/* Header Strip: Clean, focused, without redundant duplicate buttons */}
             <div className="bg-white rounded-[22px] p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -2842,6 +2906,13 @@ function HomePageContent() {
           </div>
         </div>
       )}
+
+      {/* Interactive Mascot Dashboard Tour (Sunny) */}
+      <MascotDashboardTour
+        forceOpen={tourOpen}
+        onClose={() => setTourOpen(false)}
+        onSwitchTab={handleTourSwitchTab}
+      />
 
       {/* Proposal PDF Modal */}
       <ProposalModal

@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { ProposalModal } from "@/components/studio/ProposalModal";
+import { StudioMascotGuide } from "@/components/studio/StudioMascotGuide";
+import { SunnyMascot } from "@/components/mascot/SunnyMascot";
 import { api, setToken, type SimulationInput, type SimulationParameters, type SimulationResult } from "@/lib/api";
 import { formatRp } from "@/lib/format";
 import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/profile";
@@ -45,6 +47,7 @@ export interface RoofFacet {
   customModuleCount: number | null;
   vertices?: Point2D[];
   alignToAzimuth?: boolean;
+  isSolarPopulated?: boolean;
 }
 
 type DragMode = "move" | "rot" | "br" | "r" | "b" | "tl" | "tr" | "bl";
@@ -872,10 +875,10 @@ const INITIAL_FACETS: RoofFacet[] = [
   {
     id: "facet-1",
     name: "Bidang Atap Utama",
-    shape: "rectangle",
-    ridge: 12.48,
-    slope: 7.28,
-    pitch: 22,
+    shape: "trapezoid",
+    ridge: 11.8,
+    slope: 7.2,
+    pitch: 24,
     azimuth: 188,
     setback: 0.5,
     gutter: 0.6,
@@ -885,35 +888,36 @@ const INITIAL_FACETS: RoofFacet[] = [
     offsetX: 0,
     offsetY: 0,
     hasHvac: true,
-    hasSkylight: true,
+    hasSkylight: false,
     modulePower: 550,
     orientation: "portrait",
     panelGap: 3,
     slotOverrides: {},
     customModuleCount: null,
     vertices: [
-      { x: -6.24, y: -3.64 },
-      { x: 6.24, y: -3.64 },
-      { x: 6.24, y: 3.64 },
-      { x: -6.24, y: 3.64 },
+      { x: -5.0, y: -3.6 },
+      { x: 5.0, y: -3.6 },
+      { x: 5.9, y: 3.6 },
+      { x: -5.9, y: 3.6 },
     ],
     alignToAzimuth: true,
+    isSolarPopulated: false,
   },
   {
     id: "facet-2",
-    name: "Bidang Atap Sayap",
-    shape: "rectangle",
-    ridge: 7.5,
+    name: "Bidang Atap Sayap Timur",
+    shape: "custom_polygon",
+    ridge: 7.6,
     slope: 4.8,
-    pitch: 18,
+    pitch: 20,
     azimuth: 98,
     setback: 0.4,
     gutter: 0.5,
     rotation: -4,
     lat: -6.59495,
     lng: 106.79742,
-    offsetX: 160,
-    offsetY: 45,
+    offsetX: 155,
+    offsetY: 40,
     hasHvac: false,
     hasSkylight: false,
     modulePower: 550,
@@ -922,12 +926,13 @@ const INITIAL_FACETS: RoofFacet[] = [
     slotOverrides: {},
     customModuleCount: null,
     vertices: [
-      { x: -3.75, y: -2.4 },
-      { x: 3.75, y: -2.4 },
-      { x: 3.75, y: 2.4 },
-      { x: -3.75, y: 2.4 },
+      { x: -3.8, y: -2.4 },
+      { x: 3.2, y: -2.4 },
+      { x: 3.8, y: 2.4 },
+      { x: -3.4, y: 2.4 },
     ],
     alignToAzimuth: true,
+    isSolarPopulated: false,
   },
 ];
 
@@ -1085,7 +1090,10 @@ function computeFacetMetrics(
     state: slotStates[idx],
   }));
 
-  const modulesFitted = validSlots.filter((s) => s.state === "active").length;
+  const isPopulated = facet.isSolarPopulated !== false;
+  const potentialModules = validSlots.filter((s) => s.state === "active").length;
+  const potentialKwp = (potentialModules * facet.modulePower) / 1000;
+  const modulesFitted = isPopulated ? potentialModules : 0;
 
   const actualKwp = (modulesFitted * facet.modulePower) / 1000;
   const totalPanelAreaM2 = modulesFitted * currentSpec.w * currentSpec.l;
@@ -1118,6 +1126,9 @@ function computeFacetMetrics(
     validSlots,
     totalValidSlots,
     modulesFitted,
+    potentialModules,
+    potentialKwp,
+    isPopulated,
     actualKwp,
     densityPct,
     pitchCosine,
@@ -1163,6 +1174,7 @@ function StudioPageContent() {
   const [activeTab, setActiveTab] = useState<"geometry" | "pvarray" | "financials">("geometry");
   const [capexCollapsed, setCapexCollapsed] = useState(true);
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [mascotGuideOpen, setMascotGuideOpen] = useState(true);
 
   // Address search input (Defaulted to Kota Bogor)
   const [addressInput, setAddressInput] = useState("Jl. Pajajaran No. 42, Bogor Tengah, Kota Bogor");
@@ -1382,6 +1394,27 @@ function StudioPageContent() {
     showToast("Semua seleksi bidang atap dibatalkan (0 bidang dipilih)");
   }, [showToast]);
 
+  const populateFacetWithSolar = useCallback(
+    (facetId: string) => {
+      setFacets((prev) =>
+        prev.map((f) => (f.id === facetId ? { ...f, isSolarPopulated: true } : f))
+      );
+      setActiveFacetId(facetId);
+      showToast("✨ Modul surya berhasil dipasang pada bidang atap!");
+    },
+    [setActiveFacetId, showToast]
+  );
+
+  const populateAllFacetsWithSolar = useCallback(() => {
+    setFacets((prev) => prev.map((f) => ({ ...f, isSolarPopulated: true })));
+    showToast("⚡ Modul surya dipasang pada semua bidang atap!");
+  }, [showToast]);
+
+  const resetAllToRoofOutline = useCallback(() => {
+    setFacets((prev) => prev.map((f) => ({ ...f, isSolarPopulated: false })));
+    showToast("🏠 Tampilan diubah ke kontur scan bidang atap");
+  }, [showToast]);
+
   // Facets currently participating in Studio calculations & tree growth
   const selectedFacets = useMemo(() => {
     return facets.filter((f) => selectedFacetIds.includes(f.id));
@@ -1417,6 +1450,7 @@ function StudioPageContent() {
           slotOverrides: {},
           customModuleCount: null,
           vertices: detected.vertices,
+          isSolarPopulated: false,
           ...buildPolygonPatch(detected.vertices, {
             lat: detected.lat,
             lng: detected.lng,
@@ -1952,9 +1986,29 @@ function StudioPageContent() {
   const [roiYear, setRoiYear] = useState(4.8);
   const [roiHoverYear, setRoiHoverYear] = useState<number | null>(null);
 
-  // Studio Nav Open/Close & Filter Popover
-  const [studioNavOpen, setStudioNavOpen] = useState(true);
+  // Studio Nav Hover Expand/Collapse State & Filter Popover
+  const [studioNavOpen, setStudioNavOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const navCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleNavMouseEnter = useCallback(() => {
+    if (navCollapseTimerRef.current) {
+      clearTimeout(navCollapseTimerRef.current);
+      navCollapseTimerRef.current = null;
+    }
+    setStudioNavOpen(true);
+  }, []);
+
+  const handleNavMouseLeave = useCallback(() => {
+    if (navCollapseTimerRef.current) {
+      clearTimeout(navCollapseTimerRef.current);
+    }
+    if (!searchOpen && !filterOpen) {
+      navCollapseTimerRef.current = setTimeout(() => {
+        setStudioNavOpen(false);
+      }, 300);
+    }
+  }, [searchOpen, filterOpen]);
   const [mounted, setMounted] = useState(false);
 
   // Biodata state
@@ -2454,7 +2508,29 @@ function StudioPageContent() {
       const res = await api.saveSimulation(payload);
       setIsSaving(false);
       setSaveSuccess(true);
-      showToast(`✅ Desain simulasi tersimpan ke akun! (ID #${res.id})`);
+
+      // Simpan status tur beranda & sinkronisasi proyek lokal
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("sunsight_tour_pending", "true");
+          const stored = localStorage.getItem("sunsight_saved_projects");
+          const arr = stored ? JSON.parse(stored) : [];
+          arr.unshift({
+            id: res.id,
+            name: activeFacet.name || "Rancangan Atap Studio",
+            address: addressInput,
+            date: new Date().toISOString().split("T")[0],
+            capacityKwp: calc.actualKwp,
+            annualOutputKwh: Math.round(calc.annualProductionKwh),
+            monthlySavingsRp: Math.round((calc.annualProductionKwh * 1444.7) / 12),
+            bepYears: calc.actualKwp > 0 ? 4.8 : 5.0,
+            roofShape: activeFacet.shape,
+          });
+          localStorage.setItem("sunsight_saved_projects", JSON.stringify(arr));
+        } catch {}
+      }
+
+      showToast(`✅ Desain tersimpan! Sunny siap memandu fitur Beranda ☀️`);
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err: any) {
       setIsSaving(false);
@@ -2949,53 +3025,46 @@ function StudioPageContent() {
       {/* =======================================================
           EXPANDABLE FLOATING PILL NAVBAR (Horisontal Individual Bubbles)
           ======================================================= */}
-      <div className="fixed top-4 left-4 z-40 select-none flex items-center gap-2 max-w-[calc(100vw-2rem)] print:hidden">
-        {/* Toggle Button: Closed = Logo + Menu icon | Opened = Close (✕) button */}
-        <button
-          type="button"
-          onClick={() => {
-            setStudioNavOpen((prev) => {
-              const next = !prev;
-              if (!next) {
-                setSearchOpen(false);
-                setFilterOpen(false);
-              }
-              return next;
-            });
-          }}
-          className={`h-11 rounded-full bg-white text-slate-800 relative flex items-center justify-center transition-all duration-300 ease-out shadow-xs cursor-pointer border border-slate-200/80 shrink-0 select-none overflow-hidden ${
-            studioNavOpen
-              ? "w-11 hover:bg-slate-50 text-slate-700 hover:text-slate-900"
-              : "w-[172px] hover:bg-white text-slate-700"
+      <div
+        id="studio-nav-header"
+        className="fixed top-4 left-4 z-40 select-none flex items-center gap-2 max-w-[calc(100vw-2rem)] print:hidden group"
+        onMouseEnter={handleNavMouseEnter}
+        onMouseLeave={handleNavMouseLeave}
+      >
+        {/* Tombol Navigasi:
+            - Pas Ketutup: Cukup Logo SunSight + Tanda '>'
+            - Pas Kebuka: Logo berubah jadi Tanda Balik ke Beranda (← Beranda) */}
+        <Link
+          href="/"
+          className={`h-11 rounded-full bg-white text-slate-800 flex items-center px-3.5 transition-all duration-300 ease-out shadow-xs border border-slate-200/80 hover:bg-slate-50 hover:text-amber-800 shrink-0 select-none cursor-pointer group/back ${
+            studioNavOpen ? "shadow-sm border-amber-300/70" : ""
           }`}
-          title={studioNavOpen ? "Tutup Navigasi Studio" : "Buka Navigasi Studio"}
-          aria-label={studioNavOpen ? "Tutup Navigasi Studio" : "Buka Navigasi Studio"}
-          aria-expanded={studioNavOpen}
+          title={studioNavOpen ? "Kembali ke Beranda" : "Buka Menu Studio"}
+          aria-label="Kembali ke Beranda"
         >
-          {/* CLOSED STATE LAYER (Full Logo + Hamburger) */}
-          <div
-            className={`absolute inset-0 px-4 flex items-center justify-between transition-opacity duration-200 pointer-events-none select-none ${
-              studioNavOpen ? "opacity-0" : "opacity-100"
-            }`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain shrink-0" />
-            <span className="material-symbols-outlined text-[20px] text-slate-600 shrink-0">menu</span>
-          </div>
+          {!studioNavOpen ? (
+            /* Pas Ketutup: Cukup logo sama tanda > aja */
+            <div className="flex items-center gap-1.5 animate-fadeIn">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.svg" alt="SunSight" className="h-6 w-auto object-contain shrink-0" />
+              <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover/back:text-amber-600 group-hover/back:translate-x-0.5 transition-all">
+                chevron_right
+              </span>
+            </div>
+          ) : (
+            /* Pas Kebuka: Logo berubah jadi tanda balik ke beranda */
+            <div className="flex items-center gap-1.5 animate-fadeIn">
+              <span className="material-symbols-outlined text-[19px] text-slate-600 group-hover/back:text-amber-600 group-hover/back:-translate-x-0.5 transition-all">
+                arrow_back
+              </span>
+              <span className="text-xs font-bold text-slate-800 group-hover/back:text-amber-950 transition-colors whitespace-nowrap">
+                Beranda
+              </span>
+            </div>
+          )}
+        </Link>
 
-          {/* OPENED STATE LAYER (Centered Close '✕' Button) */}
-          <div
-            className={`w-11 h-11 flex items-center justify-center transition-all duration-200 select-none shrink-0 ${
-              studioNavOpen ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none"
-            }`}
-          >
-            <span className="material-symbols-outlined text-[20px] text-slate-800 leading-none flex items-center justify-center text-center">
-              close
-            </span>
-          </div>
-        </button>
-
-        {/* Action Pills Container (Slides smoothly in/out together without abrupt unmount) */}
+        {/* Action Pills Container (Mengembang mulus saat di-hover, menciut saat mouse menjauh) */}
         <div
           className={`flex items-center gap-2 transition-all duration-300 ease-out ${
             studioNavOpen
@@ -3003,15 +3072,6 @@ function StudioPageContent() {
               : "max-w-0 opacity-0 -translate-x-3 pointer-events-none"
           } ${searchOpen || filterOpen ? "overflow-visible" : "overflow-hidden"}`}
         >
-          {/* Pill 1: Kembali ke Beranda */}
-          <Link
-            href="/"
-            className="h-11 px-4 rounded-full bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-xs shrink-0 border border-slate-200/60 cursor-pointer"
-            title="Kembali ke Beranda"
-          >
-            <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-            <span className="hidden sm:inline">Beranda</span>
-          </Link>
 
           {/* Pill 2: Pencarian (Identik dengan Beranda: Bulat w-11 h-11 dengan popover proyek) */}
           <div className="relative shrink-0">
@@ -4346,6 +4406,7 @@ function StudioPageContent() {
               return (
                 <div
                   key={facet.id}
+                  id={isActive ? "studio-roof-facet" : undefined}
                   className="absolute pointer-events-auto select-none"
                   style={{
                     left: styleLeft,
@@ -4383,7 +4444,11 @@ function StudioPageContent() {
                     e.stopPropagation();
                     setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
                     setActiveFacetId(facet.id);
-                    showToast(`Memilih ${facet.name || "bidang atap"}`);
+                    if (facet.isSolarPopulated === false) {
+                      populateFacetWithSolar(facet.id);
+                    } else {
+                      showToast(`Memilih ${facet.name || "bidang atap"}`);
+                    }
                   }}
                 >
                   {/* Outer Roof Boundary */}
@@ -4403,15 +4468,37 @@ function StudioPageContent() {
                         fill={
                           isSelected
                             ? isActive
-                              ? "rgba(14, 165, 233, 0.16)"
-                              : "rgba(14, 165, 233, 0.09)"
-                            : "rgba(15, 23, 42, 0.45)"
+                              ? facet.isSolarPopulated === false
+                                ? "rgba(245, 158, 11, 0.16)"
+                                : "rgba(14, 165, 233, 0.12)"
+                              : "rgba(14, 165, 233, 0.06)"
+                            : facet.isSolarPopulated === false
+                            ? "rgba(245, 158, 11, 0.12)"
+                            : "rgba(15, 23, 42, 0.35)"
                         }
-                        stroke={isSelected ? "#38bdf8" : "#10b981"}
-                        strokeWidth={isSelected ? "3" : "2"}
-                        strokeDasharray={isSelected ? "none" : "4 3"}
+                        stroke={
+                          facet.isSolarPopulated === false
+                            ? "#f59e0b"
+                            : isSelected
+                            ? "#38bdf8"
+                            : "#10b981"
+                        }
+                        strokeWidth={facet.isSolarPopulated === false ? "2.5" : isSelected ? "2" : "1.5"}
+                        strokeDasharray={
+                          facet.isSolarPopulated === false
+                            ? "6 4"
+                            : isSelected
+                            ? "none"
+                            : "4 3"
+                        }
                         strokeLinejoin="round"
-                        className={isSelected ? "filter drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]" : ""}
+                        className={
+                          facet.isSolarPopulated === false
+                            ? "transition-all duration-300 filter drop-shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                            : isSelected
+                            ? "filter drop-shadow-[0_0_8px_rgba(56,189,248,0.3)]"
+                            : ""
+                        }
                       />
 
                       {/* Setback dashed outline (Yellow dashed inset polygon, perfectly follows the exact shape for ALL templates & custom polygons!) */}
@@ -4479,105 +4566,139 @@ function StudioPageContent() {
                       </div>
                     )}
 
-                    {/* Dynamic PV Solar Panels (Each panel rendered complete and intact) */}
-                    <div className="absolute inset-0 pointer-events-none z-20">
-                      {fMetrics.validSlots.map((slot) => {
-                        const pixelCenterLeft = polyWidth / 2 + slot.x * pixelsPerMeter;
-                        const pixelCenterTop = polyHeight / 2 + slot.y * pixelsPerMeter;
-                        const pixelW = slot.w * pixelsPerMeter;
-                        const pixelH = slot.l * pixelsPerMeter;
-                        const slotRot = slot.rotationDeg || 0;
-                        const key = slot.key;
+                    {/* Dynamic PV Solar Panels (Only rendered when populated) */}
+                    {facet.isSolarPopulated !== false && (
+                      <div className="absolute inset-0 pointer-events-none z-20">
+                        {fMetrics.validSlots.map((slot) => {
+                          const pixelCenterLeft = polyWidth / 2 + slot.x * pixelsPerMeter;
+                          const pixelCenterTop = polyHeight / 2 + slot.y * pixelsPerMeter;
+                          const pixelW = slot.w * pixelsPerMeter;
+                          const pixelH = slot.l * pixelsPerMeter;
+                          const slotRot = slot.rotationDeg || 0;
+                          const key = slot.key;
 
-                        const state: SlotState = slot.state ?? facet.slotOverrides[key] ?? "active";
+                          const state: SlotState = slot.state ?? facet.slotOverrides[key] ?? "active";
 
-                        const showCellWattage = pixelsPerMeter >= 26;
-                        const isMicroCell = pixelsPerMeter < 16;
+                          const showCellWattage = pixelsPerMeter >= 26;
+                          const isMicroCell = pixelsPerMeter < 16;
 
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              if (isActive) {
-                                handleSlotClick(key);
-                              } else {
-                                setActiveFacetId(facet.id);
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                if (isActive) {
+                                  handleSlotClick(key);
+                                } else {
+                                  setActiveFacetId(facet.id);
+                                }
+                              }}
+                              className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden pointer-events-auto ${
+                                obstacleBrush ? "cursor-crosshair ring-1 ring-amber-300" : "cursor-pointer"
+                              } ${
+                                state === "active"
+                                  ? "bg-gradient-to-b from-[#0B1528] via-[#0F1C36] to-[#0A1325] border-sky-400/50 hover:border-amber-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] hover:scale-[1.02]"
+                                  : state === "skylight"
+                                    ? "bg-amber-500/50 border-amber-400"
+                                    : state === "hvac"
+                                      ? "bg-rose-600/70 border-rose-400"
+                                      : "bg-slate-900/35 border-2 border-dashed border-sky-400/40 hover:border-amber-400 hover:bg-amber-400/15"
+                              }`}
+                              style={{
+                                left: `${Math.round(pixelCenterLeft)}px`,
+                                top: `${Math.round(pixelCenterTop)}px`,
+                                width: `${Math.max(4, Math.round(pixelW))}px`,
+                                height: `${Math.max(4, Math.round(pixelH))}px`,
+                                transform: `translate(-50%, -50%) rotate(${slotRot}deg)`,
+                              }}
+                              title={
+                                state === "active"
+                                  ? `Panel Aktif (${slot.r + 1},${slot.c + 1}): ${facet.modulePower}W • Klik untuk matikan`
+                                  : state === "empty"
+                                    ? `Slot Kosong (${slot.r + 1},${slot.c + 1}) • Klik untuk pasang modul surya`
+                                    : `Rintangan Atap: ${state.toUpperCase()}`
                               }
-                            }}
-                            className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden pointer-events-auto ${
-                              obstacleBrush ? "cursor-crosshair ring-1 ring-amber-300" : "cursor-pointer"
-                            } ${
-                              state === "active"
-                                ? "bg-gradient-to-b from-[#0B1528] via-[#0F1C36] to-[#0A1325] border-sky-400/50 hover:border-amber-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] hover:scale-[1.02]"
-                                : state === "skylight"
-                                  ? "bg-amber-500/50 border-amber-400"
-                                  : state === "hvac"
-                                    ? "bg-rose-600/70 border-rose-400"
-                                    : "bg-slate-900/35 border-2 border-dashed border-sky-400/40 hover:border-amber-400 hover:bg-amber-400/15"
-                            }`}
-                            style={{
-                              left: `${Math.round(pixelCenterLeft)}px`,
-                              top: `${Math.round(pixelCenterTop)}px`,
-                              width: `${Math.max(4, Math.round(pixelW))}px`,
-                              height: `${Math.max(4, Math.round(pixelH))}px`,
-                              transform: `translate(-50%, -50%) rotate(${slotRot}deg)`,
-                            }}
-                            title={
-                              state === "active"
-                                ? `Panel Aktif (${slot.r + 1},${slot.c + 1}): ${facet.modulePower}W • Klik untuk matikan`
-                                : state === "empty"
-                                  ? `Slot Kosong (${slot.r + 1},${slot.c + 1}) • Klik untuk pasang modul surya`
-                                  : `Rintangan Atap: ${state.toUpperCase()}`
-                            }
-                          >
-                            {state === "active" ? (
-                              <div className="w-full h-full flex flex-col justify-center items-center relative pointer-events-none">
-                                {/* Silicon Wafer Busbar Lines */}
-                                <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
-                                {showCellWattage && (
-                                  <span className="text-[6.5px] font-bold text-sky-200/95 tracking-tighter truncate px-0.5 leading-none">
-                                    {facet.modulePower}W
-                                  </span>
-                                )}
-                                <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
-                              </div>
-                            ) : state === "skylight" ? (
-                              <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-amber-300" : "text-[6.5px] font-bold text-amber-200"}`}>
-                                {!isMicroCell && "SKY"}
-                              </span>
-                            ) : state === "hvac" ? (
-                              <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-rose-300" : "text-[6.5px] font-bold text-white"}`}>
-                                {!isMicroCell && "AC"}
-                              </span>
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center pointer-events-none opacity-60 hover:opacity-100">
-                                <span className="material-symbols-outlined text-[10px] text-sky-400/70">add</span>
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                            >
+                              {state === "active" ? (
+                                <div className="w-full h-full flex flex-col justify-center items-center relative pointer-events-none">
+                                  {/* Silicon Wafer Busbar Lines */}
+                                  <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                                  {showCellWattage && (
+                                    <span className="text-[6.5px] font-bold text-sky-200/95 tracking-tighter truncate px-0.5 leading-none">
+                                      {facet.modulePower}W
+                                    </span>
+                                  )}
+                                  <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                                </div>
+                              ) : state === "skylight" ? (
+                                <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-amber-300" : "text-[6.5px] font-bold text-amber-200"}`}>
+                                  {!isMicroCell && "SKY"}
+                                </span>
+                              ) : state === "hvac" ? (
+                                <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-rose-300" : "text-[6.5px] font-bold text-white"}`}>
+                                  {!isMicroCell && "AC"}
+                                </span>
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center pointer-events-none opacity-60 hover:opacity-100">
+                                  <span className="material-symbols-outlined text-[10px] text-sky-400/70">add</span>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                    {/* Unselected Facet Area in Center (Luas area saja, tanpa nama poligon) */}
-                    {!isSelected && (
+                    {/* Mode Kontur Atap: Sleek Minimalist Dark Badge (Sesuai Desain: [🏠] 24 m²) */}
+                    {facet.isSolarPopulated === false && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-25">
+                        <div
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            populateFacetWithSolar(facet.id);
+                          }}
+                          className="px-3.5 py-1.5 rounded-full bg-[#1A202C]/95 backdrop-blur-md border border-white/15 shadow-[0_4px_16px_rgba(0,0,0,0.3)] hover:shadow-[0_6px_22px_rgba(245,158,11,0.35)] hover:border-amber-400 flex items-center gap-2 pointer-events-auto cursor-pointer transition-all duration-200 hover:scale-[1.05] active:scale-[0.96]"
+                          title="Klik bidang atap ini untuk pasang panel surya"
+                        >
+                          <span className="material-symbols-outlined text-[16px] text-amber-400 shrink-0">
+                            roofing
+                          </span>
+                          <span className="text-xs font-mono font-bold text-amber-100 tracking-tight">
+                            {Math.round(fMetrics.grossArea)} m²
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Unselected Facet Area in Center */}
+                    {!isSelected && facet.isSolarPopulated !== false && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="px-2.5 py-0.5 rounded-full bg-slate-900/85 text-amber-200 font-mono text-[10px] font-bold shadow-xs whitespace-nowrap border border-amber-300/40 backdrop-blur-xs">
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-900/80 text-amber-200 font-mono text-[10px] font-bold shadow-xs whitespace-nowrap border border-white/10 backdrop-blur-xs">
                           {Math.round(fMetrics.grossArea)} m²
                         </span>
                       </div>
                     )}
 
-                    {/* Single Clean Floating Array Capacity Badge (Hidden in measure mode to avoid badge collision) */}
+                    {/* Single Clean Floating Array Capacity Badge */}
                     {isSelected && cadTool !== "measure" && (
-                      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/95 text-white shadow-md border border-sky-400/40 backdrop-blur-md flex items-center gap-1.5 pointer-events-none whitespace-nowrap z-25">
-                        <span className="text-[10px] font-bold text-amber-300">{fMetrics.modulesFitted} Panel</span>
-                        <span className="text-slate-500 text-[9px]">•</span>
-                        <span className="text-[10px] font-bold text-sky-200 font-code-metric">{(fMetrics.actualKwp).toFixed(2)} kWp</span>
+                      <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/90 text-white shadow-sm border border-white/20 backdrop-blur-md flex items-center gap-1.5 pointer-events-none whitespace-nowrap z-25 text-[10px]">
+                        {facet.isSolarPopulated === false ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span className="font-medium text-slate-200">Kontur Atap</span>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-amber-300 font-code-metric">{fMetrics.potentialModules} Panel</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-amber-300">{fMetrics.modulesFitted} Panel</span>
+                            <span className="text-slate-500">•</span>
+                            <span className="font-semibold text-sky-200 font-code-metric">{(fMetrics.actualKwp).toFixed(2)} kWp</span>
+                          </>
+                        )}
                         {selectedFacetIds.length > 1 && (
-                          <span className="text-[8.5px] font-bold text-emerald-400 bg-emerald-950/80 px-1 rounded border border-emerald-400/30">✓</span>
+                          <span className="text-[8.5px] font-bold text-emerald-400 bg-emerald-950/80 px-1 rounded">✓</span>
                         )}
                       </div>
                     )}
@@ -4934,7 +5055,10 @@ function StudioPageContent() {
           </div>
 
           {/* Floating Minimalist CAD Toolbar (Modern Frosted Glass) */}
-          <div className="absolute top-1/2 -translate-y-1/2 left-4 z-30 flex flex-col items-center gap-1.5 p-1.5 rounded-2xl bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80">
+          <div
+            id="studio-left-toolbar"
+            className="absolute top-1/2 -translate-y-1/2 left-4 z-30 flex flex-col items-center gap-1.5 p-1.5 rounded-2xl bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80"
+          >
             {/* 1. Select / Move */}
             <button
               type="button"
@@ -5052,13 +5176,62 @@ function StudioPageContent() {
                 {isAiScanning ? "sync" : "psychology"}
               </span>
             </button>
+
+            {/* Divider */}
+            <div className="w-5 h-px bg-slate-200 my-0.5" />
+
+            {/* 7. Panduan Studio bersama Sunny (Ikon '?') */}
+            <button
+              type="button"
+              onClick={() => setMascotGuideOpen((prev) => !prev)}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+                mascotGuideOpen
+                  ? "bg-amber-100 text-amber-950 border border-amber-300/80 shadow-2xs font-bold"
+                  : "bg-white text-slate-700 hover:bg-slate-100 hover:text-amber-800"
+              }`}
+              title="Panduan Studio bersama Sunny"
+              aria-label="Panduan Studio"
+            >
+              <span className="material-symbols-outlined text-[19px] text-amber-600 font-bold">
+                help
+              </span>
+            </button>
           </div>
+
+          {/* Interactive Studio Mascot Guide (Sunny) */}
+          <StudioMascotGuide
+            isOpen={mascotGuideOpen}
+            onOpen={() => setMascotGuideOpen(true)}
+            onClose={() => setMascotGuideOpen(false)}
+            onPopulateActiveFacet={() => {
+              if (activeFacet) {
+                populateFacetWithSolar(activeFacet.id);
+              } else {
+                populateAllFacetsWithSolar();
+              }
+            }}
+            onSetSolarPopulated={(populated) => {
+              if (populated) {
+                populateAllFacetsWithSolar();
+              } else {
+                resetAllToRoofOutline();
+              }
+            }}
+            onSwitchTab={(tab) => {
+              setActiveTab(tab);
+            }}
+            onOpenRightPanel={() => {
+              setRightPanelOpen(true);
+            }}
+            hasActiveSolar={activeFacet?.isSolarPopulated !== false}
+          />
         </div>
 
         {/* =======================================================
             RIGHT: INSPECTOR & PARAMETER STUDIO
             ======================================================= */}
         <div
+          id="studio-sidebar-inspector"
           className={`relative h-[45vh] lg:h-full shrink-0 bg-white border-l border-slate-200 shadow-[-4px_0_16px_rgba(15,23,42,0.03)] z-30 transition-all duration-300 overflow-visible flex flex-col ${
             rightPanelOpen ? "w-full lg:w-[380px]" : "w-full lg:w-0"
           }`}
@@ -5329,7 +5502,7 @@ function StudioPageContent() {
             {/* TAB PANES */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "geometry" && (
-                <div className="p-4 space-y-4">
+                <div id="studio-pane-geometry" className="p-4 space-y-4">
                   {/* Multi-Polygon Facet Switcher Strip */}
                   <div className="rounded-2xl bg-white/80 p-3 border border-amber-200/50 shadow-2xs space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -6312,7 +6485,7 @@ function StudioPageContent() {
               )}
 
               {activeTab === "pvarray" && (
-                <div className="p-4 space-y-4">
+                <div id="studio-pane-pvarray" className="p-4 space-y-4">
                   {/* Module Selection Card */}
                   <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
                     <div className="flex items-center justify-between">
@@ -6653,7 +6826,7 @@ function StudioPageContent() {
               )}
 
               {activeTab === "financials" && (
-                <div className="p-4 space-y-4">
+                <div id="studio-pane-financials" className="p-4 space-y-4">
                   {/* Card 1: Parameter Tarif & Tagihan PLN */}
                   <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
                     <div className="flex items-center justify-between">
