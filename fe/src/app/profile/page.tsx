@@ -476,9 +476,9 @@ export default function ProfilePage() {
               <div className="relative z-10 pt-3 border-t border-slate-100">
                 <Link
                   href="/methodology"
-                  className="w-full h-11 px-4 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs group"
+                  className="w-full h-11 px-4 rounded-full bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-[0_4px_16px_rgba(245,158,11,0.28)] hover:shadow-[0_6px_20px_rgba(245,158,11,0.38)] border border-amber-400/80 group"
                 >
-                  <span className="material-symbols-outlined text-[16px] text-amber-400">menu_book</span>
+                  <span className="material-symbols-outlined text-[16px]">menu_book</span>
                   <span>Lihat Metodologi &amp; Standar Lengkap</span>
                   <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">
                     arrow_forward
@@ -517,7 +517,7 @@ export default function ProfilePage() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2.5 border border-slate-800 animate-fadeIn">
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-800/90 backdrop-blur-xl text-white text-xs font-semibold shadow-[0_8px_24px_rgba(15,23,42,0.20)] flex items-center gap-2.5 border border-amber-400/30 animate-fadeIn">
           <span className="material-symbols-outlined text-[18px] text-amber-400">check_circle</span>
           <span>{toastMessage}</span>
         </div>
