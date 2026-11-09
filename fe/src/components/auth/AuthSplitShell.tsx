@@ -323,41 +323,37 @@ export function AuthSplitShell({
   return (
     <section
       ref={containerRef}
-      className="min-h-screen w-full bg-[#EFF1F4] p-4 sm:p-6 lg:p-8 flex flex-col justify-between select-none relative overflow-x-hidden font-sans text-slate-800"
+      className="min-h-screen w-full flex flex-col lg:flex-row bg-[#FAF9F5] select-none relative overflow-x-hidden font-sans text-slate-800"
     >
-      {/* Soft Ambient Radiant Glow behind Mascot (Matching Beranda's clean aesthetic) */}
-      <div className="absolute top-1/3 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-amber-200/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-10 right-10 w-96 h-96 bg-slate-200/50 rounded-full blur-3xl pointer-events-none" />
+      {/* =====================================================
+          SECTION KIRI: RADIANT SUN MASCOT SHOWCASE (Full Half Section)
+          ===================================================== */}
+      <div className="w-full lg:w-1/2 min-h-[300px] lg:min-h-screen flex flex-col justify-between p-6 sm:p-10 lg:p-12 relative overflow-hidden bg-gradient-to-br from-[#FAF9F5] via-amber-50/40 to-amber-100/25 border-b lg:border-b-0 lg:border-r border-amber-200/40">
+        {/* Soft Ambient Radiant Glow behind Mascot */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-amber-300/25 via-amber-200/15 to-transparent rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Split Layout */}
-      <div className="w-full flex-1 flex flex-col lg:flex-row items-stretch justify-between gap-6 lg:gap-10 relative z-10">
-        
-        {/* =====================================================
-            LEFT: MINIMALIST RADIANT SUN MASCOT
-            ===================================================== */}
-        <div className="flex-1 flex flex-col justify-between relative min-h-[400px] lg:min-h-0">
-          
-          {/* Top Left: Sleek Clean Back Button */}
-          <div className="w-full flex items-center justify-start pt-1 px-1">
-            <Link
-              href={backHref}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition py-1.5 px-3.5 rounded-full bg-white/80 hover:bg-white backdrop-blur-md border border-slate-200/70 shadow-2xs cursor-pointer"
+        {/* Top Left: Sleek Clean Back Button (Tanpa Kontainer Card) */}
+        <div className="relative z-10 w-full flex items-center justify-start">
+          <Link
+            href={backHref}
+            className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-600 hover:text-amber-900 transition-colors cursor-pointer group p-1 -ml-1"
+          >
+            <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform text-slate-500 group-hover:text-amber-800">
+              arrow_back
+            </span>
+            <span>{backLabel}</span>
+          </Link>
+        </div>
+
+        {/* Center Stage: Mascot Tanpa Box Container Terpisah */}
+        <div className="relative z-10 my-auto w-full flex items-center justify-center py-4 sm:py-8">
+          <div className="w-full max-w-[340px] sm:max-w-[440px] lg:max-w-[480px] flex items-center justify-center">
+            <svg
+              ref={svgRef}
+              viewBox="0 0 460 360"
+              className="w-full h-auto overflow-visible select-none drop-shadow-[0_12px_36px_rgba(245,158,11,0.16)]"
+              aria-label="Maskot Matahari SunSight"
             >
-              <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-              <span>{backLabel}</span>
-            </Link>
-          </div>
-
-          {/* Center Stage: Minimalist Frosted Glass Mascot Canvas */}
-          <div className="my-auto w-full flex items-center justify-center p-2 sm:p-6">
-            <div className="w-full max-w-[480px] p-6 sm:p-8 rounded-[32px] bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_16px_40px_rgba(15,23,42,0.04)] flex items-center justify-center">
-              
-              <svg
-                ref={svgRef}
-                viewBox="0 0 460 360"
-                className="w-full h-auto overflow-visible select-none"
-                aria-label="Maskot Matahari SunSight"
-              >
                 <defs>
                   {/* Soft Radial Glow for Wavy Circles (Pendaran Lingkaran Bergelombang) */}
                   <radialGradient id="wavyOuterGlow" cx="50%" cy="50%" r="50%">
@@ -611,41 +607,41 @@ export function AuthSplitShell({
                   </g>
                 </g>
               </svg>
-            </div>
           </div>
-
-          {/* Clean Bottom Spacer */}
-          <div className="h-6" />
         </div>
 
-        {/* =====================================================
-            RIGHT: MODERN CRISP AUTH CARD
-            ===================================================== */}
-        <div className="w-full lg:w-[450px] xl:w-[480px] self-center my-auto bg-white/95 backdrop-blur-2xl rounded-[32px] border border-white/90 shadow-[0_16px_48px_rgba(15,23,42,0.04)] px-6 sm:px-9 py-7 sm:py-8 flex flex-col justify-center shrink-0">
-          
+        {/* Clean Bottom Spacer */}
+        <div className="hidden lg:block h-5" />
+      </div>
+
+      {/* =====================================================
+          SECTION KANAN: CLEAN FULL-HEIGHT FORM SECTION (Tanpa Card Terpisah)
+          ===================================================== */}
+      <div className="w-full lg:w-1/2 lg:min-h-screen bg-white flex flex-col justify-center items-center px-6 sm:px-12 lg:px-16 py-8 sm:py-12 relative z-10">
+        <div className="w-full max-w-[420px] my-auto flex flex-col justify-center">
           {/* Header with SunSight Brand */}
           <div className="text-center pb-2">
             <Link
               href="/"
-              className="inline-flex items-center justify-center mb-3 hover:scale-102 transition cursor-pointer"
+              className="inline-flex items-center justify-center mb-3.5 hover:scale-102 transition cursor-pointer"
               title="SunSight Beranda"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/logo.svg" alt="SunSight" className="h-8 w-auto" />
             </Link>
 
-            <h1 className="text-2xl sm:text-[25px] font-extrabold text-slate-900 font-title tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-[26px] font-extrabold text-slate-900 font-title tracking-tight leading-tight">
               {title}
             </h1>
             <p className="text-xs sm:text-[13px] text-slate-500 mt-1.5 leading-relaxed max-w-sm mx-auto">{subtitle}</p>
           </div>
 
           {/* Form Content Slot */}
-          <div className="mt-3">{children}</div>
+          <div className="mt-4">{children}</div>
 
           {/* Footer Slot */}
           {bottomSlot !== undefined && (
-            <div className="text-center text-xs text-slate-500 mt-4 pt-3.5 border-t border-slate-100">
+            <div className="text-center text-xs text-slate-500 mt-5 pt-4 border-t border-slate-100">
               {bottomSlot}
             </div>
           )}
