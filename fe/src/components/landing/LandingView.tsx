@@ -11,14 +11,14 @@ import Footer from "./Footer";
 
 export function LandingView() {
   return (
-    <div className="bg-slate-50 font-body-md text-slate-800 antialiased selection:bg-sky-100 selection:text-sky-900 min-h-screen flex flex-col">
+    <div className="bg-[#FAF9F5] font-body-md text-slate-800 antialiased selection:bg-amber-100 selection:text-amber-950 min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="relative min-h-screen flex flex-col overflow-x-hidden bg-[#fbfbfe] flex-1">
+      <main className="relative min-h-screen flex flex-col overflow-x-hidden bg-[#FAF9F5] flex-1">
         <Hero />
+        <SmartFeatures />
         <QuickCalculator />
         <HowItWorks />
-        <SmartFeatures />
         <Comparison />
         <Testimonials />
         <Faq />

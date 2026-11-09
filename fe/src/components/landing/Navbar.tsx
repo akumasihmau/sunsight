@@ -73,20 +73,17 @@ export default function Navbar() {
 
           {/* Center Navigation Links (Hidden on mobile) */}
           <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-600">
+            <a className="hover:text-amber-800 transition-colors" href="#features">
+              Fitur Cerdas
+            </a>
             <a className="hover:text-amber-800 transition-colors" href="#quick-calculator">
               Kalkulator Hemat
             </a>
             <a className="hover:text-amber-800 transition-colors" href="#how-it-works">
               Cara Kerja
             </a>
-            <a className="hover:text-amber-800 transition-colors" href="#features">
-              Fitur Cerdas
-            </a>
             <a className="hover:text-amber-800 transition-colors" href="#comparison">
               Komparasi
-            </a>
-            <a className="hover:text-amber-800 transition-colors" href="#testimonials">
-              Testimoni
             </a>
             <a className="hover:text-amber-800 transition-colors" href="#faq">
               FAQ
@@ -99,7 +96,7 @@ export default function Navbar() {
               <>
                 <Link
                   href="/"
-                  className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 transition inline-flex items-center gap-1.5 shadow-xs border border-amber-300 cursor-pointer"
+                  className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-amber-100 via-amber-200 to-amber-100 hover:from-amber-200 hover:to-amber-300 text-amber-950 transition inline-flex items-center gap-1.5 shadow-xs border border-amber-300/80 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px] text-amber-950">dashboard</span>
                   <span>Ke Beranda</span>
@@ -108,7 +105,7 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/80 hover:border-rose-200 bg-white/80 hover:bg-rose-50 text-xs font-medium text-slate-600 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                  className="px-3 py-1.5 rounded-full border border-slate-200/80 hover:border-rose-200 bg-white/80 hover:bg-rose-50 text-xs font-medium text-slate-600 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
                   title="Keluar dari akun"
                 >
                   <span className="material-symbols-outlined text-[15px]">logout</span>
@@ -119,13 +116,13 @@ export default function Navbar() {
               <>
                 <Link
                   href="/login"
-                  className="px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-amber-50/60 transition cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-amber-50/60 transition cursor-pointer"
                 >
                   Masuk
                 </Link>
                 <Link
                   href="/register"
-                  className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 transition shadow-xs border border-amber-300 cursor-pointer"
+                  className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-amber-100 via-amber-200 to-amber-100 hover:from-amber-200 hover:to-amber-300 text-amber-950 transition shadow-xs border border-amber-300/80 cursor-pointer"
                 >
                   Daftar Akun
                 </Link>

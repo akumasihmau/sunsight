@@ -545,6 +545,30 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {/* Card: Standar & Sumber Data */}
+            <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 tracking-tight">
+                  <span className="material-symbols-outlined text-[19px] text-amber-600">menu_book</span>
+                  <span>Standar &amp; Sumber Data</span>
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 text-[10px] font-semibold">
+                  Transparansi
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Pelajari sumber citra satelit, data radiasi iklim Kota Bogor, formula CAPEX, dan regulasi Permen ESDM yang mendasari perhitungan SunSight.
+              </p>
+
+              <Link
+                href="/methodology"
+                className="w-full h-11 px-4 rounded-full bg-amber-50/80 hover:bg-amber-100/90 border border-amber-200/80 text-amber-950 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs group"
+              >
+                <span>Lihat Metodologi Lengkap</span>
+                <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+              </Link>
+            </div>
+
             {/* Card 2: Sesi Akun & Keamanan */}
             <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90 space-y-3.5">
               <div className="flex items-center justify-between">

@@ -24,24 +24,29 @@ export default function Footer() {
           </span>
           <ul className="space-y-1.5">
             <li>
-              <Link href="/studio" className="hover:text-amber-600 transition">
-                Studio Simulasi PLTS
+              <Link href="/studio" className="hover:text-amber-800 transition">
+                Studio CAD Atap AI
               </Link>
             </li>
             <li>
-              <Link href="/history" className="hover:text-amber-600 transition">
-                Riwayat Simulasi
-              </Link>
-            </li>
-            <li>
-              <a href="#quick-calculator" className="hover:text-amber-600 transition">
-                Kalkulator Penghematan
+              <a href="#quick-calculator" className="hover:text-amber-800 transition">
+                Kalkulator Hemat
               </a>
             </li>
             <li>
-              <Link href="/design" className="hover:text-amber-600 transition">
-                Sistem Desain
+              <a href="#features" className="hover:text-amber-800 transition">
+                Fitur Unggulan
+              </a>
+            </li>
+            <li>
+              <Link href="/methodology" className="hover:text-amber-800 transition">
+                Sumber Data &amp; Metodologi
               </Link>
+            </li>
+            <li>
+              <a href="#faq" className="hover:text-amber-800 transition">
+                Tanya Jawab (FAQ)
+              </a>
             </li>
           </ul>
         </div>
@@ -52,6 +57,12 @@ export default function Footer() {
             Regulasi &amp; Data
           </span>
           <ul className="space-y-1.5">
+            <li>
+              <Link href="/methodology" className="text-amber-900 font-semibold hover:underline inline-flex items-center gap-1">
+                <span>Standar Perhitungan Resmi</span>
+                <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+              </Link>
+            </li>
             <li>
               <span className="text-slate-600">Permen ESDM No. 2/2024</span>
             </li>

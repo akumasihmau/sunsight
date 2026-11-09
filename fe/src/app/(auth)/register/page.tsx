@@ -160,6 +160,12 @@ export default function RegisterPage() {
     }
   }
 
+  const redirectTarget =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("redirect")
+      : null;
+  const loginHref = redirectTarget ? `/login?redirect=${encodeURIComponent(redirectTarget)}` : "/login";
+
   return (
     <AuthSplitShell
       title="Buat Akun SunSight"
@@ -170,7 +176,7 @@ export default function RegisterPage() {
       bottomSlot={
         <p className="text-slate-600">
           Sudah memiliki akun SunSight?{" "}
-          <Link href="/login" className="font-bold text-amber-800 hover:text-amber-950 hover:underline ml-1">
+          <Link href={loginHref} className="font-bold text-amber-800 hover:text-amber-950 hover:underline ml-1">
             Masuk Sekarang
           </Link>
         </p>

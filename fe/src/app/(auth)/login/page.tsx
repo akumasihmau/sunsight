@@ -102,7 +102,11 @@ export default function LoginPage() {
         location: existingBio?.location || "Menteng, Jakarta Pusat",
       });
 
-      router.push("/");
+      const redirectTarget =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("redirect") || "/"
+          : "/";
+      router.push(redirectTarget);
     } catch (caught) {
       const parsed = parseAuthError(caught, "login");
       setAlert(parsed.alert);
@@ -316,7 +320,11 @@ export default function LoginPage() {
                   propertyType: existingBio?.propertyType || "residential",
                   location: existingBio?.location || "Menteng, Jakarta Pusat",
                 });
-                router.push("/");
+                const redirectTarget =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("redirect") || "/"
+          : "/";
+      router.push(redirectTarget);
               } catch (caught) {
                 const parsed = parseAuthError(caught, "login");
                 setAlert(parsed.alert);
