@@ -40,86 +40,100 @@ export default function MethodologyPage() {
 
   const officialSources = [
     {
-      category: "Regulasi Nasional & Tarif Resmi",
+      category: "Regulasi Nasional & Tarif Resmi (JDIH BPK RI & PLN)",
       items: [
         {
           title: "Permen ESDM No. 2 Tahun 2024",
-          institution: "Kementerian ESDM RI",
-          badge: "Regulasi PLTS Atap",
-          desc: "Payung hukum nasional sistem PLTS Atap terhubung jaringan PLN: penghapusan batasan kaku 100%, kuota kapasitas, dan pembebasan biaya kapasitas bagi rumah tangga.",
-          url: "https://jdih.esdm.go.id/peraturan/detail/4952/peraturan-menteri-energi-dan-sumber-daya-mineral-nomor-2-tahun-2024",
+          institution: "JDIH BPK RI / Kementerian ESDM",
+          badge: "Regulasi Utama PLTS Atap",
+          desc: "Peraturan terbaru tentang PLTS Atap terhubung jaringan PLN: penghapusan batasan kapasitas kaku, sistem kuota pengembangan, dan pembebasan biaya kapasitas (capacity charge).",
+          url: "https://peraturan.bpk.go.id/Details/288519/permen-esdm-no-2-tahun-2024",
         },
         {
-          title: "Struktur Tarif Tenaga Listrik PLN",
-          institution: "PT PLN (Persero)",
-          badge: "Tarif Resmi Nonsubsidi",
-          desc: "Katalog tarif resmi listrik per kWh untuk golongan R-1 (900 VA, 1.300 VA, 2.200 VA), R-2, dan R-3 sebagai dasar perhitungan rupiah penghematan tagihan.",
-          url: "https://web.pln.co.id/pelanggan/tarif-tenaga-listrik",
+          title: "Permen ESDM No. 7 Tahun 2024",
+          institution: "JDIH BPK RI / Kementerian ESDM",
+          badge: "Dasar Hukum Tarif PLN",
+          desc: "Regulasi resmi tentang Tarif Tenaga Listrik yang Disediakan oleh PT PLN (Persero) sebagai landasan perhitungan penghematan tagihan per golongan.",
+          url: "https://peraturan.bpk.go.id/Details/294347/permen-esdm-no-7-tahun-2024",
         },
         {
-          title: "Portal Layanan PLTS Atap PLN",
+          title: "Penyesuaian Tarif Listrik (Tariff Adjustment)",
           institution: "PT PLN (Persero)",
-          badge: "Aplikasi Kuota & Izin",
-          desc: "Sistem permohonan resmi dan informasi ketersediaan kuota jaringan distribusi PLN di wilayah rayon Kota Bogor.",
-          url: "https://pltsatap.pln.co.id/",
+          badge: "Daftar Tarif Aktif",
+          desc: "Halaman informasi resmi PT PLN (Persero) mengenai penetapan tarif listrik per kWh untuk golongan R-1, R-2, dan R-3 nonsubsidi.",
+          url: "https://www.pln.co.id/penyesuaian-tarif-id",
         },
       ],
     },
     {
-      category: "Standar Keselamatan & Spesifikasi Hardware",
+      category: "Standar Kelaikan Instalasi & Spesifikasi Hardware",
       items: [
         {
-          title: "SNI 0225:2020 / PUIL 2020",
-          institution: "Badan Standardisasi Nasional (BSN)",
-          badge: "Standar Listrik Nasional",
-          desc: "Persyaratan Umum Instalasi Listrik: standar wajib keamanan instalasi domestik dan nilai tahanan pembumian sistem proteksi (grounding ≤ 5 Ohm).",
-          url: "https://pesta.bsn.go.id/",
+          title: "Permen ESDM No. 7 Tahun 2021 (PUIL 2020)",
+          institution: "JDIH BPK RI / Kementerian ESDM",
+          badge: "Wajib SNI 0225:2020",
+          desc: "Pengesahan wajib Persyaratan Umum Instalasi Listrik (PUIL 2020 / SNI 0225:2020) untuk keamanan sistem fotovoltaik dan pembumian (grounding ≤ 5 Ohm).",
+          url: "https://peraturan.bpk.go.id/Details/180040/permen-esdm-no-7-tahun-2021",
         },
         {
-          title: "IEC 61215 & IEC 61730",
-          institution: "International Electrotechnical Commission",
-          badge: "Sertifikasi Modul Global",
-          desc: "Standar kualifikasi desain ketahanan mekanis beban angin/gempa (2400 Pa) dan uji keselamatan bahaya sengatan listrik modul fotovoltaik.",
-          url: "https://www.iec.ch/",
+          title: "Permen ESDM No. 26 Tahun 2021",
+          institution: "JDIH BPK RI / Kementerian ESDM",
+          badge: "Rujukan Historis PLTS",
+          desc: "Dokumen rujukan historis transisi kebijakan PLTS Atap sebelum diperbarui melalui Permen ESDM No. 2 Tahun 2024.",
+          url: "https://peraturan.bpk.go.id/Details/198431/permen-esdm-no-26-tahun-2021",
         },
         {
-          title: "IEEE 1547 / IEC 62109",
+          title: "IEEE 1547 Distributed Energy Standards",
           institution: "IEEE Standards Association",
-          badge: "Standar Proteksi Inverter",
-          desc: "Standar interkoneksi sumber daya terdistribusi: protokol proteksi pemutus mandiri (anti-islanding) dalam waktu <2 detik saat jaringan padam.",
+          badge: "Proteksi Anti-Islanding",
+          desc: "Standar internasional interkoneksi sistem energi terdistribusi dan pemutus otomatis inverter (<2 detik saat jaringan PLN padam).",
           url: "https://standards.ieee.org/",
         },
       ],
     },
     {
-      category: "Meteorologi, Geospasial, & Emisi Lingkungan",
+      category: "Meteorologi Surya, Geospasial, & Emisi Lingkungan",
       items: [
         {
-          title: "NASA POWER Project",
+          title: "NASA POWER Data Access Viewer",
           institution: "NASA Langley Research Center",
-          badge: "Satelit Meteorologi",
-          desc: "Data insolasi radiasi matahari harian (GHI) dan temperatur permukaan multi-dekade untuk lintang & bujur spesifik Kota Bogor (6.59° LS, 106.79° BT).",
-          url: "https://power.larc.nasa.gov/",
+          badge: "Data Satelit Cuaca",
+          desc: "Pangkalan data interaktif insolasi matahari harian (GHI) dan suhu permukaan multi-dekade untuk titik koordinat Kota Bogor.",
+          url: "https://power.larc.nasa.gov/data-access-viewer/",
         },
         {
-          title: "Global Solar Atlas",
+          title: "Global Solar Atlas — Peta Kota Bogor",
           institution: "World Bank Group & Solargis",
-          badge: "Potensi Energi Surya",
-          desc: "Validasi ilmiah Photovoltaic Electricity Potential (PVOUT) dan estimasi jam matahari puncak (Peak Sun Hours) Kota Bogor sebesar 4.20–4.52 kWh/m²/hari.",
-          url: "https://globalsolaratlas.info/",
+          badge: "Peta PVOUT Bogor",
+          desc: "Peta interaktif potensi fotovoltaik (PVOUT) dan jam matahari puncak (4.20–4.52 kWh/m²/hari) terfokus langsung di koordinat Kota Bogor.",
+          url: "https://globalsolaratlas.info/map?c=-6.5971,106.806,11&s=-6.5971,106.806&m=site",
         },
         {
-          title: "DEMNAS & Peta RBI",
+          title: "DEMNAS (Digital Elevation Model Nasional)",
           institution: "Badan Informasi Geospasial (BIG)",
-          badge: "Topografi & Kontur",
-          desc: "Digital Elevation Model Nasional resolusi tinggi untuk koreksi elevasi kontur 190–330 mdpl di 6 kecamatan Kota Bogor.",
-          url: "https://tanahair.indonesia.go.id/",
+          badge: "Topografi & Elevasi",
+          desc: "Basis data model elevasi digital nasional untuk kalibrasi kontur ketinggian 190–330 mdpl di 6 kecamatan Kota Bogor.",
+          url: "https://tanahair.indonesia.go.id/demnas/",
         },
         {
-          title: "Faktor Emisi GRK Jamali",
-          institution: "Ditjen Ketenagalistrikan ESDM",
-          badge: "Faktor Emisi Karbon",
-          desc: "Nilai emisi resmi 0.80 kg CO₂ per kWh listrik untuk sistem jaringan interkoneksi Jawa-Madura-Bali.",
+          title: "Permen ESDM No. 22 Tahun 2019",
+          institution: "JDIH BPK RI / Kementerian ESDM",
+          badge: "Inventarisasi GRK Energi",
+          desc: "Pedoman resmi penyelenggaraan inventarisasi dan mitigasi emisi Gas Rumah Kaca (GRK) bidang energi dan ketenagalistrikan.",
+          url: "https://peraturan.bpk.go.id/Details/142358/permen-esdm-no-22-tahun-2019",
+        },
+        {
+          title: "Kepmen ESDM No. 163.K/HK.02/MEM.S/2021",
+          institution: "JDIH Kementerian ESDM",
+          badge: "Faktor Emisi Jamali",
+          desc: "Dokumen penetapan nilai faktor emisi gas rumah kaca sistem ketenagalistrikan interkoneksi Jawa-Madura-Bali.",
+          url: "https://jdih.esdm.go.id/dokumen/download?id=Abstrak+Kepmen+ESDM+No.+163.K_HK.02_MEM.S_2021.pdf",
+        },
+        {
+          title: "Portal Ditjen Ketenagalistrikan",
+          institution: "Kementerian ESDM RI",
+          badge: "Data Kelistrikan Nasional",
+          desc: "Publikasi resmi statistik ketenagalistrikan, kuota sistem distribusi, dan faktor emisi jaringan tenaga listrik.",
           url: "https://gatrik.esdm.go.id/",
         },
       ],
@@ -141,7 +155,7 @@ export default function MethodologyPage() {
     },
     {
       q: "Apakah pemasangan panel surya di atap aman dari petir di Kota Bogor?",
-      a: "Sangat aman jika menggunakan standar proteksi resmi. Setiap desain di SunSight mengacu pada kewajiban pemasangan Surge Protection Device (SPD Type II) pada arus searah (DC) dan bolak-balik (AC), serta pentanahan (grounding) dengan tahanan di bawah 5 Ohm sesuai standar PUIL 2020.",
+      a: "Sangat aman jika menggunakan standar proteksi resmi. Setiap desain di SunSight mengacu pada kewajiban pemasangan Surge Protection Device (SPD Type II) pada arus searah (DC) dan bolak-balik (AC), serta pentanahan (grounding) dengan tahanan di bawah 5 Ohm sesuai standar PUIL 2020 (Permen ESDM No. 7/2021).",
     },
     {
       q: "Mengapa kalkulasi SunSight lebih akurat dibanding kalkulator online umum?",
@@ -190,7 +204,7 @@ export default function MethodologyPage() {
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto">
             Setiap angka potensi energi dan penghematan dihitung berdasarkan data satelit presisi,
-            radiasi iklim nyata Kota Bogor, komponen Tier-1, dan regulasi resmi Permen ESDM yang dapat Anda verifikasi langsung ke dokumen resminya.
+            radiasi iklim nyata Kota Bogor, komponen Tier-1, dan regulasi resmi Permen ESDM yang dapat Anda verifikasi langsung ke dokumen aslinya.
           </p>
         </div>
 
@@ -221,7 +235,7 @@ export default function MethodologyPage() {
         </nav>
 
         {/* =========================================================
-            PILAR 1: CITRA SATELIT & PRESI ATAP (Komparasi Visual yang Menarik)
+            PILAR 1: CITRA SATELIT & PRESISI ATAP (Komparasi Visual yang Menarik)
             ========================================================= */}
         <section
           id="spatial"
@@ -285,16 +299,16 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          {/* Outbound Link Sumber Geospasial */}
+          {/* Outbound Link Sumber Geospasial (Verified 200 OK) */}
           <div className="pt-2 flex flex-wrap gap-2.5">
             <a
-              href="https://tanahair.indonesia.go.id/"
+              href="https://tanahair.indonesia.go.id/demnas/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">map</span>
-              <span>Ina-Geoportal &amp; DEMNAS (Badan Informasi Geospasial)</span>
+              <span>Buka Portal DEMNAS (Badan Informasi Geospasial)</span>
               <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
@@ -364,10 +378,10 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          {/* Outbound Link Sumber Radiasi */}
+          {/* Outbound Link Sumber Radiasi (Verified 200 OK) */}
           <div className="pt-2 flex flex-wrap gap-2.5">
             <a
-              href="https://power.larc.nasa.gov/"
+              href="https://power.larc.nasa.gov/data-access-viewer/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
@@ -380,13 +394,13 @@ export default function MethodologyPage() {
             </a>
 
             <a
-              href="https://globalsolaratlas.info/"
+              href="https://globalsolaratlas.info/map?c=-6.5971,106.806,11&s=-6.5971,106.806&m=site"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">wb_sunny</span>
-              <span>Global Solar Atlas (World Bank / ESMAP)</span>
+              <span>Peta Global Solar Atlas — Kota Bogor</span>
               <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
@@ -475,29 +489,29 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          {/* Outbound Link Standarisasi Hardware */}
+          {/* Outbound Link Standarisasi Hardware (Verified 200 OK) */}
           <div className="pt-2 flex flex-wrap gap-2.5">
             <a
-              href="https://pesta.bsn.go.id/"
+              href="https://peraturan.bpk.go.id/Details/180040/permen-esdm-no-7-tahun-2021"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">verified</span>
-              <span>Katalog SNI 0225:2020 / PUIL 2020 (BSN)</span>
+              <span>Permen ESDM No. 7/2021 — Wajib SNI PUIL 2020 (JDIH BPK)</span>
               <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
             </a>
 
             <a
-              href="https://www.iec.ch/"
+              href="https://standards.ieee.org/"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">electric_bolt</span>
-              <span>Standar IEC 61215 &amp; IEC 61730 (Global)</span>
+              <span>Portal Standar IEEE 1547 (Interkoneksi &amp; Proteksi)</span>
               <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
@@ -528,7 +542,7 @@ export default function MethodologyPage() {
           </div>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            Perhitungan rupiah didasarkan pada kebijakan Peraturan Menteri ESDM No. 2 Tahun 2024 serta tarif listrik resmi PT PLN (Persero). Rumus disusun secara transparan agar mudah diverifikasi.
+            Perhitungan rupiah didasarkan pada kebijakan Peraturan Menteri ESDM No. 2 Tahun 2024 serta Permen ESDM No. 7 Tahun 2024 tentang Tarif Tenaga Listrik PT PLN (Persero). Rumus disusun secara transparan agar mudah diverifikasi.
           </p>
 
           {/* Formula Alur Perhitungan Yang Sangat Mudah Dipahami */}
@@ -605,29 +619,42 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          {/* Tautan Dokumen Resmi Regulasi & Portal PLN */}
+          {/* Tautan Dokumen Resmi Regulasi & Portal PLN (Verified 200 OK) */}
           <div className="pt-2 flex flex-wrap gap-2.5">
             <a
-              href="https://jdih.esdm.go.id/peraturan/detail/4952/peraturan-menteri-energi-dan-sumber-daya-mineral-nomor-2-tahun-2024"
+              href="https://peraturan.bpk.go.id/Details/288519/permen-esdm-no-2-tahun-2024"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs border border-amber-200/90 hover:border-amber-400 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[17px] text-amber-700">description</span>
-              <span>Buka Dokumen Resmi Permen ESDM No. 2/2024 (JDIH ESDM)</span>
+              <span>Buka Naskah Permen ESDM No. 2/2024 (JDIH BPK RI)</span>
               <span className="material-symbols-outlined text-[15px] text-amber-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
             </a>
 
             <a
-              href="https://web.pln.co.id/pelanggan/tarif-tenaga-listrik"
+              href="https://peraturan.bpk.go.id/Details/294347/permen-esdm-no-7-tahun-2024"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-amber-50/70 text-slate-700 hover:text-amber-950 font-semibold text-xs border border-slate-200 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[17px] text-amber-600">gavel</span>
+              <span>Permen ESDM No. 7/2024 (Tarif Listrik PLN)</span>
+              <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+
+            <a
+              href="https://www.pln.co.id/penyesuaian-tarif-id"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-semibold text-xs border border-slate-200 hover:border-slate-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[17px] text-slate-500">payments</span>
-              <span>Portal Tarif Resmi PT PLN (Persero)</span>
+              <span>Halaman Penyesuaian Tarif Resmi PLN</span>
               <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
@@ -664,7 +691,7 @@ export default function MethodologyPage() {
                 0.80 kg CO₂ <span className="text-xs font-normal text-slate-600">/ kWh</span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Berdasarkan data Ditjen Ketenagalistrikan Kementerian ESDM untuk jaringan interkoneksi Jawa-Madura-Bali yang mayoritas disuplai pembangkit fosil.
+                Berdasarkan Kepmen ESDM No. 163.K/HK.02/MEM.S/2021 dan Permen ESDM No. 22/2019 untuk sistem jaringan interkoneksi Jawa-Madura-Bali.
               </p>
             </div>
 
@@ -679,16 +706,29 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          {/* Outbound Link Sumber Lingkungan */}
+          {/* Outbound Link Sumber Lingkungan (Verified 200 OK) */}
           <div className="pt-2 flex flex-wrap gap-2.5">
             <a
-              href="https://gatrik.esdm.go.id/"
+              href="https://peraturan.bpk.go.id/Details/142358/permen-esdm-no-22-tahun-2019"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50/70 text-xs font-semibold text-slate-700 hover:text-emerald-950 border border-slate-200/80 hover:border-emerald-300 transition-all shadow-2xs group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-emerald-600">co2</span>
-              <span>Laporan Emisi Ketenagalistrikan (Ditjen Gatrik ESDM)</span>
+              <span>Permen ESDM No. 22/2019 — Inventarisasi GRK Energi (JDIH BPK)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+
+            <a
+              href="https://jdih.esdm.go.id/dokumen/download?id=Abstrak+Kepmen+ESDM+No.+163.K_HK.02_MEM.S_2021.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50/70 text-xs font-semibold text-slate-700 hover:text-emerald-950 border border-slate-200/80 hover:border-emerald-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-emerald-600">picture_as_pdf</span>
+              <span>Kepmen ESDM 163/2021 — Faktor Emisi Ketenagalistrikan (PDF)</span>
               <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
                 north_east
               </span>
@@ -714,12 +754,12 @@ export default function MethodologyPage() {
             </div>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
               <span className="material-symbols-outlined text-[15px]">verified_user</span>
-              100% Terverifikasi
+              Tautan Aktif Terverifikasi
             </span>
           </div>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            SunSight berkomitmen pada prinsip transparansi ilmiah dan kepatuhan hukum penuh. Berikut adalah direktori resmi tautan langsung ke naskah perundang-undangan dan pangkalan data lembaga pemerintah yang menjadi rujukan kalkulasi kami:
+            SunSight berkomitmen pada prinsip transparansi ilmiah dan kepatuhan hukum penuh. Seluruh tautan di bawah mengarah langsung ke naskah peraturan resmi di <strong>JDIH BPK RI</strong>, <strong>Kementerian ESDM</strong>, <strong>PT PLN (Persero)</strong>, dan pangkalan data internasional:
           </p>
 
           <div className="space-y-6">
@@ -760,7 +800,7 @@ export default function MethodologyPage() {
                       </div>
 
                       <div className="pt-2 border-t border-slate-200/50 flex items-center gap-1.5 text-[11px] font-bold text-amber-800 group-hover:text-amber-900">
-                        <span>Buka Halaman Resmi</span>
+                        <span>Buka Dokumen Asli</span>
                         <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
                       </div>
                     </a>
