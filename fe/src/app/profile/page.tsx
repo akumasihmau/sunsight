@@ -415,9 +415,6 @@ export default function ProfilePage() {
                       Transparansi metodologi ilmiah &amp; regulasi resmi
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 text-[10px] font-bold">
-                    Dokumentasi Terbuka
-                  </span>
                 </div>
 
                 <p className="text-xs text-slate-600 leading-relaxed mb-4">

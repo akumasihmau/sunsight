@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
 
@@ -31,46 +30,19 @@ export default function MethodologyPage() {
       {/* Radiant Soft Glow Ambient Glows */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[750px] h-[380px] bg-gradient-to-b from-amber-200/25 via-amber-100/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
-      {/* Header Bar: Bersih, Cukup Tombol Back di Sebelah Kiri Tanpa Tombol Studio */}
-      <header className="sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-amber-200/50 px-4 sm:px-8 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3 sm:gap-4">
-          {/* Tombol Back Dinamis ke Halaman Sebelumnya */}
-          <button
-            type="button"
-            onClick={handleGoBack}
-            className="h-9 px-3.5 rounded-full bg-white hover:bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 hover:text-amber-950 transition flex items-center gap-1.5 shadow-2xs cursor-pointer group"
-            title="Kembali ke halaman sebelumnya"
-          >
-            <span className="material-symbols-outlined text-[17px] group-hover:-translate-x-0.5 transition-transform text-slate-600 group-hover:text-amber-700">
-              arrow_back
-            </span>
-            <span>Kembali</span>
-          </button>
-
-          <span className="w-px h-5 bg-slate-200" />
-
-          {/* Logo & Judul Halaman */}
-          <div className="flex items-center gap-2.5">
-            <Link href="/" className="flex items-center group" title="SunSight Beranda">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
-            </Link>
-            <span className="hidden md:inline-block text-xs font-bold text-slate-400 font-title">
-              /
-            </span>
-            <span className="hidden md:inline-block text-xs font-bold text-slate-700 font-title truncate">
-              Sumber Data &amp; Standar Regulasi
-            </span>
-          </div>
-        </div>
-
-        {/* Sisi Kanan: Badge Status Transparan Bersih (Tanpa Tombol Studio) */}
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50/90 text-amber-950 text-[11px] font-bold border border-amber-200/70 font-code-metric">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-            Dokumentasi Terbuka
+      {/* Header Bar: Bersih, Cukup Tombol Back Tanpa Kontainer / Border */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-amber-200/40 px-4 sm:px-8 h-14 sm:h-16 flex items-center">
+        <button
+          type="button"
+          onClick={handleGoBack}
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer group p-1 -ml-1"
+          title="Kembali ke halaman sebelumnya"
+        >
+          <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform text-slate-500 group-hover:text-slate-900">
+            arrow_back
           </span>
-        </div>
+          <span>Kembali</span>
+        </button>
       </header>
 
       {/* Hero Headline Section */}
