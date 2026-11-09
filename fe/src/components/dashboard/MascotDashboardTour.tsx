@@ -113,7 +113,7 @@ const AnimatedSunnyTourMascot = memo(function AnimatedSunnyTourMascot({
     : "translate(0px, 0px) rotate(0deg) scale(1)";
 
   return (
-    <div className="relative w-[96px] h-[82px] select-none pointer-events-none drop-shadow-[0_6px_16px_rgba(245,158,11,0.22)]">
+    <div className="relative w-[88px] h-[76px] select-none pointer-events-none drop-shadow-[0_6px_16px_rgba(245,158,11,0.22)]">
       <svg
         viewBox="0 0 460 360"
         className="w-full h-full overflow-visible"
@@ -563,8 +563,8 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
       >
         <div className="relative rounded-[28px] bg-white/92 backdrop-blur-2xl border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14)] p-4 sm:p-5 text-slate-800">
           
-          {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu */}
-          <div className="absolute top-1 sm:top-1.5 left-2 sm:left-3">
+          {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu (Sejajar Badge & Bebas Tabrakan Teks) */}
+          <div className="absolute -top-2.5 sm:-top-3 left-2 sm:left-2.5">
             <AnimatedSunnyTourMascot
               expression={currentStep.expression}
               isGliding={isGliding}
@@ -573,7 +573,7 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
           </div>
 
           {/* Header Card: Badge Step & Tombol Tutup */}
-          <div className="flex items-center justify-between gap-2 mb-2 pl-16 sm:pl-20">
+          <div className="flex items-center justify-between gap-2 mb-3.5 pl-16 sm:pl-[74px]">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] sm:text-[11px] font-bold text-amber-900 bg-amber-50/90 px-2.5 py-0.5 rounded-full border border-amber-200/70 font-code-metric">
                 {currentStep.badge}
