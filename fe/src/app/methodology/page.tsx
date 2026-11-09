@@ -34,7 +34,96 @@ export default function MethodologyPage() {
     { id: "hardware", label: "Komponen Tier-1", icon: "solar_power" },
     { id: "financial", label: "Finansial & Regulasi", icon: "calculate" },
     { id: "emissions", label: "Dampak Lingkungan", icon: "forest" },
+    { id: "directory", label: "Dokumen & Link Resmi", icon: "account_balance" },
     { id: "faq", label: "Tanya Jawab", icon: "help_outline" },
+  ];
+
+  const officialSources = [
+    {
+      category: "Regulasi Nasional & Tarif Resmi",
+      items: [
+        {
+          title: "Permen ESDM No. 2 Tahun 2024",
+          institution: "Kementerian ESDM RI",
+          badge: "Regulasi PLTS Atap",
+          desc: "Payung hukum nasional sistem PLTS Atap terhubung jaringan PLN: penghapusan batasan kaku 100%, kuota kapasitas, dan pembebasan biaya kapasitas bagi rumah tangga.",
+          url: "https://jdih.esdm.go.id/peraturan/detail/4952/peraturan-menteri-energi-dan-sumber-daya-mineral-nomor-2-tahun-2024",
+        },
+        {
+          title: "Struktur Tarif Tenaga Listrik PLN",
+          institution: "PT PLN (Persero)",
+          badge: "Tarif Resmi Nonsubsidi",
+          desc: "Katalog tarif resmi listrik per kWh untuk golongan R-1 (900 VA, 1.300 VA, 2.200 VA), R-2, dan R-3 sebagai dasar perhitungan rupiah penghematan tagihan.",
+          url: "https://web.pln.co.id/pelanggan/tarif-tenaga-listrik",
+        },
+        {
+          title: "Portal Layanan PLTS Atap PLN",
+          institution: "PT PLN (Persero)",
+          badge: "Aplikasi Kuota & Izin",
+          desc: "Sistem permohonan resmi dan informasi ketersediaan kuota jaringan distribusi PLN di wilayah rayon Kota Bogor.",
+          url: "https://pltsatap.pln.co.id/",
+        },
+      ],
+    },
+    {
+      category: "Standar Keselamatan & Spesifikasi Hardware",
+      items: [
+        {
+          title: "SNI 0225:2020 / PUIL 2020",
+          institution: "Badan Standardisasi Nasional (BSN)",
+          badge: "Standar Listrik Nasional",
+          desc: "Persyaratan Umum Instalasi Listrik: standar wajib keamanan instalasi domestik dan nilai tahanan pembumian sistem proteksi (grounding ≤ 5 Ohm).",
+          url: "https://pesta.bsn.go.id/",
+        },
+        {
+          title: "IEC 61215 & IEC 61730",
+          institution: "International Electrotechnical Commission",
+          badge: "Sertifikasi Modul Global",
+          desc: "Standar kualifikasi desain ketahanan mekanis beban angin/gempa (2400 Pa) dan uji keselamatan bahaya sengatan listrik modul fotovoltaik.",
+          url: "https://www.iec.ch/",
+        },
+        {
+          title: "IEEE 1547 / IEC 62109",
+          institution: "IEEE Standards Association",
+          badge: "Standar Proteksi Inverter",
+          desc: "Standar interkoneksi sumber daya terdistribusi: protokol proteksi pemutus mandiri (anti-islanding) dalam waktu <2 detik saat jaringan padam.",
+          url: "https://standards.ieee.org/",
+        },
+      ],
+    },
+    {
+      category: "Meteorologi, Geospasial, & Emisi Lingkungan",
+      items: [
+        {
+          title: "NASA POWER Project",
+          institution: "NASA Langley Research Center",
+          badge: "Satelit Meteorologi",
+          desc: "Data insolasi radiasi matahari harian (GHI) dan temperatur permukaan multi-dekade untuk lintang & bujur spesifik Kota Bogor (6.59° LS, 106.79° BT).",
+          url: "https://power.larc.nasa.gov/",
+        },
+        {
+          title: "Global Solar Atlas",
+          institution: "World Bank Group & Solargis",
+          badge: "Potensi Energi Surya",
+          desc: "Validasi ilmiah Photovoltaic Electricity Potential (PVOUT) dan estimasi jam matahari puncak (Peak Sun Hours) Kota Bogor sebesar 4.20–4.52 kWh/m²/hari.",
+          url: "https://globalsolaratlas.info/",
+        },
+        {
+          title: "DEMNAS & Peta RBI",
+          institution: "Badan Informasi Geospasial (BIG)",
+          badge: "Topografi & Kontur",
+          desc: "Digital Elevation Model Nasional resolusi tinggi untuk koreksi elevasi kontur 190–330 mdpl di 6 kecamatan Kota Bogor.",
+          url: "https://tanahair.indonesia.go.id/",
+        },
+        {
+          title: "Faktor Emisi GRK Jamali",
+          institution: "Ditjen Ketenagalistrikan ESDM",
+          badge: "Faktor Emisi Karbon",
+          desc: "Nilai emisi resmi 0.80 kg CO₂ per kWh listrik untuk sistem jaringan interkoneksi Jawa-Madura-Bali.",
+          url: "https://gatrik.esdm.go.id/",
+        },
+      ],
+    },
   ];
 
   const faqs = [
@@ -88,7 +177,7 @@ export default function MethodologyPage() {
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/90 backdrop-blur-xl border border-white/90 shadow-[0_2px_12px_rgba(245,158,11,0.08)]">
             <span className="material-symbols-outlined text-amber-600 text-[16px]">verified</span>
             <span className="text-xs font-bold text-amber-950 font-title tracking-tight">
-              Transparansi Ilmiah SunSight
+              Transparansi Ilmiah &amp; Regulasi Resmi
             </span>
           </div>
 
@@ -101,7 +190,7 @@ export default function MethodologyPage() {
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto">
             Setiap angka potensi energi dan penghematan dihitung berdasarkan data satelit presisi,
-            radiasi iklim nyata Kota Bogor, komponen Tier-1, dan regulasi resmi Permen ESDM.
+            radiasi iklim nyata Kota Bogor, komponen Tier-1, dan regulasi resmi Permen ESDM yang dapat Anda verifikasi langsung ke dokumen resminya.
           </p>
         </div>
 
@@ -195,6 +284,22 @@ export default function MethodologyPage() {
               </ul>
             </div>
           </div>
+
+          {/* Outbound Link Sumber Geospasial */}
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <a
+              href="https://tanahair.indonesia.go.id/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-amber-600">map</span>
+              <span>Ina-Geoportal &amp; DEMNAS (Badan Informasi Geospasial)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+          </div>
         </section>
 
         {/* =========================================================
@@ -257,6 +362,35 @@ export default function MethodologyPage() {
                 Memperhitungkan rugi suhu tropis (-0.34%/°C di atas 25°C), hambatan kabel, dan debu.
               </p>
             </div>
+          </div>
+
+          {/* Outbound Link Sumber Radiasi */}
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <a
+              href="https://power.larc.nasa.gov/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-amber-600">public</span>
+              <span>NASA POWER Data Access Viewer</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+
+            <a
+              href="https://globalsolaratlas.info/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-amber-600">wb_sunny</span>
+              <span>Global Solar Atlas (World Bank / ESMAP)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
           </div>
         </section>
 
@@ -339,6 +473,35 @@ export default function MethodologyPage() {
                 <span>Sudut kemiringan yang memungkinkan air hujan mengalir lancar membersihkan debu secara otomatis (*self-cleaning*).</span>
               </div>
             </div>
+          </div>
+
+          {/* Outbound Link Standarisasi Hardware */}
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <a
+              href="https://pesta.bsn.go.id/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-amber-600">verified</span>
+              <span>Katalog SNI 0225:2020 / PUIL 2020 (BSN)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+
+            <a
+              href="https://www.iec.ch/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-amber-600">electric_bolt</span>
+              <span>Standar IEC 61215 &amp; IEC 61730 (Global)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
           </div>
         </section>
 
@@ -441,6 +604,35 @@ export default function MethodologyPage() {
               </div>
             </div>
           </div>
+
+          {/* Tautan Dokumen Resmi Regulasi & Portal PLN */}
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <a
+              href="https://jdih.esdm.go.id/peraturan/detail/4952/peraturan-menteri-energi-dan-sumber-daya-mineral-nomor-2-tahun-2024"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs border border-amber-200/90 hover:border-amber-400 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[17px] text-amber-700">description</span>
+              <span>Buka Dokumen Resmi Permen ESDM No. 2/2024 (JDIH ESDM)</span>
+              <span className="material-symbols-outlined text-[15px] text-amber-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+
+            <a
+              href="https://web.pln.co.id/pelanggan/tarif-tenaga-listrik"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-semibold text-xs border border-slate-200 hover:border-slate-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[17px] text-slate-500">payments</span>
+              <span>Portal Tarif Resmi PT PLN (Persero)</span>
+              <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+          </div>
         </section>
 
         {/* =========================================================
@@ -486,10 +678,101 @@ export default function MethodologyPage() {
               </p>
             </div>
           </div>
+
+          {/* Outbound Link Sumber Lingkungan */}
+          <div className="pt-2 flex flex-wrap gap-2.5">
+            <a
+              href="https://gatrik.esdm.go.id/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50/70 text-xs font-semibold text-slate-700 hover:text-emerald-950 border border-slate-200/80 hover:border-emerald-300 transition-all shadow-2xs group cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-emerald-600">co2</span>
+              <span>Laporan Emisi Ketenagalistrikan (Ditjen Gatrik ESDM)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+                north_east
+              </span>
+            </a>
+          </div>
         </section>
 
         {/* =========================================================
-            PILAR 6: TANYA JAWAB UMUM & GLOSARIUM INTERAKTIF (Apple Accordion)
+            PILAR 6: PUSAT REGULASI & TAUTAN RESMI PEMERINTAH (DEDICATED DIRECTORY)
+            ========================================================= */}
+        <section
+          id="directory"
+          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+            <div>
+              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
+                Katalog Sumber Resmi &amp; Regulasi
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
+                Pusat Tautan Dokumen Asli &amp; Standarisasi
+              </h2>
+            </div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+              <span className="material-symbols-outlined text-[15px]">verified_user</span>
+              100% Terverifikasi
+            </span>
+          </div>
+
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
+            SunSight berkomitmen pada prinsip transparansi ilmiah dan kepatuhan hukum penuh. Berikut adalah direktori resmi tautan langsung ke naskah perundang-undangan dan pangkalan data lembaga pemerintah yang menjadi rujukan kalkulasi kami:
+          </p>
+
+          <div className="space-y-6">
+            {officialSources.map((cat, catIdx) => (
+              <div key={catIdx} className="space-y-3">
+                <h3 className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span>{cat.category}</span>
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                  {cat.items.map((item, itemIdx) => (
+                    <a
+                      key={itemIdx}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-4 sm:p-5 rounded-2xl bg-[#FAF9F5] hover:bg-white border border-amber-100/90 hover:border-amber-300 transition-all duration-200 shadow-2xs hover:shadow-[0_8px_24px_rgba(245,158,11,0.12)] flex flex-col justify-between space-y-3 group cursor-pointer"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100/80 text-[10px] font-bold text-amber-900">
+                            {item.badge}
+                          </span>
+                          <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all">
+                            north_east
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-amber-950 transition-colors">
+                          {item.title}
+                        </h4>
+                        <span className="text-[10px] text-slate-400 font-semibold block">
+                          {item.institution}
+                        </span>
+                        <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
+                          {item.desc}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200/50 flex items-center gap-1.5 text-[11px] font-bold text-amber-800 group-hover:text-amber-900">
+                        <span>Buka Halaman Resmi</span>
+                        <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* =========================================================
+            PILAR 7: TANYA JAWAB UMUM & GLOSARIUM INTERAKTIF (Apple Accordion)
             ========================================================= */}
         <section
           id="faq"
@@ -498,7 +781,7 @@ export default function MethodologyPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
             <div>
               <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 06 • Tanya Jawab Ramah
+                Pilar 07 • Tanya Jawab Ramah
               </span>
               <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
                 Pertanyaan yang Sering Diajukan
@@ -553,7 +836,7 @@ export default function MethodologyPage() {
                 Sains terbuka untuk keputusan energi yang tepat.
               </h3>
               <p className="text-xs text-amber-900/80 mt-1 max-w-xl">
-                Dokumentasi ini diselaraskan secara berkala mengikuti pembaruan tarif PLN dan regulasi ketenagalistrikan nasional.
+                Dokumentasi ini diselaraskan secara berkala mengikuti pembaruan regulasi Permen ESDM dan tarif listrik resmi PLN.
               </p>
             </div>
           </div>
