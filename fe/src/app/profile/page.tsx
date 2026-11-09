@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, type FormEvent } from "react";
 
-import { ProposalModal } from "@/components/studio/ProposalModal";
-import { api, getToken, setToken, type SimulationParameters, type SimulationResult } from "@/lib/api";
+import { api, getToken, setToken } from "@/lib/api";
 import {
   saveStoredBiodata,
   useHasToken,
@@ -19,7 +18,6 @@ export default function ProfilePage() {
   const biodata = useStoredBiodata();
 
   const [mounted, setMounted] = useState(false);
-  const [proposalOpen, setProposalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,64 +76,6 @@ export default function ProfilePage() {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-
-  const simulationResultForModal: SimulationResult = {
-    geometry: {
-      roof_width_m: 12.48,
-      roof_length_m: 7.28,
-      total_area_sqm: 12.48 * 7.28,
-      effective_area_sqm: 11.48 * 6.18,
-    },
-    layout: {
-      max_slots: 40,
-      installed: 36,
-      rows: 2,
-      columns: 18,
-      module_area_sqm: 2.56,
-      density_ratio: 0.78,
-    },
-    energy: {
-      capacity_kwp: 8.3,
-      annual_production_kwh: 14400,
-      daily_irradiance_kwh_per_sqm: 4.85,
-      incidence_factor: 0.98,
-      performance_ratio: 0.8,
-      irradiance_source: "NASA POWER Climatology (Kota Bogor)",
-      irradiance_period: "2024",
-    },
-    finance: {
-      capex_total_idr: 103750000,
-      capex_breakdown: {
-        modules_idr: 53950000,
-        inverter_idr: 20750000,
-        racking_idr: 12450000,
-        installation_idr: 16600000,
-      },
-      monthly_saving_idr: 2040000,
-      annual_saving_idr: 24480000,
-      payback_years: 2.4,
-      tariff_key: "R2",
-      tariff_label: "R-2 / 3.500-5.500 VA (PLN)",
-      tariff_idr_per_kwh: 1699.53,
-      monthly_bill_idr: 2500000,
-      co2_reduction_kg_per_year: 11500,
-      trees_equivalent: 523,
-    },
-  };
-
-  const simulationParamsForModal: SimulationParameters = {
-    setback_m: 0.5,
-    gutter_m: 0.6,
-    tilt_deg: 22,
-    azimuth_deg: 188,
-    module_key: "module_550",
-    orientation: "portrait",
-    clearance_m: 0.02,
-    panel_count: 36,
-    inverter_type: "string",
-    monthly_bill_idr: 2500000,
-    tariff_key: "R2",
-  };
 
   if (!mounted || !hasToken) {
     return (
@@ -458,115 +398,96 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Kolom Kanan: Dampak Portofolio & Keamanan (5 Kolom) */}
+          {/* Kolom Kanan: Standar & Keamanan (5 Kolom) */}
           <div className="lg:col-span-5 flex flex-col gap-5 sm:gap-6">
-            {/* Card 1: Estimasi Dampak PLTS */}
+            {/* Card 1: Standar & Sumber Data (Pengganti Estimasi Dampak PLTS) */}
             <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90 space-y-4 flex-1 flex flex-col justify-between">
-              <div className="absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-sky-100/50 blur-2xl pointer-events-none" />
+              <div className="absolute -bottom-10 -right-10 w-44 h-44 rounded-full bg-amber-100/40 blur-2xl pointer-events-none" />
 
               <div>
                 <div className="relative z-10 flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4">
                   <div>
                     <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 tracking-tight">
-                      <span className="material-symbols-outlined text-[19px] text-amber-500">solar_power</span>
-                      <span>Estimasi Dampak PLTS</span>
+                      <span className="material-symbols-outlined text-[19px] text-amber-600">verified</span>
+                      <span>Standar &amp; Sumber Data</span>
                     </h3>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Total dari 4 atap aktif di Bogor
+                      Transparansi metodologi ilmiah &amp; regulasi resmi
                     </p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-amber-100/80 text-amber-800 text-[11px] font-semibold">
-                    Optimal
+                  <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 text-[10px] font-bold">
+                    Dokumentasi Terbuka
                   </span>
                 </div>
 
-                {/* 2x2 Bento Stat Tiles */}
+                <p className="text-xs text-slate-600 leading-relaxed mb-4">
+                  Kalkulasi potensi energi, estimasi penghematan, dan mitigasi karbon di SunSight dihitung berbasis data observasi iklim Kota Bogor serta regulasi resmi energi surya nasional.
+                </p>
+
+                {/* 2x2 Bento Foundation Tiles */}
                 <div className="relative z-10 grid grid-cols-2 gap-3">
-                  <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/60">
+                  <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/60 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">savings</span>
+                      <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[16px]">map</span>
                       </span>
-                      <span className="text-[11px] text-amber-900/80 font-medium">Hemat Listrik</span>
+                      <span className="text-[11px] text-amber-950 font-bold truncate">Citra Nadir 90°</span>
                     </div>
-                    <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 mt-2 block">
-                      Rp 2,04 Jt<span className="text-xs font-normal text-slate-400">/bln</span>
-                    </span>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Bebas distorsi paralaks, skala 1m = 20px CAD.
+                    </p>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/60">
+                  <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/60 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">co2</span>
+                      <span className="w-7 h-7 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[16px]">sunny</span>
                       </span>
-                      <span className="text-[11px] text-sky-900/80 font-medium">Reduksi CO₂</span>
+                      <span className="text-[11px] text-sky-950 font-bold truncate">NASA &amp; Solargis</span>
                     </div>
-                    <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 mt-2 block">
-                      11.5 Ton<span className="text-xs font-normal text-slate-400">/thn</span>
-                    </span>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Insolasi 4.2–4.5 kWh/m²/hari iklim Kota Bogor.
+                    </p>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/60">
+                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/60 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">forest</span>
+                      <span className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[16px]">solar_power</span>
                       </span>
-                      <span className="text-[11px] text-emerald-900/80 font-medium">Setara Pohon</span>
+                      <span className="text-[11px] text-emerald-950 font-bold truncate">Hardware Tier-1</span>
                     </div>
-                    <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 mt-2 block">
-                      523<span className="text-xs font-normal text-slate-400"> pohon</span>
-                    </span>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Modul 550Wp, inverter sinus &amp; SPD II petir.
+                    </p>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/60">
+                  <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/60 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-[16px]">trending_up</span>
+                      <span className="w-7 h-7 rounded-xl bg-slate-200/80 text-slate-800 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[16px]">gavel</span>
                       </span>
-                      <span className="text-[11px] text-slate-600 font-medium">Balik Modal</span>
+                      <span className="text-[11px] text-slate-900 font-bold truncate">Permen ESDM</span>
                     </div>
-                    <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 mt-2 block">
-                      2.4<span className="text-xs font-normal text-slate-400"> tahun</span>
-                    </span>
+                    <p className="text-[11px] text-slate-500 leading-snug">
+                      Permen No. 2/2024 &amp; tarif resmi PLN R-1/R-2/R-3.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="relative z-10 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">36 modul surya aktif</span>
-                <button
-                  type="button"
-                  onClick={() => setProposalOpen(true)}
-                  className="font-semibold text-amber-700 hover:text-amber-800 bg-amber-50/90 hover:bg-amber-100/90 border border-amber-200/80 px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+              <div className="relative z-10 pt-3 border-t border-slate-100">
+                <Link
+                  href="/methodology"
+                  className="w-full h-11 px-4 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs group"
                 >
-                  <span className="material-symbols-outlined text-[15px]">picture_as_pdf</span>
-                  <span>Unduh Proposal PDF</span>
-                </button>
+                  <span className="material-symbols-outlined text-[16px] text-amber-400">menu_book</span>
+                  <span>Lihat Metodologi &amp; Standar Lengkap</span>
+                  <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">
+                    arrow_forward
+                  </span>
+                </Link>
               </div>
-            </div>
-
-            {/* Card: Standar & Sumber Data */}
-            <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 tracking-tight">
-                  <span className="material-symbols-outlined text-[19px] text-amber-600">menu_book</span>
-                  <span>Standar &amp; Sumber Data</span>
-                </h3>
-                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/70 text-[10px] font-semibold">
-                  Transparansi
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Pelajari sumber citra satelit, data radiasi iklim Kota Bogor, formula CAPEX, dan regulasi Permen ESDM yang mendasari perhitungan SunSight.
-              </p>
-
-              <Link
-                href="/methodology"
-                className="w-full h-11 px-4 rounded-full bg-amber-50/80 hover:bg-amber-100/90 border border-amber-200/80 text-amber-950 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs group"
-              >
-                <span>Lihat Metodologi Lengkap</span>
-                <span className="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-              </Link>
             </div>
 
             {/* Card 2: Sesi Akun & Keamanan */}
@@ -604,17 +525,6 @@ export default function ProfilePage() {
           <span>{toastMessage}</span>
         </div>
       )}
-
-      {/* Proposal PDF Modal */}
-      <ProposalModal
-        open={proposalOpen}
-        onClose={() => setProposalOpen(false)}
-        result={simulationResultForModal}
-        parameters={simulationParamsForModal}
-        latitude="-6.5950"
-        longitude="106.7972"
-        biodata={biodata}
-      />
     </div>
   );
 }
