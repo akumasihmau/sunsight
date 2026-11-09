@@ -555,7 +555,7 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
         <div className="relative rounded-[28px] bg-white/92 backdrop-blur-2xl border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14)] p-4 sm:p-5 text-slate-800">
           
           {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu */}
-          <div className="absolute -top-3 left-2 sm:left-3">
+          <div className="absolute top-1 sm:top-1.5 left-2 sm:left-3">
             <AnimatedSunnyStudioMascot
               expression={currentStep.expression}
               isGliding={isGliding}

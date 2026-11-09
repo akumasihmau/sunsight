@@ -380,10 +380,10 @@ export default function ProfilePage() {
               <button
                 type="submit"
                 form="profile-form"
-                className={`h-11 px-6 rounded-full font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-sm active:scale-[0.98] ${
+                className={`h-11 px-6 rounded-full font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer active:scale-[0.98] border ${
                   isSaved
-                    ? "bg-emerald-600 text-white shadow-emerald-500/20"
-                    : "bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-500/25"
+                    ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-[0_2px_12px_rgba(16,185,129,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
+                    : "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 border-amber-300/80 shadow-[0_2px_12px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.85)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.32)]"
                 }`}
               >
                 <span className="material-symbols-outlined text-[17px]">
@@ -476,7 +476,7 @@ export default function ProfilePage() {
               <div className="relative z-10 pt-3 border-t border-slate-100">
                 <Link
                   href="/methodology"
-                  className="w-full h-11 px-4 rounded-full bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-[0_4px_16px_rgba(245,158,11,0.28)] hover:shadow-[0_6px_20px_rgba(245,158,11,0.38)] border border-amber-400/80 group"
+                  className="w-full h-11 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-[0_2px_12px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.85)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.32)] border border-amber-300/80 group"
                 >
                   <span className="material-symbols-outlined text-[16px]">menu_book</span>
                   <span>Lihat Metodologi &amp; Standar Lengkap</span>

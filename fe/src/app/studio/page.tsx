@@ -3036,8 +3036,8 @@ function StudioPageContent() {
             - Pas Kebuka: Logo berubah jadi Tanda Balik ke Beranda (← Beranda) */}
         <Link
           href="/"
-          className={`h-11 rounded-full bg-white text-slate-800 flex items-center px-3.5 transition-all duration-300 ease-out shadow-xs border border-slate-200/80 hover:bg-slate-50 hover:text-amber-800 shrink-0 select-none cursor-pointer group/back ${
-            studioNavOpen ? "shadow-sm border-amber-300/70" : ""
+          className={`h-11 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-800 flex items-center px-3.5 transition-all duration-300 ease-out shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80 hover:border-amber-300/70 shrink-0 select-none cursor-pointer group/back ${
+            studioNavOpen ? "shadow-[0_8px_32px_rgba(245,158,11,0.12)] border-amber-300/80 bg-white/90" : ""
           }`}
           title={studioNavOpen ? "Kembali ke Beranda" : "Buka Menu Studio"}
           aria-label="Kembali ke Beranda"
@@ -3073,7 +3073,7 @@ function StudioPageContent() {
           } ${searchOpen || filterOpen ? "overflow-visible" : "overflow-hidden"}`}
         >
 
-          {/* Pill 2: Pencarian (Identik dengan Beranda: Bulat w-11 h-11 dengan popover proyek) */}
+          {/* Pill 2: Pencarian (Frosted Glass & Golden Radiant Active) */}
           <div className="relative shrink-0">
             <button
               type="button"
@@ -3083,8 +3083,8 @@ function StudioPageContent() {
               }}
               className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border ${
                 searchOpen
-                  ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                  : "bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 border-slate-200/60 shadow-xs"
+                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
+                  : "bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-900 border-white/80 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] hover:border-amber-300/70"
               }`}
               title="Pencarian Alamat & Lokasi"
               aria-label="Cari proyek atau lokasi"
@@ -3102,7 +3102,7 @@ function StudioPageContent() {
                   className="fixed inset-0 z-30 cursor-default"
                   onClick={() => setSearchOpen(false)}
                 />
-                <div className="absolute left-0 top-14 z-40 w-[min(400px,calc(100vw-2rem))] bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.25)] border border-slate-200/90 p-2.5 animate-fadeIn">
+                <div className="absolute left-0 top-14 z-40 w-[min(400px,calc(100vw-2rem))] bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_4px_24px_rgba(245,158,11,0.10)] border border-white/90 p-2.5 animate-fadeIn">
                   {/* Search Bar Input */}
                   <div className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100">
                     <span className="material-symbols-outlined text-[18px] text-slate-400 shrink-0">search</span>
@@ -3246,7 +3246,7 @@ function StudioPageContent() {
             )}
           </div>
 
-          {/* Pill 3: Filter Lapisan */}
+          {/* Pill 3: Filter Lapisan (Frosted Glass & Golden Radiant Active) */}
           <div className="relative shrink-0">
             <button
               type="button"
@@ -3254,10 +3254,10 @@ function StudioPageContent() {
                 setFilterOpen((v) => !v);
                 setSearchOpen(false);
               }}
-              className={`h-11 px-3.5 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-semibold transition-all duration-300 shadow-xs cursor-pointer border ${
+              className={`h-11 px-3.5 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-semibold transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] cursor-pointer border ${
                 filterOpen
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-700 hover:bg-slate-50 hover:text-amber-800 border-slate-200/60"
+                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
+                  : "bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-900 border-white/80 hover:border-amber-300/70"
               }`}
               title="Filter Lapisan Peta & CAD"
               aria-expanded={filterOpen}
@@ -3266,14 +3266,14 @@ function StudioPageContent() {
               <span className="hidden sm:inline">Filter</span>
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
                 filterOpen
-                  ? "bg-amber-400 text-amber-950 border-amber-300"
+                  ? "bg-white/90 text-amber-950 border-amber-300/80"
                   : "bg-amber-100 text-amber-900 border-amber-200"
               }`}>
                 {activeLayer === "satellite" ? "Satelit" : activeLayer === "cv" ? "AI" : "Heatmap"}
               </span>
             </button>
 
-            {/* Filter Popover */}
+            {/* Filter Popover (Modern Frosted Glass) */}
             {filterOpen && (
               <>
                 <button
@@ -3282,7 +3282,7 @@ function StudioPageContent() {
                   className="fixed inset-0 z-30 cursor-default"
                   onClick={() => setFilterOpen(false)}
                 />
-                <div className="absolute left-0 top-14 z-40 w-60 bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.25)] border border-slate-200/90 p-2.5 animate-fadeIn space-y-1">
+                <div className="absolute left-0 top-14 z-40 w-60 bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_4px_24px_rgba(245,158,11,0.10)] border border-white/90 p-2.5 animate-fadeIn space-y-1">
                   <div className="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     Lapisan Tampilan
                   </div>
@@ -3384,18 +3384,18 @@ function StudioPageContent() {
             )}
           </div>
 
-          {/* Pill 4: Proposal PDF */}
+          {/* Pill 4: Proposal PDF (Frosted Glass) */}
           <button
             type="button"
             onClick={() => setProposalOpen(true)}
-            className="h-11 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-amber-800 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-xs shrink-0 cursor-pointer border border-slate-200/60"
+            className="h-11 px-4 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-950 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] shrink-0 cursor-pointer border border-white/80 hover:border-amber-300/70"
             title="Unduh Proposal PDF Resmi"
           >
             <span className="material-symbols-outlined text-[18px] text-amber-700">picture_as_pdf</span>
             <span className="hidden sm:inline">Proposal PDF</span>
           </button>
 
-          {/* Pill 5: Simpan Desain */}
+          {/* Pill 5: Simpan Desain (Radiant Soft Glow Glass) */}
           <button
             type="button"
             onClick={handleSaveSimulation}
@@ -3403,7 +3403,7 @@ function StudioPageContent() {
             className={`h-11 px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer border ${
               saveSuccess
                 ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-[0_2px_12px_rgba(16,185,129,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
-                : "bg-gradient-to-r from-amber-100/90 via-amber-200/90 to-amber-100/90 hover:from-amber-200/90 hover:via-amber-300/90 hover:to-amber-200/90 text-amber-950 active:scale-[0.98] border-amber-300/80 shadow-[0_2px_14px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.28)]"
+                : "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 active:scale-[0.98] border-amber-300/80 shadow-[0_2px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.3)]"
             }`}
             title="Simpan simulasi desain ke riwayat Anda"
           >

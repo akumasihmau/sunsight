@@ -46,10 +46,10 @@ export default function MethodologyPage() {
       </header>
 
       {/* Hero Headline Section */}
-      <main className="relative z-10 flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-14 w-full space-y-10 sm:space-y-12">
+      <main className="relative z-10 flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 w-full space-y-8 sm:space-y-10">
         
         <div className="text-center max-w-3xl mx-auto space-y-3.5 sm:space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/80 shadow-[0_2px_12px_rgba(245,158,11,0.08)]">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/90 backdrop-blur-xl border border-white/90 shadow-[0_2px_12px_rgba(245,158,11,0.08)]">
             <span className="material-symbols-outlined text-amber-600 text-[16px]">verified</span>
             <span className="text-xs font-bold text-amber-950 font-title tracking-tight">
               Metodologi Sains, Geospasial, &amp; Finansial
@@ -65,38 +65,40 @@ export default function MethodologyPage() {
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto">
             SunSight mengintegrasikan citra satelit ortofoto, observasi radiasi iklim Kota Bogor,
-            spesifikasi komponen Tier-1, dan regulasi Permen ESDM untuk menghasilkan kalkulasi atap surya yang akurat dan transparan.
+            spesifikasi komponen Tier-1, dan regulasi Permen ESDM untuk kalkulasi energi surya yang akurat dan transparan.
           </p>
         </div>
 
-        {/* Floating Category Navigation Bar (Sticky Radiant Pills - Anti Kepotong) */}
-        <div className="sticky top-14 sm:top-16 z-30 py-2.5 backdrop-blur-xl bg-[#FAF9F5]/90 border-b border-amber-200/40 -mx-4 px-4 sm:mx-0 sm:px-0">
-          <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1 px-1 justify-start md:justify-center">
-            {[
-              { id: "spatial", label: "01 Citra Spasial", icon: "map" },
-              { id: "solar", label: "02 Radiasi Bogor", icon: "sunny" },
-              { id: "hardware", label: "03 Spesifikasi Komponen", icon: "solar_power" },
-              { id: "financial", label: "04 Regulasi & Finansial", icon: "calculate" },
-              { id: "emissions", label: "05 Dampak Lingkungan", icon: "forest" },
-              { id: "glossary", label: "06 Glosarium Surya", icon: "menu_book" },
-            ].map((item) => {
-              const isActive = activeSection === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => scrollTo(item.id)}
-                  className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-bold transition-all duration-200 flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap cursor-pointer ${
-                    isActive
-                      ? "bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 text-white shadow-[0_4px_16px_rgba(245,158,11,0.32)] border border-amber-300/80 scale-[1.02]"
-                      : "bg-white/85 hover:bg-white backdrop-blur-xl border border-amber-200/60 hover:border-amber-400/80 text-slate-700 hover:text-amber-950 shadow-2xs hover:shadow-[0_4px_12px_rgba(245,158,11,0.12)]"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+        {/* Floating Category Navigation Bar (Toolbar Glass Capsule Style - Anti Kepotong) */}
+        <div className="sticky top-14 sm:top-16 z-30 py-3 backdrop-blur-xl bg-[#FAF9F5]/85 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex items-center justify-start md:justify-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1">
+            <div className="inline-flex items-center gap-1.5 p-1.5 rounded-full bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] shrink-0">
+              {[
+                { id: "spatial", label: "01 Citra Spasial", icon: "map" },
+                { id: "solar", label: "02 Radiasi Bogor", icon: "sunny" },
+                { id: "hardware", label: "03 Spesifikasi Komponen", icon: "solar_power" },
+                { id: "financial", label: "04 Regulasi & Finansial", icon: "calculate" },
+                { id: "emissions", label: "05 Dampak Lingkungan", icon: "forest" },
+                { id: "glossary", label: "06 Glosarium Surya", icon: "menu_book" },
+              ].map((item) => {
+                const isActive = activeSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => scrollTo(item.id)}
+                    className={`h-9 px-3.5 rounded-full text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer border ${
+                      isActive
+                        ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
+                        : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-amber-50/70 border-transparent"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -105,7 +107,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="spatial"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/70 text-amber-900 flex items-center justify-center shrink-0">
@@ -121,9 +123,9 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-            Pengukuran atap membutuhkan akurasi geometris tinggi. Foto udara miring biasa rentan bias sudut hingga 30%.
-            SunSight menggunakan ortorektifikasi tegak lurus (90° nadir) untuk memastikan ukuran fisik atap di lapangan sejajar dengan kanvas simulasi.
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
+            Pengukuran potensi atap membutuhkan akurasi geometris tinggi. Foto udara miring biasa rentan bias sudut hingga 30%.
+            SunSight menggunakan citra ortorektifikasi tegak lurus (90° nadir) agar ukuran di layar sejajar dengan fisik bangunan.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
@@ -133,7 +135,7 @@ export default function MethodologyPage() {
               </div>
               <h3 className="text-xs sm:text-sm font-bold text-slate-900">Koreksi Paralaks 90°</h3>
               <p className="text-[11px] sm:text-xs text-slate-600 leading-relaxed">
-                Diproses dengan Digital Elevation Model (DEM) untuk menghilangkan efek kemiringan lensa dan bayangan dinding bangunan.
+                Diproses dengan Digital Elevation Model (DEM) untuk menghilangkan efek kemiringan kamera dan bayangan dinding bangunan.
               </p>
             </div>
 
@@ -164,7 +166,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="solar"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/70 text-amber-900 flex items-center justify-center shrink-0">
@@ -180,8 +182,8 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-            Sebagai kawasan tropis dekat khatulistiwa (6.59° LS, 106.79° BT) dengan pola hujan unik, estimasi potensi energi matahari dihitung dari observasi satelit multi-dekade NASA POWER dan Global Solar Atlas.
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
+            Sebagai kawasan tropis khatulistiwa (6.59° LS, 106.79° BT) dengan pola hujan unik, estimasi potensi energi matahari dihitung dari observasi satelit multi-dekade NASA POWER dan Global Solar Atlas.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
@@ -201,7 +203,7 @@ export default function MethodologyPage() {
                 80.0% <span className="text-xs font-normal text-slate-500">(PR 0.80)</span>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
-                Faktor koreksi degradasi termal tropis modul (-0.34%/°C di atas 25°C), kabel, dan debu.
+                Faktor koreksi degradasi termal tropis modul (-0.34%/°C di atas 25°C), rugi kabel, dan debu.
               </p>
             </div>
 
@@ -222,7 +224,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="hardware"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/70 text-amber-900 flex items-center justify-center shrink-0">
@@ -312,7 +314,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="financial"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/70 text-amber-900 flex items-center justify-center shrink-0">
@@ -328,7 +330,7 @@ export default function MethodologyPage() {
             </div>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
             Perhitungan rupiah didasarkan pada kebijakan Peraturan Menteri ESDM No. 2 Tahun 2024 serta tarif listrik resmi PT PLN (Persero).
           </p>
 
@@ -410,7 +412,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="emissions"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200/70 text-emerald-900 flex items-center justify-center shrink-0">
@@ -454,7 +456,7 @@ export default function MethodologyPage() {
             ========================================================= */}
         <section
           id="glossary"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-9 space-y-6 scroll-mt-28"
+          className="rounded-[32px] bg-white/80 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.06)] p-6 sm:p-8 space-y-6 scroll-mt-28"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200/70 text-amber-900 flex items-center justify-center shrink-0">
@@ -522,7 +524,7 @@ export default function MethodologyPage() {
           <button
             type="button"
             onClick={handleGoBack}
-            className="w-full sm:w-auto h-11 px-6 rounded-full bg-gradient-to-r from-amber-500 via-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-title text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-[0_4px_16px_rgba(245,158,11,0.32)] hover:shadow-[0_6px_22px_rgba(245,158,11,0.42)] border border-amber-300/80 shrink-0 cursor-pointer"
+            className="w-full sm:w-auto h-11 px-6 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 font-title text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-[0_2px_12px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.3)] border border-amber-300/80 shrink-0 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">arrow_back</span>
             <span>Kembali ke Halaman Sebelumnya</span>
