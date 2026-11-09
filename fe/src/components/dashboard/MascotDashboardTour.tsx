@@ -564,7 +564,7 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
         <div className="relative rounded-[28px] bg-white/92 backdrop-blur-2xl border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14)] p-4 sm:p-5 text-slate-800">
           
           {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu */}
-          <div className="absolute -top-8 left-2 sm:left-3">
+          <div className="absolute -top-3 left-2 sm:left-3">
             <AnimatedSunnyTourMascot
               expression={currentStep.expression}
               isGliding={isGliding}
@@ -591,7 +591,7 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
           </div>
 
           {/* Judul & Penjelasan Ringkas (To the Point) */}
-          <div className="pl-1 pt-1 mb-4">
+          <div className="pl-1 pt-1.5 mb-4">
             <h3 className="font-title text-sm sm:text-[15px] font-bold text-slate-900 leading-snug mb-1">
               {currentStep.title}
             </h3>
