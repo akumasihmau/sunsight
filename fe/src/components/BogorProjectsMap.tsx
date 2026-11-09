@@ -17,16 +17,16 @@ interface BogorProjectsMapProps {
   projects: MapProjectItem[];
   selectedProjectId: string;
   onSelectProject: (id: string) => void;
+  onOpenStudio?: (id: string) => void;
   roofScore?: number;
   irradiance?: number;
 }
-
-type MapMode = "street" | "satellite";
 
 export function BogorProjectsMap({
   projects,
   selectedProjectId,
   onSelectProject,
+  onOpenStudio,
   roofScore = 94,
   irradiance = 4.85,
 }: BogorProjectsMapProps) {
@@ -35,16 +35,9 @@ export function BogorProjectsMap({
   const mapInstanceRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<Record<string, any>>({});
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const streetLayerRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const satelliteLayerRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const labelsLayerRef = useRef<any>(null);
 
-  const [mapMode, setMapMode] = useState<MapMode>("street");
   const [mapReady, setMapReady] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(13);
+  const [zoomLevel, setZoomLevel] = useState(14);
   const [isPotentialOpen, setIsPotentialOpen] = useState(false);
 
   // Helper to construct marker HTML
@@ -117,10 +110,10 @@ export function BogorProjectsMap({
       if (!L || !mapContainerRef.current || mapInstanceRef.current || isCancelled) return;
 
       try {
-        // Center around Kota Bogor
+        // Center around Kota Bogor (Fokus langsung mode Citra Satelit)
         const map = L.map(mapContainerRef.current, {
           center: [-6.589, 106.797],
-          zoom: 13,
+          zoom: 14,
           minZoom: 11,
           maxZoom: 18,
           zoomControl: false,
@@ -139,16 +132,7 @@ export function BogorProjectsMap({
           setZoomLevel(map.getZoom());
         });
 
-        // CartoDB Positron / OSM Street Layer (clean, minimal, modern)
-        const street = L.tileLayer(
-          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-          {
-            subdomains: "abcd",
-            maxZoom: 19,
-          }
-        );
-
-        // Esri Satellite Layer
+        // Esri Satellite Layer (Tampilan Utama Fokus Satelit)
         const satellite = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
           { maxNativeZoom: 19, maxZoom: 19 }
@@ -160,11 +144,9 @@ export function BogorProjectsMap({
           { maxNativeZoom: 19, maxZoom: 19 }
         );
 
-        street.addTo(map);
+        satellite.addTo(map);
+        labels.addTo(map);
 
-        streetLayerRef.current = street;
-        satelliteLayerRef.current = satellite;
-        labelsLayerRef.current = labels;
         mapInstanceRef.current = map;
 
         // Render project markers
@@ -252,48 +234,6 @@ export function BogorProjectsMap({
     }
   }, [selectedProjectId, projects, mapReady, zoomLevel]);
 
-  // Switch between street and satellite tiles
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (mapMode === "street") {
-      if (satelliteLayerRef.current && map.hasLayer(satelliteLayerRef.current)) {
-        map.removeLayer(satelliteLayerRef.current);
-      }
-      if (labelsLayerRef.current && map.hasLayer(labelsLayerRef.current)) {
-        map.removeLayer(labelsLayerRef.current);
-      }
-      if (streetLayerRef.current && !map.hasLayer(streetLayerRef.current)) {
-        streetLayerRef.current.addTo(map);
-      }
-    } else {
-      if (streetLayerRef.current && map.hasLayer(streetLayerRef.current)) {
-        map.removeLayer(streetLayerRef.current);
-      }
-      if (satelliteLayerRef.current && !map.hasLayer(satelliteLayerRef.current)) {
-        satelliteLayerRef.current.addTo(map);
-      }
-      if (labelsLayerRef.current && !map.hasLayer(labelsLayerRef.current)) {
-        labelsLayerRef.current.addTo(map);
-      }
-    }
-  }, [mapMode]);
-
-  function handleResetView() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const L = (window as any).L;
-    if (!mapInstanceRef.current || !L) return;
-
-    const coords = projects.map((p) => [p.lat, p.lng]);
-    const bounds = L.latLngBounds(coords);
-    mapInstanceRef.current.fitBounds(bounds, {
-      padding: [40, 40],
-      maxZoom: 14,
-      animate: true,
-    });
-  }
-
   function handleZoomIn() {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.zoomIn();
@@ -308,56 +248,35 @@ export function BogorProjectsMap({
 
   const activeProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
 
+  function handleExpandToStudio() {
+    if (onOpenStudio && activeProject) {
+      onOpenStudio(activeProject.id);
+    }
+  }
+
   return (
-    <div className="relative w-full h-full min-h-[320px] rounded-[18px] bg-slate-100 overflow-hidden shadow-2xs select-none">
+    <div className="relative w-full h-full min-h-[320px] rounded-[18px] bg-slate-900 overflow-hidden shadow-2xs select-none">
       {/* Real Leaflet Map Container */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
       {/* Loading state before Leaflet initializes */}
       {!mapReady && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-100/90 backdrop-blur-xs text-slate-500 gap-2">
-          <span className="material-symbols-outlined text-[28px] animate-spin text-amber-500">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-xs text-slate-300 gap-2">
+          <span className="material-symbols-outlined text-[28px] animate-spin text-amber-400">
             sync
           </span>
-          <span className="text-xs font-medium">Memuat peta Kota Bogor...</span>
+          <span className="text-xs font-medium">Memuat citra satelit Kota Bogor...</span>
         </div>
       )}
 
-      {/* Top Map Toolbar: Mode Toggle & Reset View */}
-      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-        {/* Layer Switcher (Peta / Satelit) */}
-        <div className="inline-flex p-0.5 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-sm pointer-events-auto">
-          <button
-            type="button"
-            onClick={() => setMapMode("street")}
-            className={`px-2.5 py-1 rounded-full text-[11px] transition cursor-pointer ${
-              mapMode === "street"
-                ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                : "text-slate-600 hover:text-slate-900 font-medium"
-            }`}
-          >
-            Peta
-          </button>
-          <button
-            type="button"
-            onClick={() => setMapMode("satellite")}
-            className={`px-2.5 py-1 rounded-full text-[11px] transition cursor-pointer ${
-              mapMode === "satellite"
-                ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                : "text-slate-600 hover:text-slate-900 font-medium"
-            }`}
-          >
-            Satelit
-          </button>
-        </div>
-
-        {/* Zoom & Reset Controls */}
-        <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-full p-0.5 shadow-sm pointer-events-auto">
+      {/* Top Right Map Controls: Zoom & Buka Proyek di Studio */}
+      <div className="absolute top-3 right-3 z-20 flex items-center justify-end pointer-events-none">
+        <div className="flex items-center gap-1 bg-white/90 backdrop-blur-xl border border-white/90 rounded-full p-0.5 shadow-[0_8px_24px_rgba(15,23,42,0.16)] pointer-events-auto">
           <button
             type="button"
             onClick={handleZoomIn}
             title="Perbesar"
-            className="w-7 h-7 rounded-full hover:bg-slate-100 text-slate-700 flex items-center justify-center transition cursor-pointer"
+            className="w-7 h-7 rounded-full hover:bg-amber-50/90 text-slate-700 hover:text-amber-950 flex items-center justify-center transition cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">add</span>
           </button>
@@ -365,15 +284,16 @@ export function BogorProjectsMap({
             type="button"
             onClick={handleZoomOut}
             title="Perkecil"
-            className="w-7 h-7 rounded-full hover:bg-slate-100 text-slate-700 flex items-center justify-center transition cursor-pointer"
+            className="w-7 h-7 rounded-full hover:bg-amber-50/90 text-slate-700 hover:text-amber-950 flex items-center justify-center transition cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">remove</span>
           </button>
           <button
             type="button"
-            onClick={handleResetView}
-            title="Lihat Semua Proyek di Bogor"
-            className="w-7 h-7 rounded-full hover:bg-slate-100 text-slate-700 flex items-center justify-center transition cursor-pointer"
+            onClick={handleExpandToStudio}
+            title={`Buka ${activeProject?.name || "Proyek"} di Studio CAD`}
+            aria-label={`Buka ${activeProject?.name || "Proyek"} di Studio CAD`}
+            className="w-7 h-7 rounded-full hover:bg-gradient-to-r hover:from-amber-200 hover:via-amber-300 hover:to-amber-200 text-slate-700 hover:text-amber-950 flex items-center justify-center transition cursor-pointer"
           >
             <span className="material-symbols-outlined text-[15px]">crop_free</span>
           </button>

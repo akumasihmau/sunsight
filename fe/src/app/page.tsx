@@ -2051,7 +2051,7 @@ function HomePageContent() {
                                 active ? "text-amber-700 font-semibold" : "text-emerald-600 font-medium"
                               }`}
                             >
-                              <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+                              <span className="material-symbols-outlined text-[13px]">bolt</span>
                               {proj.annualProdMwh} MWh
                             </span>
                           </span>
@@ -2064,10 +2064,12 @@ function HomePageContent() {
                             title="Buka di Studio"
                             aria-label={`Buka ${proj.name} di Studio`}
                             className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition cursor-pointer ${
-                              active ? "bg-amber-400 hover:bg-amber-500 text-amber-950 shadow-xs" : "hover:bg-slate-100 text-slate-500"
+                              active
+                                ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                                : "hover:bg-slate-100 text-slate-500 hover:text-slate-900"
                             }`}
                           >
-                            <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
+                            <span className="material-symbols-outlined text-[19px]">chevron_right</span>
                           </button>
                         </div>
                       </li>
@@ -2076,12 +2078,16 @@ function HomePageContent() {
                 </ul>
               </div>
 
-              {/* Real Leaflet Map of Kota Bogor */}
+              {/* Real Leaflet Map of Kota Bogor (Fokus Citra Satelit) */}
               <div className="relative min-h-[300px] h-full rounded-[18px] overflow-hidden">
                 <BogorProjectsMap
                   projects={savedProjects}
                   selectedProjectId={selectedProjectId}
                   onSelectProject={setSelectedProjectId}
+                  onOpenStudio={(id) => {
+                    const target = savedProjects.find((p) => p.id === id) || activeProj;
+                    openProjectInStudio(target);
+                  }}
                   roofScore={roofScore}
                   irradiance={activeLocation.irradiance}
                 />
@@ -2125,7 +2131,7 @@ function HomePageContent() {
                 {/* Add New Studio Link */}
                 <Link
                   href="/studio"
-                  className="h-9 px-4 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0"
+                  className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
                   <span>Proyek Baru</span>
@@ -2243,10 +2249,10 @@ function HomePageContent() {
                           <button
                             type="button"
                             onClick={() => openProjectInStudio(proj)}
-                            className="h-8 px-3.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer"
+                            className="h-8 px-3.5 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-bold flex items-center gap-1 transition cursor-pointer border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
                           >
                             <span>Buka Studio</span>
-                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                            <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                           </button>
                         </div>
                       </div>
@@ -2365,7 +2371,7 @@ function HomePageContent() {
                 {/* Primary CTA Studio CAD Button */}
                 <Link
                   href="/studio"
-                  className="w-full h-11 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
+                  className="w-full h-11 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)]"
                 >
                   <span className="material-symbols-outlined text-[17px]">polyline</span>
                   <span>Buka Desain di Studio CAD</span>
@@ -2897,10 +2903,10 @@ function HomePageContent() {
                   setActivePillarModal(null);
                   openProjectInStudio(activeProj);
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                className="px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 flex items-center gap-1 transition border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] cursor-pointer"
               >
                 <span>Buka Detail di Studio</span>
-                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
               </button>
             </div>
           </div>
