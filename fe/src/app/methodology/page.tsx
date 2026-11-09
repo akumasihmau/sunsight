@@ -1,13 +1,28 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
+
+const NAV_ITEMS = [
+  { id: "spatial", label: "Citra Satelit", icon: "satellite_alt" },
+  { id: "solar", label: "Radiasi Bogor", icon: "sunny" },
+  { id: "hardware", label: "Komponen Tier-1", icon: "solar_power" },
+  { id: "financial", label: "Finansial & Regulasi", icon: "calculate" },
+  { id: "emissions", label: "Dampak Lingkungan", icon: "forest" },
+  { id: "directory", label: "Dokumen Resmi", icon: "account_balance" },
+  { id: "faq", label: "Tanya Jawab", icon: "help_outline" },
+] as const;
 
 export default function MethodologyPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<string>("spatial");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+
+  const navScrollRef = useRef<HTMLDivElement | null>(null);
+  const pillRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Handler tombol kembali dinamis: kembali ke halaman sebelumnya (profil/landing), fallback ke "/" jika history kosong
   const handleGoBack = () => {
@@ -18,25 +33,81 @@ export default function MethodologyPage() {
     }
   };
 
+  // Scroll-spy otomatis mengikuti posisi scroll halaman
+  useEffect(() => {
+    const sectionIds = NAV_ITEMS.map((item) => item.id);
+
+    const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
+
+      const scrolledToBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+      if (scrolledToBottom) {
+        setActiveSection("faq");
+        return;
+      }
+
+      const triggerLine = 180;
+      let currentId: string = sectionIds[0];
+
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= triggerLine) {
+            currentId = id;
+          }
+        }
+      }
+
+      setActiveSection((prev) => (prev !== currentId ? currentId : prev));
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (programmaticTimeoutRef.current) {
+        clearTimeout(programmaticTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Geser horizontal kapsul navbar secara mulus agar pill aktif selalu berada di tengah kapsul
+  useEffect(() => {
+    const container = navScrollRef.current;
+    const activeBtn = pillRefs.current[activeSection];
+    if (!container || !activeBtn) return;
+
+    const containerWidth = container.clientWidth;
+    const btnLeft = activeBtn.offsetLeft;
+    const btnWidth = activeBtn.offsetWidth;
+    const targetScrollLeft = btnLeft - containerWidth / 2 + btnWidth / 2;
+
+    container.scrollTo({
+      left: Math.max(0, targetScrollLeft),
+      behavior: "smooth",
+    });
+  }, [activeSection]);
+
   const scrollTo = (id: string) => {
     setActiveSection(id);
+    isProgrammaticScrollRef.current = true;
+    if (programmaticTimeoutRef.current) {
+      clearTimeout(programmaticTimeoutRef.current);
+    }
+    programmaticTimeoutRef.current = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 750);
+
     const el = document.getElementById(id);
     if (el) {
-      const yOffset = -90;
-      const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+      const yOffset = -84;
+      const y = el.getBoundingClientRect().top + window.scrollY + yOffset;
       window.scrollTo({ top: y, behavior: "smooth" });
     }
   };
-
-  const navItems = [
-    { id: "spatial", label: "Citra Satelit", icon: "satellite_alt" },
-    { id: "solar", label: "Radiasi Bogor", icon: "sunny" },
-    { id: "hardware", label: "Komponen Tier-1", icon: "solar_power" },
-    { id: "financial", label: "Finansial & Regulasi", icon: "calculate" },
-    { id: "emissions", label: "Dampak Lingkungan", icon: "forest" },
-    { id: "directory", label: "Dokumen & Link Resmi", icon: "account_balance" },
-    { id: "faq", label: "Tanya Jawab", icon: "help_outline" },
-  ];
 
   const officialSources = [
     {
@@ -168,8 +239,11 @@ export default function MethodologyPage() {
       {/* Radiant Soft Glow Ambient Background */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[780px] h-[400px] bg-gradient-to-b from-amber-200/30 via-amber-100/15 to-transparent rounded-full blur-3xl pointer-events-none" />
 
-      {/* Header Bar: Bersih, Cukup Tombol Back Tanpa Kontainer / Border */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-amber-200/40 px-4 sm:px-8 h-14 sm:h-16 flex items-center">
+      {/* Soft Top Viewport Fade Mask (Seamless Blend saat Scroll tanpa garis kaku) */}
+      <div className="fixed top-0 inset-x-0 h-20 bg-gradient-to-b from-[#FAF9F5]/90 via-[#FAF9F5]/45 to-transparent pointer-events-none z-20" />
+
+      {/* Header Bar: Bersih, Tanpa Kontainer / Border Kaku */}
+      <header className="relative xl:fixed xl:top-5 xl:left-8 z-40 px-4 sm:px-8 xl:px-0 pt-5 xl:pt-0 flex items-center">
         <button
           type="button"
           onClick={handleGoBack}
@@ -184,7 +258,7 @@ export default function MethodologyPage() {
       </header>
 
       {/* Hero Headline Section */}
-      <main className="relative z-10 flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 w-full space-y-10 sm:space-y-12">
+      <main className="relative z-30 flex-1 max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-12 sm:py-12 w-full space-y-10 sm:space-y-12">
         
         {/* Apple-style Clean Hero */}
         <div className="text-center max-w-3xl mx-auto space-y-3.5 sm:space-y-4">
@@ -208,29 +282,33 @@ export default function MethodologyPage() {
           </p>
         </div>
 
-        {/* Floating Capsule Nav: ANTI-KEPOTONG (w-max mx-auto pada overflow container yang bersih) */}
-        <nav className="sticky top-14 sm:top-16 z-30 py-2.5 backdrop-blur-xl bg-[#FAF9F5]/90 border-b border-amber-200/30 -mx-4 px-4 sm:mx-0 sm:px-0">
-          <div className="w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-1 px-1">
-            <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] w-max mx-auto shrink-0">
-              {navItems.map((item) => {
-                const isActive = activeSection === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => scrollTo(item.id)}
-                    className={`h-9 px-3.5 rounded-full text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer border ${
-                      isActive
-                        ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
-                        : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-amber-50/70 border-transparent"
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Floating Capsule Nav: Seamless Frosted Glass (Tanpa Kotak Latar Kaku / Garis Border-B) */}
+        <nav className="sticky top-4 z-40 flex justify-center pointer-events-none">
+          <div
+            ref={navScrollRef}
+            className="pointer-events-auto flex items-center gap-1 p-1.5 rounded-full bg-white/75 backdrop-blur-2xl border border-white/90 shadow-[0_12px_36px_rgba(15,23,42,0.07),0_2px_12px_rgba(245,158,11,0.08)] max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {NAV_ITEMS.map((item) => {
+              const isActive = activeSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  ref={(el) => {
+                    pillRefs.current[item.id] = el;
+                  }}
+                  type="button"
+                  onClick={() => scrollTo(item.id)}
+                  className={`h-9 px-3.5 rounded-full text-xs font-bold transition-all duration-300 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer border ${
+                    isActive
+                      ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
+                      : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-amber-50/70 border-transparent"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         </nav>
 
