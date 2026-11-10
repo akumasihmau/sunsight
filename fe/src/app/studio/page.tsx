@@ -205,52 +205,16 @@ interface StudioSavedProject {
 
 const STUDIO_SAVED_PROJECTS: StudioSavedProject[] = [
   {
-    id: "proj-bogor-tengah",
-    name: "Menteng Residence",
-    address: "Jl. Pajajaran No. 42, Bogor Tengah",
-    lat: -6.595038,
-    lon: 106.797241,
-    capacityKwp: 8.3,
-    ridge: 12.48,
-    slope: 7.28,
-    shape: "rectangle",
-    deg: -4,
-  },
-  {
     id: "proj-baranangsiang",
     name: "Baranangsiang Indah",
     address: "Komp. Baranangsiang Indah Blok C, Bogor Timur",
     lat: -6.6110,
-    lon: 106.8160,
+    lon: 106.8150,
     capacityKwp: 12.5,
     ridge: 14.2,
     slope: 8.0,
-    shape: "l-shape",
-    deg: 8,
-  },
-  {
-    id: "proj-yasmin",
-    name: "Taman Yasmin Sektor 3",
-    address: "Jl. Yasmin Raya No. 88, Bogor Barat",
-    lat: -6.5615,
-    lon: 106.7620,
-    capacityKwp: 6.5,
-    ridge: 11.5,
-    slope: 6.8,
-    shape: "trapezoid",
-    deg: 0,
-  },
-  {
-    id: "proj-kebun-raya",
-    name: "Paviliun Kebun Raya",
-    address: "Jl. Ir. H. Juanda No. 13, Bogor Tengah",
-    lat: -6.5980,
-    lon: 106.7950,
-    capacityKwp: 15.0,
-    ridge: 15.0,
-    slope: 8.5,
     shape: "rectangle",
-    deg: 12,
+    deg: 8,
   },
   {
     id: "proj-bantarjati",
@@ -263,6 +227,42 @@ const STUDIO_SAVED_PROJECTS: StudioSavedProject[] = [
     slope: 6.4,
     shape: "rectangle",
     deg: -6,
+  },
+  {
+    id: "proj-yasmin",
+    name: "Taman Yasmin Sektor 3",
+    address: "Jl. Yasmin Raya No. 88, Bogor Barat",
+    lat: -6.5615,
+    lon: 106.7620,
+    capacityKwp: 6.5,
+    ridge: 11.5,
+    slope: 6.8,
+    shape: "rectangle",
+    deg: 0,
+  },
+  {
+    id: "proj-katulampa",
+    name: "Katulampa Residence",
+    address: "Jl. Katulampa Raya No. 24, Bogor Timur",
+    lat: -6.6230,
+    lon: 106.8280,
+    capacityKwp: 9.8,
+    ridge: 12.0,
+    slope: 7.0,
+    shape: "rectangle",
+    deg: 4,
+  },
+  {
+    id: "proj-menteng",
+    name: "Menteng Asri",
+    address: "Jl. Terapi Raya No. 12, Menteng, Bogor Barat",
+    lat: -6.5825,
+    lon: 106.7760,
+    capacityKwp: 8.3,
+    ridge: 12.48,
+    slope: 7.28,
+    shape: "rectangle",
+    deg: -4,
   },
 ];
 
@@ -304,8 +304,8 @@ export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
     pitch: 22,
     azimuth: 188,
     rotation: -4,
-    lat: -6.595038,
-    lng: 106.797241,
+    lat: -6.6110,
+    lng: 106.8150,
     offsetX: 0,
     offsetY: 0,
     vertices: [
@@ -325,8 +325,8 @@ export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
     pitch: 18,
     azimuth: 98,
     rotation: -4,
-    lat: -6.59495,
-    lng: 106.79742,
+    lat: -6.61092,
+    lng: 106.81518,
     offsetX: 160,
     offsetY: 45,
     vertices: [
@@ -346,8 +346,8 @@ export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
     pitch: 15,
     azimuth: 180,
     rotation: -4,
-    lat: -6.59518,
-    lng: 106.79712,
+    lat: -6.61114,
+    lng: 106.81488,
     offsetX: -120,
     offsetY: 110,
     vertices: [
@@ -367,8 +367,8 @@ export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
     pitch: 20,
     azimuth: 190,
     rotation: 12,
-    lat: -6.59482,
-    lng: 106.79768,
+    lat: -6.61085,
+    lng: 106.81535,
     offsetX: 240,
     offsetY: -65,
     vertices: [
@@ -388,8 +388,8 @@ export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
     pitch: 22,
     azimuth: 184,
     rotation: -8,
-    lat: -6.59536,
-    lng: 106.79735,
+    lat: -6.61125,
+    lng: 106.81510,
     offsetX: 70,
     offsetY: 175,
     vertices: [
@@ -875,16 +875,16 @@ const INITIAL_FACETS: RoofFacet[] = [
   {
     id: "facet-1",
     name: "Bidang Atap Utama",
-    shape: "trapezoid",
-    ridge: 11.8,
-    slope: 7.2,
-    pitch: 24,
+    shape: "rectangle",
+    ridge: 12.48,
+    slope: 7.28,
+    pitch: 22,
     azimuth: 188,
     setback: 0.5,
     gutter: 0.6,
     rotation: -4,
-    lat: -6.595038,
-    lng: 106.797241,
+    lat: -6.6110,
+    lng: 106.8150,
     offsetX: 0,
     offsetY: 0,
     hasHvac: true,
@@ -895,10 +895,10 @@ const INITIAL_FACETS: RoofFacet[] = [
     slotOverrides: {},
     customModuleCount: null,
     vertices: [
-      { x: -5.0, y: -3.6 },
-      { x: 5.0, y: -3.6 },
-      { x: 5.9, y: 3.6 },
-      { x: -5.9, y: 3.6 },
+      { x: -6.24, y: -3.64 },
+      { x: 6.24, y: -3.64 },
+      { x: 6.24, y: 3.64 },
+      { x: -6.24, y: 3.64 },
     ],
     alignToAzimuth: true,
     isSolarPopulated: false,
@@ -906,16 +906,16 @@ const INITIAL_FACETS: RoofFacet[] = [
   {
     id: "facet-2",
     name: "Bidang Atap Sayap Timur",
-    shape: "custom_polygon",
-    ridge: 7.6,
+    shape: "rectangle",
+    ridge: 7.5,
     slope: 4.8,
-    pitch: 20,
+    pitch: 18,
     azimuth: 98,
     setback: 0.4,
     gutter: 0.5,
     rotation: -4,
-    lat: -6.59495,
-    lng: 106.79742,
+    lat: -6.61092,
+    lng: 106.81518,
     offsetX: 155,
     offsetY: 40,
     hasHvac: false,
@@ -926,10 +926,10 @@ const INITIAL_FACETS: RoofFacet[] = [
     slotOverrides: {},
     customModuleCount: null,
     vertices: [
-      { x: -3.8, y: -2.4 },
-      { x: 3.2, y: -2.4 },
-      { x: 3.8, y: 2.4 },
-      { x: -3.4, y: 2.4 },
+      { x: -3.75, y: -2.4 },
+      { x: 3.75, y: -2.4 },
+      { x: 3.75, y: 2.4 },
+      { x: -3.75, y: 2.4 },
     ],
     alignToAzimuth: true,
     isSolarPopulated: false,
@@ -1177,7 +1177,7 @@ function StudioPageContent() {
   const [mascotGuideOpen, setMascotGuideOpen] = useState(true);
 
   // Address search input (Defaulted to Kota Bogor)
-  const [addressInput, setAddressInput] = useState("Jl. Pajajaran No. 42, Bogor Tengah, Kota Bogor");
+  const [addressInput, setAddressInput] = useState("Komp. Baranangsiang Indah Blok C, Bogor Timur, Kota Bogor");
 
   // Mouse HUD for Radiometer
   const [probePos, setProbePos] = useState<{ x: number; y: number } | null>(null);
@@ -1617,8 +1617,8 @@ function StudioPageContent() {
       }
 
       // Geo-coordinates projection from Leaflet map
-      let targetLat = activeFacet.lat || -6.595038;
-      let targetLng = activeFacet.lng || 106.797241;
+      let targetLat = activeFacet.lat || -6.6110;
+      let targetLng = activeFacet.lng || 106.8150;
       if (mapInstanceRef.current && (window as any).L) {
         try {
           const L = (window as any).L;
@@ -1771,8 +1771,8 @@ function StudioPageContent() {
       setback: 0.5,
       gutter: 0.5,
       rotation: activeFacet.rotation || -4,
-      lat: (activeFacet.lat || -6.595038) - 0.00008,
-      lng: (activeFacet.lng || 106.797241) + 0.00012,
+      lat: (activeFacet.lat || -6.6110) - 0.00008,
+      lng: (activeFacet.lng || 106.8150) + 0.00012,
       offsetX: activeFacet.offsetX + 150,
       offsetY: activeFacet.offsetY + 70,
       hasHvac: false,
@@ -2058,7 +2058,7 @@ function StudioPageContent() {
   const handleUseGps = () => {
     if (!navigator.geolocation) {
       showToast("Geolokasi tidak didukung oleh peramban, menggunakan lokasi simulasi.");
-      triggerGpsDetectionFlow(-6.595038, 106.797241);
+      triggerGpsDetectionFlow(-6.6110, 106.8150);
       setSearchOpen(false);
       return;
     }
@@ -2073,7 +2073,7 @@ function StudioPageContent() {
       (err) => {
         setIsGpsLoading(false);
         showToast("Izin GPS tidak aktif, memuat lokasi simulasi.");
-        triggerGpsDetectionFlow(-6.595038, 106.797241);
+        triggerGpsDetectionFlow(-6.6110, 106.8150);
         setSearchOpen(false);
       },
       { timeout: 8000, enableHighAccuracy: true }
@@ -2090,8 +2090,8 @@ function StudioPageContent() {
       const lngParam = sp.get("lng");
 
       if (mode === "gps") {
-        const lat = latParam ? parseFloat(latParam) : -6.595038;
-        const lng = lngParam ? parseFloat(lngParam) : 106.797241;
+        const lat = latParam ? parseFloat(latParam) : -6.6110;
+        const lng = lngParam ? parseFloat(lngParam) : 106.8150;
         triggerGpsDetectionFlow(lat, lng);
         return;
       }
@@ -2135,10 +2135,10 @@ function StudioPageContent() {
       if (!container || mapInstanceRef.current) return;
 
       try {
-        const pLat = searchParams.get("lat") ? Number(searchParams.get("lat")) : -6.595038;
-        const pLng = searchParams.get("lng") ? Number(searchParams.get("lng")) : 106.797241;
+        const pLat = searchParams.get("lat") ? Number(searchParams.get("lat")) : -6.6110;
+        const pLng = searchParams.get("lng") ? Number(searchParams.get("lng")) : 106.8150;
         const map = L.map("studio-leaflet-map", {
-          center: [!isNaN(pLat) ? pLat : -6.595038, !isNaN(pLng) ? pLng : 106.797241],
+          center: [!isNaN(pLat) ? pLat : -6.6110, !isNaN(pLng) ? pLng : 106.8150],
           zoom: 21,
           maxZoom: 22,
           minZoom: 16,
@@ -2302,15 +2302,15 @@ function StudioPageContent() {
       return;
     }
 
-    if (q.includes("menteng")) {
-      const lat = -6.595038;
-      const lon = 106.797241;
+    if (q.includes("baranangsiang")) {
+      const lat = -6.6110;
+      const lon = 106.8150;
       if (mapInstanceRef.current) {
         mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.2 });
       }
-      updateActiveFacet({ lat, lng: lon, name: "Menteng Residence" });
-      setAddressInput("Menteng Residence, Bogor Tengah");
-      showToast("Lokasi: Menteng Residence, Bogor Tengah");
+      updateActiveFacet({ lat, lng: lon, name: "Baranangsiang Indah" });
+      setAddressInput("Komp. Baranangsiang Indah Blok C, Bogor Timur");
+      showToast("Lokasi: Baranangsiang Indah, Bogor Timur");
       return;
     }
 
@@ -2341,14 +2341,14 @@ function StudioPageContent() {
   };
 
   const handleResetSearch = () => {
-    const defaultAddress = "Jl. Pajajaran No. 42, Bogor Tengah";
-    const defaultLat = -6.595038;
-    const defaultLng = 106.797241;
+    const defaultAddress = "Komp. Baranangsiang Indah Blok C, Bogor Timur";
+    const defaultLat = -6.6110;
+    const defaultLng = 106.8150;
     setAddressInput(defaultAddress);
     updateActiveFacet({
       lat: defaultLat,
       lng: defaultLng,
-      name: "Menteng Residence",
+      name: "Baranangsiang Indah",
     });
     if (mapInstanceRef.current) {
       mapInstanceRef.current.flyTo([defaultLat, defaultLng], 21, { duration: 1.2 });
@@ -4754,7 +4754,7 @@ function StudioPageContent() {
                                 </span>
                               </div>
                               <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[8.5px] font-bold font-code-metric shrink-0">
-                                {shapeLabel}
+                                {fMetrics.grossArea.toFixed(1)} m²
                               </span>
                             </div>
 
@@ -4825,8 +4825,8 @@ function StudioPageContent() {
                             facet.rotation,
                             facet.offsetX,
                             facet.offsetY,
-                            facet.lat || -6.595038,
-                            facet.lng || 106.797241
+                            facet.lat || -6.6110,
+                            facet.lng || 106.8150
                           )
                         }
                       >
@@ -4838,215 +4838,6 @@ function StudioPageContent() {
                         </div>
                         <div className="w-px h-3 bg-slate-400/80" />
                       </div>
-
-                      {/* Figma-Style Dynamic Vertex Handles & Edge Midpoint Add Buttons */}
-                      {cadTool === "delete_vertex" ? (
-                        <>
-                          {/* Dedicated Vertex Deletion Handles */}
-                          {facetVerts.map((v, idx) => {
-                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
-                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
-                            const canDelete = facetVerts.length > 3;
-                            return (
-                              <div
-                                key={`v-del-${idx}`}
-                                className={`cad-handle absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-lg flex items-center justify-center cursor-pointer group border-2 border-white z-40 transition-transform ${
-                                  canDelete
-                                    ? "bg-rose-500 hover:bg-rose-600 text-white ring-4 ring-rose-400/80 hover:scale-130 animate-pulse"
-                                    : "bg-slate-400 text-slate-200 ring-2 ring-slate-300 cursor-not-allowed opacity-60"
-                                }`}
-                                style={{ left: `${vx}px`, top: `${vy}px` }}
-                                title={
-                                  canDelete
-                                    ? `Simpul ${idx + 1} (${v.x.toFixed(1)}m, ${v.y.toFixed(1)}m). Klik untuk menghapus titik ini.`
-                                    : "Minimal poligon harus memiliki 3 simpul!"
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (canDelete) {
-                                    deleteVertex(idx);
-                                  } else {
-                                    showToast("Minimal poligon harus memiliki 3 simpul!");
-                                  }
-                                }}
-                              >
-                                <span className="material-symbols-outlined text-[13px] font-bold">close</span>
-                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-rose-950/95 text-[8.5px] font-bold text-rose-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
-                                  Hapus P{idx + 1}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </>
-                      ) : cadTool === "edit_polygon" ? (
-                        <>
-                          {/* 1. All Polygon Vertices (Draggable Cyan Handles) */}
-                          {facetVerts.map((v, idx) => {
-                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
-                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
-                            return (
-                              <div
-                                key={`v-${idx}`}
-                                className="cad-handle absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg flex items-center justify-center cursor-move group border-2 border-white hover:scale-125 transition-transform z-35 ring-4 ring-cyan-300/80 animate-pulse pointer-events-auto"
-                                style={{ left: `${vx}px`, top: `${vy}px` }}
-                                title={`Simpul ${idx + 1} (${v.x.toFixed(2)}m, ${v.y.toFixed(2)}m). Geser untuk ubah bentuk, dobel klik untuk hapus.`}
-                                onMouseDown={(e) => startVertexDrag(e, facet.id, idx)}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteVertex(idx);
-                                }}
-                              >
-                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-900/90 text-[8.5px] font-bold text-cyan-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
-                                  P{idx + 1} ({v.x.toFixed(1)}m, {v.y.toFixed(1)}m)
-                                </span>
-                              </div>
-                            );
-                          })}
-
-                          {/* 2. Edge Midpoints: (+) Add Vertex Button Centered Precisely on the Edge Line */}
-                          {facetVerts.map((v1, idx) => {
-                            const v2 = facetVerts[(idx + 1) % facetVerts.length];
-                            const mx = polyWidth / 2 + ((v1.x + v2.x) / 2) * pixelsPerMeter;
-                            const my = polyHeight / 2 + ((v1.y + v2.y) / 2) * pixelsPerMeter;
-                            const edgeLen = Math.hypot(v2.x - v1.x, v2.y - v1.y);
-                            const edgePx = edgeLen * pixelsPerMeter;
-
-                            // Prevent overlapping clutter when edge is small on screen
-                            if (edgePx < 24) return null;
-
-                            return (
-                              <div
-                                key={`edge-${idx}`}
-                                className="absolute -translate-x-1/2 -translate-y-1/2 z-35 pointer-events-auto flex items-center justify-center group/edge"
-                                style={{ left: `${mx}px`, top: `${my}px` }}
-                              >
-                                {/* Exact Real-World Length Badge positioned slightly above, centered horizontally */}
-                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-slate-900/95 text-cyan-200 font-code-metric text-[8px] font-bold shadow-xs whitespace-nowrap border border-cyan-400/40 pointer-events-none opacity-90 group-hover/edge:opacity-100 transition-opacity">
-                                  {edgeLen.toFixed(1)}m
-                                </span>
-
-                                {/* Figma-style (+) button dead center on (mx, my) exactly on the line! */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    addVertexAtEdge(idx);
-                                  }}
-                                  className="w-5 h-5 rounded-full bg-white text-cyan-700 border-2 border-cyan-500 shadow-md flex items-center justify-center text-xs font-black hover:scale-125 hover:bg-cyan-50 active:scale-95 transition-all cursor-pointer ring-2 ring-cyan-200/70"
-                                  title={`Klik untuk menambah titik simpul baru tepat di garis sisi ini (${edgeLen.toFixed(1)}m)`}
-                                >
-                                  +
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </>
-                      ) : facet.shape !== "rectangle" ? (
-                        <>
-                          {/* Exact Vertex Points for Custom / Non-rectangular Polygons in Select/Move mode */}
-                          {facetVerts.map((v, idx) => {
-                            const vx = polyWidth / 2 + v.x * pixelsPerMeter;
-                            const vy = polyHeight / 2 + v.y * pixelsPerMeter;
-                            return (
-                              <div
-                                key={`v-sel-${idx}`}
-                                className="cad-handle absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-lg flex items-center justify-center cursor-move group border-2 border-white hover:scale-125 transition-transform z-35 ring-4 ring-cyan-300/80 pointer-events-auto"
-                                style={{ left: `${vx}px`, top: `${vy}px` }}
-                                title={`Simpul ${idx + 1} (${v.x.toFixed(1)}m, ${v.y.toFixed(1)}m). Geser titik ini untuk menyesuaikan bentuk.`}
-                                onMouseDown={(e) => startVertexDrag(e, facet.id, idx)}
-                              >
-                                <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-slate-900/90 text-[8.5px] font-bold text-cyan-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-xs">
-                                  P{idx + 1}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </>
-                      ) : (
-                        <>
-                          {/* Standard Corner Handles when in Select mode */}
-                          <div
-                            className="cad-handle absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20"
-                            title="Tarik Sudut Kiri-Atas"
-                          >
-                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                          </div>
-                          <div
-                            className="cad-handle absolute -top-2 -right-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20"
-                            title="Tarik Sudut Kanan-Atas"
-                          >
-                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                          </div>
-                          <div
-                            className="cad-handle absolute -bottom-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nesw-resize group border-2 border-white hover:scale-125 transition-all z-20"
-                            title="Tarik Sudut Kiri-Bawah"
-                          >
-                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                          </div>
-                          <div
-                            className="cad-handle absolute -bottom-2 -right-2 w-5 h-5 rounded-full bg-cyan-400 shadow-md flex items-center justify-center cursor-nwse-resize group border-2 border-white hover:scale-125 transition-all z-20"
-                            title="Tarik Sudut Kanan-Bawah untuk Merubah Panjang & Lebar Atap"
-                            onMouseDown={(e) =>
-                              startDrag(
-                                e,
-                                facet.id,
-                                "br",
-                                facet.ridge,
-                                facet.slope,
-                                facet.rotation,
-                                facet.offsetX,
-                                facet.offsetY,
-                                facet.lat || -6.595038,
-                                facet.lng || 106.797241
-                              )
-                            }
-                          >
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                          </div>
-                          <div
-                            className="cad-handle absolute top-1/2 -right-2.5 -translate-y-1/2 w-4 h-6 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ew-resize hover:scale-110 transition-all z-20"
-                            title="Tarik Sisi Kanan (Ubah Panjang/Ridge)"
-                            onMouseDown={(e) =>
-                              startDrag(
-                                e,
-                                facet.id,
-                                "r",
-                                facet.ridge,
-                                facet.slope,
-                                facet.rotation,
-                                facet.offsetX,
-                                facet.offsetY,
-                                facet.lat || -6.595038,
-                                facet.lng || 106.797241
-                              )
-                            }
-                          >
-                            <div className="w-0.5 h-3 bg-white rounded-full" />
-                          </div>
-                          <div
-                            className="cad-handle absolute left-1/2 -bottom-2.5 -translate-x-1/2 w-6 h-4 rounded bg-sky-500 border border-white shadow-md flex items-center justify-center cursor-ns-resize hover:scale-110 transition-all z-20"
-                            title="Tarik Sisi Bawah (Ubah Lebar/Slope)"
-                            onMouseDown={(e) =>
-                              startDrag(
-                                e,
-                                facet.id,
-                                "b",
-                                facet.ridge,
-                                facet.slope,
-                                facet.rotation,
-                                facet.offsetX,
-                                facet.offsetY,
-                                facet.lat || -6.595038,
-                                facet.lng || 106.797241
-                              )
-                            }
-                          >
-                            <div className="w-3 h-0.5 bg-white rounded-full" />
-                          </div>
-                        </>
-                      )}
                     </>
                   )}
                 </div>

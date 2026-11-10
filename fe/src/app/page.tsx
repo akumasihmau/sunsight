@@ -411,7 +411,7 @@ const SAVED_PROJECTS: SavedRoofProject[] = [
 ];
 
 const BOGOR_MAP_SPOTS = [
-  { id: "bogor-tengah", name: "Bogor Tengah", landmark: "Jl. Pajajaran & Kebun Raya", lat: -6.5975, lng: 106.7970, irr: 4.85, x: 50, y: 48 },
+  { id: "bogor-tengah", name: "Bogor Tengah", landmark: "Jl. Pajajaran & Babakan", lat: -6.5890, lng: 106.7970, irr: 4.85, x: 50, y: 48 },
   { id: "bogor-timur", name: "Bogor Timur", landmark: "Komp. Baranangsiang Indah", lat: -6.6110, lng: 106.8150, irr: 4.89, x: 68, y: 62 },
   { id: "bogor-barat", name: "Bogor Barat", landmark: "Taman Yasmin Sektor 3", lat: -6.5615, lng: 106.7640, irr: 4.82, x: 28, y: 35 },
   { id: "bogor-utara", name: "Bogor Utara", landmark: "Bantarjati & Bangbarung", lat: -6.5780, lng: 106.8080, irr: 4.86, x: 56, y: 26 },
@@ -819,14 +819,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
             {facet.slopeM} m
           </text>
         </g>
-
-        {/* CAD Vector Vertices (Control points created by user) */}
-        {points.map(([x, y], idx) => (
-          <g key={`vertex-${idx}`} className="cursor-pointer">
-            <circle cx={x} cy={y} r="4.5" fill="#ffffff" stroke="#2563eb" strokeWidth="1.5" />
-            <circle cx={x} cy={y} r="1.8" fill="#2563eb" />
-          </g>
-        ))}
       </svg>
     </div>
   );
@@ -1123,10 +1115,10 @@ function HomePageContent() {
   // Interactive Location & Geolocation States
   const [activeLocation, setActiveLocation] = useState({
     name: "Kota Bogor, Jawa Barat",
-    district: "Bogor Tengah",
-    lat: -6.5950,
-    lng: 106.7972,
-    irradiance: 4.85,
+    district: "Bogor Timur",
+    lat: -6.6110,
+    lng: 106.8150,
+    irradiance: 4.89,
     source: "Default Regional" as "GPS" | "Search" | "Map" | "Default Regional",
   });
   const [isGpsLoading, setIsGpsLoading] = useState(false);
@@ -1162,7 +1154,7 @@ function HomePageContent() {
       (err) => {
         setIsGpsLoading(false);
         showToast(`Membuka Studio CAD dengan koordinat GPS default...`);
-        router.push("/studio?mode=gps&lat=-6.595038&lng=106.797241");
+        router.push("/studio?mode=gps&lat=-6.6110&lng=106.8150");
       },
       { timeout: 8000, enableHighAccuracy: true }
     );
@@ -2195,7 +2187,7 @@ function HomePageContent() {
                         <div>
                           <span className="text-[10px] text-slate-400 block">Dimensi</span>
                           <span className="font-medium text-slate-900 block truncate">{proj.dimensions}</span>
-                          <span className="text-[10px] text-slate-400">{proj.shapeLabel}</span>
+                          <span className="text-[10px] text-slate-400">Area {proj.effectiveAreaPct}%</span>
                         </div>
                         <div>
                           <span className="text-[10px] text-slate-400 block">Kapasitas</span>
