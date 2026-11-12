@@ -26,7 +26,11 @@ import {
 } from "@/lib/api";
 import { formatRp } from "@/lib/format";
 import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/profile";
-import { captureMapForDetection } from "@/lib/roofCapture";
+import {
+  RECOMMENDED_MAX_FOOTPRINT_M,
+  RECOMMENDED_MIN_FOOTPRINT_M,
+  captureMapForDetection,
+} from "@/lib/roofCapture";
 
 type CvLayer = "satellite" | "cv" | "heatmap";
 type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
@@ -1620,6 +1624,32 @@ function StudioPageContent() {
         layer: esriSatelliteLayerRef.current,
       });
 
+      // Cakupan yang tampil diperiksa, bukan dipaksakan: zoom tidak diubah, jadi
+      // pengguna yang memutuskan apakah area seluas ini masih layak dipindai.
+      if (
+        capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ||
+        capture.footprintM > RECOMMENDED_MAX_FOOTPRINT_M
+      ) {
+        // Cakupan di luar rentang bukan alasan menolak, tetapi hasilnya memang
+        // menurun tajam: pada 90 m model hanya menemukan satu bidang (confidence
+        // 0,45) sedangkan pada 150-300 m ditemukan 8-12 bidang (0,72-0,78).
+        // Karena itu pengguna diberi pilihan, bukan dipaksa.
+        const zoomHint =
+          capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
+            ? "Perkecil zoom peta (zoom keluar) agar atap lebih banyak terbaca."
+            : "Perbesar zoom peta agar atap terbaca lebih jelas.";
+
+        const proceed = window.confirm(
+          `Cakupan peta ${capture.footprintM} m. Hasil terbaik ada di sekitar ` +
+            `${RECOMMENDED_MIN_FOOTPRINT_M}-${RECOMMENDED_MAX_FOOTPRINT_M} m. ${zoomHint}\n\n` +
+            `Pindai tetap?`
+        );
+
+        if (!proceed) {
+          setIsAiScanning(false);
+          return;
+        }
+      }
 
       const response = await api.detectRoofs({
         blob: capture.blob,

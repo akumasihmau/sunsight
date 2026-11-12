@@ -37,6 +37,8 @@ export type CapturedMap = {
   bbox: BoundingBox;
   /** Zoom yang benar-benar dipakai saat menggambar. */
   zoom: number;
+  /** Cakupan geografis sisi terpanjang berkas, dalam meter. */
+  footprintM: number;
 };
 
 export type CaptureMapOptions = {
@@ -54,6 +56,10 @@ export const CAPTURE_NOT_READY_ERROR =
   "Peta belum siap. Tunggu peta selesai dimuat, lalu pindai ulang.";
 export const CAPTURE_EMPTY_ERROR =
   "Tidak ada ubin satelit yang tampil di area ini. Geser peta ke atas atap, lalu pindai ulang.";
+export const CAPTURE_TILES_TIMEOUT_ERROR =
+  "Ubin citra satelit belum selesai dimuat. Tunggu koneksi stabil, lalu pindai ulang.";
+export const captureTooWideError = (footprintM: number): string =>
+  `Cakupan peta ${footprintM} m terlalu luas untuk deteksi atap. Perbesar peta sampai sekitar 200 m, lalu pindai ulang.`;
 export const CAPTURE_TOO_SMALL_ERROR =
   "Area peta terlalu kecil untuk dipindai. Perbesar jendela peramban, lalu pindai ulang.";
 
@@ -83,26 +89,27 @@ type MapLike = {
   _panAnim?: { _inProgress?: boolean };
 };
 
-/** Persegi tangkapan, dalam piksel CSS. */
-const MIN_CAPTURE_SIDE_PX = 512;
-const MAX_CAPTURE_SIDE_PX = 768;
+/** Sisi terpanjang berkas tangkapan, dalam piksel. Di atas ini tidak menambah detail. */
+const MAX_CAPTURE_SIDE_PX = 1280;
 
-/** Cakupan terbaik menurut pengukuran model, dalam meter. */
-const MIN_FOOTPRINT_M = 180;
-const MAX_FOOTPRINT_M = 230;
-const TARGET_FOOTPRINT_M = 200;
+/** Sisi terpendek yang masih layak dikirim. */
+const MIN_CAPTURE_SIDE_PX = 320;
 
-/** Zoom terendah yang masih masuk akal untuk deteksi atap perumahan. */
-const MIN_CAPTURE_ZOOM = 15;
+/**
+ * Rentang cakupan yang paling baik menurut pengukuran model, dalam meter.
+ * Diperiksa dan dilaporkan, bukan dipaksakan: yang tampil di layar tetap yang dikirim.
+ */
+export const RECOMMENDED_MIN_FOOTPRINT_M = 150;
+export const RECOMMENDED_MAX_FOOTPRINT_M = 260;
 
-/** Zoom tertinggi yang ubinnya masih punya detail asli. */
-const MAX_CAPTURE_ZOOM = 19;
+/** Di atas ini pemindaian hampir pasti tidak menghasilkan apa pun, jadi ditolak. */
+export const MAX_FOOTPRINT_M = 800;
 
 /** Panjang garis ukur untuk menaksir skala layar, dalam piksel. */
 const SCALE_PROBE_PX = 100;
 
 const DEFAULT_QUALITY = 0.82;
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_TIMEOUT_MS = 20_000;
 const SETTLE_POLL_MS = 120;
 
 /** Batas dimensi berkas menurut kontrak (`width`/`height` 64 s.d. 4096). */
@@ -154,7 +161,7 @@ async function waitForReadyTiles(
   layer: TileLayerLike,
   captureZoom: number,
   timeoutMs: number,
-): Promise<void> {
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let previousKey = "";
 
@@ -181,11 +188,15 @@ async function waitForReadyTiles(
       map.getZoom() === captureZoom &&
       key === previousKey
     ) {
-      return;
+      return true;
     }
 
     previousKey = key;
   }
+
+  // Waktu habis. Pemanggil memutuskan apakah tangkapan masih layak dipakai; yang
+  // penting kegagalan ini tidak lagi diam-diam.
+  return false;
 }
 
 /**
@@ -200,6 +211,7 @@ function drawTiles(
   layer: TileLayerLike,
   offsetX: number,
   offsetY: number,
+  scale = 1,
 ): number {
   const container = map.getContainer();
   const containerRect = container.getBoundingClientRect();
@@ -219,12 +231,15 @@ function drawTiles(
       continue;
     }
 
+    // `scale` < 1 hanya dipakai bila viewport lebih besar dari batas berkas:
+    // gambar diperkecil, bukan dipotong, supaya area yang dikirim tetap seluas
+    // yang terlihat.
     context.drawImage(
       image,
-      rect.left - originX - offsetX,
-      rect.top - originY - offsetY,
-      rect.width,
-      rect.height,
+      (rect.left - originX - offsetX) * scale,
+      (rect.top - originY - offsetY) * scale,
+      rect.width * scale,
+      rect.height * scale,
     );
 
     drawn += 1;
@@ -276,7 +291,7 @@ function toJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
  * Menunggu animasi peta (`flyTo`, zoom beranimasi) selesai sebelum skala diukur,
  * supaya cakupan yang dihitung bukan cakupan di tengah animasi.
  */
-async function waitForSettledView(map: MapLike, timeoutMs: number): Promise<void> {
+async function waitForSettledView(map: MapLike, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let previousKey = "";
 
@@ -288,58 +303,25 @@ async function waitForSettledView(map: MapLike, timeoutMs: number): Promise<void
     const key = `${map.getZoom()}|${center.lat}|${center.lng}`;
 
     if (!animating && key === previousKey) {
-      return;
+      return true;
     }
 
     previousKey = key;
   }
+
+  // Waktu habis. Pemanggil memutuskan apakah tangkapan masih layak dipakai; yang
+  // penting kegagalan ini tidak lagi diam-diam.
+  return false;
 }
 
 /**
- * Zoom tangkapan yang membuat persegi selebar `side` menutupi 180–230 m.
+ * Menangkap seluruh area peta yang sedang tampil sebagai JPEG untuk model.
  *
- * Zoom saat ini dipertahankan bila cakupannya sudah masuk rentang; kalau tidak,
- * dipilih zoom terdekat dalam `[MIN_CAPTURE_ZOOM, MAX_CAPTURE_ZOOM]`. Batas atas
- * diperlukan karena ubin di atas zoom native tidak menambah detail.
- */
-function chooseCaptureZoom(
-  currentZoom: number,
-  side: number,
-  metersPerPixel: number,
-): number {
-  const footprintAt = (zoom: number) =>
-    side * metersPerPixel * 2 ** (currentZoom - zoom);
-
-  const currentFootprint = footprintAt(currentZoom);
-
-  if (currentFootprint >= MIN_FOOTPRINT_M && currentFootprint <= MAX_FOOTPRINT_M) {
-    return Math.round(currentZoom);
-  }
-
-  let bestZoom = clamp(Math.round(currentZoom), MIN_CAPTURE_ZOOM, MAX_CAPTURE_ZOOM);
-  let bestDistance = Math.abs(Math.log(footprintAt(bestZoom) / TARGET_FOOTPRINT_M));
-
-  for (let zoom = MIN_CAPTURE_ZOOM; zoom <= MAX_CAPTURE_ZOOM; zoom += 1) {
-    const distance = Math.abs(Math.log(footprintAt(zoom) / TARGET_FOOTPRINT_M));
-
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestZoom = zoom;
-    }
-  }
-
-  return bestZoom;
-}
-
-/**
- * Menangkap persegi di tengah peta sebagai JPEG yang siap dikirim ke model.
- *
- * View pengguna dipulihkan sebelum fungsi ini selesai, termasuk saat tangkapan
- * gagal, sehingga peta tetap bisa dipakai. Yang dikembalikan adalah berkas
- * beserta `bbox` persegi tangkapan; pratinjau hasilnya ditampilkan pemanggil
- * sebagai `L.imageOverlay` memakai `bbox` yang sama, jadi area yang dilihat
- * pengguna selalu sama dengan area yang dikirim ke model meskipun zoom sempat
- * disesuaikan.
+ * Zoom tidak diubah dan area tidak dipotong: yang terlihat pengguna persis yang
+ * dikirim, dan `bbox` hasilnya dipakai pemanggil untuk menggambar ulang tangkapan
+ * sebagai `L.imageOverlay`. Cakupan geografisnya ikut dikembalikan supaya pemanggil
+ * dapat memperingatkan ketika terlalu luas atau terlalu sempit, bukan memaksakan
+ * zoom sendiri.
  */
 export async function captureMapForDetection(
   map: MapLike,
@@ -359,80 +341,90 @@ export async function captureMapForDetection(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const size = map.getSize();
-  const available = Math.min(Math.round(size.x), Math.round(size.y));
-  const side = Math.min(
-    clamp(available, MIN_CAPTURE_SIDE_PX, MAX_CAPTURE_SIDE_PX),
-    available,
-  );
+  const availW = Math.round(size.x);
+  const availH = Math.round(size.y);
 
-  if (side < MIN_IMAGE_SIDE_PX) {
+  if (Math.min(availW, availH) < MIN_CAPTURE_SIDE_PX) {
     throw new Error(CAPTURE_TOO_SMALL_ERROR);
   }
 
-  const savedCenter = map.getCenter();
-  const savedZoom = map.getZoom();
+  // Seluruh viewport ditangkap, jadi tidak ada zoom yang dipaksakan: yang tampil
+  // di layar persis yang dikirim ke model.
+  const scale = Math.min(1, MAX_CAPTURE_SIDE_PX / Math.max(availW, availH));
+  const width = Math.max(1, Math.round(availW * scale));
+  const height = Math.max(1, Math.round(availH * scale));
 
-  // Animasi peta (mis. `flyTo` dari alur GPS) harus selesai sebelum skala diukur.
+  // Animasi peta (mis. `flyTo` dari alur GPS) harus selesai sebelum ubin digambar.
   await waitForSettledView(map, Math.min(timeoutMs, 5_000));
 
-  const captureZoom = chooseCaptureZoom(savedZoom, side, measureMetersPerPixel(map, size));
-  let effectiveZoom = captureZoom;
+  // Zoom tidak diubah sama sekali.
+  //
+  // Penyesuaian zoom di titik ini terbukti gagal dengan cara yang tidak terlihat:
+  // setelah `setView`, Leaflet mempertahankan ubin lama, penungguan ubin baru
+  // habis waktunya, dan tidak ada satu pun permintaan terkirim. Karena itu yang
+  // dikirim adalah persis yang tampil di layar, dan cakupannya dilaporkan ke
+  // pemanggil supaya pengguna yang memutuskan.
+  const zoom = Math.round(map.getZoom());
 
-  try {
-    if (captureZoom !== savedZoom) {
-      map.setView(savedCenter, captureZoom, { animate: false });
-      // Leaflet menjepit zoom ke `minZoom`/`maxZoom` peta, jadi nilai efektifnya
-      // dibaca ulang agar penungguan ubin memakai target yang benar.
-      effectiveZoom = Math.round(map.getZoom());
-    }
+  const tilesReady = await waitForReadyTiles(map, layer, zoom, timeoutMs);
 
-    await waitForReadyTiles(map, layer, effectiveZoom, timeoutMs);
+  const images = tileImages(layer);
 
-    const images = tileImages(layer);
-
-    if (images.length === 0) {
-      throw new Error(CAPTURE_EMPTY_ERROR);
-    }
-
-    // Ubin yang gagal dimuat tetap `complete` tetapi tanpa piksel; itu tanda CORS
-    // atau jaringan bermasalah, dan mengekspornya akan menghasilkan gambar kosong.
-    if (images.some((image) => !image.complete || image.naturalWidth === 0)) {
-      throw new Error(CAPTURE_CORS_ERROR);
-    }
-
-    const offsetX = Math.round((size.x - side) / 2);
-    const offsetY = Math.round((size.y - side) / 2);
-
-    const canvas = document.createElement("canvas");
-    // DPR sengaja dipaksa 1 supaya ukuran berkas sama dengan satuan piksel yang
-    // dikirim ke server dan tidak ada resize tambahan sebelum unggah.
-    canvas.width = side;
-    canvas.height = side;
-
-    const context = canvas.getContext("2d");
-
-    if (context === null) {
-      throw new Error(CAPTURE_NOT_READY_ERROR);
-    }
-
-    // Latar gelap senada satelit supaya celah antar ubin tidak memutih.
-    context.fillStyle = "#0f172a";
-    context.fillRect(0, 0, side, side);
-
-    if (drawTiles(context, map, layer, offsetX, offsetY) === 0) {
-      throw new Error(CAPTURE_EMPTY_ERROR);
-    }
-
-    const topLeft = map.containerPointToLatLng({ x: offsetX, y: offsetY });
-    const bottomRight = map.containerPointToLatLng({ x: offsetX + side, y: offsetY + side });
-    const bbox: BoundingBox = [topLeft.lng, bottomRight.lat, bottomRight.lng, topLeft.lat];
-
-    const blob = await toJpegBlob(canvas, quality);
-
-    return { blob, width: side, height: side, bbox, zoom: effectiveZoom };
-  } finally {
-    if (effectiveZoom !== savedZoom) {
-      map.setView(savedCenter, savedZoom, { animate: false });
-    }
+  if (images.length === 0) {
+    throw new Error(CAPTURE_EMPTY_ERROR);
   }
+
+  // Ubin yang belum selesai dimuat menghasilkan potret separuh: lebih baik ditolak
+  // dengan pesan yang jelas daripada mengirim citra cacat ke model.
+  if (!tilesReady) {
+    throw new Error(CAPTURE_TILES_TIMEOUT_ERROR);
+  }
+
+  // Ubin yang gagal dimuat tetap `complete` tetapi tanpa piksel; itu tanda CORS
+  // atau jaringan bermasalah, dan mengekspornya akan menghasilkan gambar kosong.
+  if (images.some((image) => !image.complete || image.naturalWidth === 0)) {
+    throw new Error(CAPTURE_CORS_ERROR);
+  }
+
+  const canvas = document.createElement("canvas");
+  // DPR sengaja dipaksa 1 supaya ukuran berkas memakai satuan piksel yang dikirim
+  // ke server, tanpa resize tersembunyi.
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+
+  if (context === null) {
+    throw new Error(CAPTURE_NOT_READY_ERROR);
+  }
+
+  // Latar gelap senada satelit supaya celah antar ubin tidak memutih.
+  context.fillStyle = "#0f172a";
+  context.fillRect(0, 0, width, height);
+
+  const drawn = drawTiles(context, map, layer, 0, 0, scale);
+
+  if (drawn === 0) {
+    throw new Error(CAPTURE_EMPTY_ERROR);
+  }
+
+  const topLeft = map.containerPointToLatLng({ x: 0, y: 0 });
+  const bottomRight = map.containerPointToLatLng({ x: availW, y: availH });
+  const bbox: BoundingBox = [topLeft.lng, bottomRight.lat, bottomRight.lng, topLeft.lat];
+
+  // Cakupan diukur dari jarak nyata di bumi, bukan dari selisih derajat, supaya
+  // angkanya tetap benar pada lintang mana pun.
+  const metersPerPixelAtScale = Math.max(
+    0.01,
+    map.distance(topLeft, map.containerPointToLatLng({ x: SCALE_PROBE_PX, y: 0 })) / SCALE_PROBE_PX,
+  );
+  const footprintM = Math.round(Math.max(availW, availH) * metersPerPixelAtScale);
+
+  if (footprintM > MAX_FOOTPRINT_M) {
+    throw new Error(captureTooWideError(footprintM));
+  }
+
+  const blob = await toJpegBlob(canvas, quality);
+
+  return { blob, width, height, bbox, zoom, footprintM };
 }
