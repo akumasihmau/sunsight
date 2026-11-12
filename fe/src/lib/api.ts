@@ -306,6 +306,22 @@ export type SimulationDetail = {
   created_at: string;
 };
 
+/** Satu hasil pencarian alamat dari `GET /geocode`. */
+export type GeocodeResult = {
+  label: string;
+  lat: number;
+  lng: number;
+  /** Urutan `[minLng, minLat, maxLng, maxLat]`. */
+  bbox: BoundingBox;
+  source: string;
+};
+
+export type GeocodeResponse = {
+  query: string;
+  /** Kosong berarti alamat tidak ditemukan, bukan kegagalan. */
+  results: GeocodeResult[];
+};
+
 export type Paginated<T> = {
   data: T[];
   meta: { current_page: number; per_page: number; total: number; last_page: number };
@@ -563,6 +579,9 @@ export const api = {
 
     return apiUpload<RoofDetectionResponse>("/roof-detections", form);
   },
+
+  geocode: (query: string) =>
+    apiRequest<GeocodeResponse>(`/geocode?q=${encodeURIComponent(query)}`),
 
   saveSimulation: (body: SimulationRequest) =>
     USE_MOCK

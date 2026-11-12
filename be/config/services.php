@@ -54,4 +54,27 @@ return [
         'timeout' => (int) env('ML_SERVICE_TIMEOUT', 60),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Geocoding (Nominatim / OpenStreetMap)
+    |--------------------------------------------------------------------------
+    |
+    | Pencarian alamat dilakukan server, bukan peramban: kebijakan Nominatim
+    | mewajibkan identitas pemanggil yang jelas dan membatasi laju permintaan, dan
+    | hasil yang sama tidak perlu diambil ulang. Wilayah dibatasi ke Kota Bogor
+    | karena peta studio memang dibatasi di sana.
+    |
+    */
+
+    'geocode' => [
+        'url' => env('GEOCODE_URL', 'https://nominatim.openstreetmap.org'),
+        'user_agent' => env('GEOCODE_USER_AGENT', 'Sunsight/1.0 (simulasi PLTS atap)'),
+        'timeout' => (int) env('GEOCODE_TIMEOUT', 8),
+        'limit' => (int) env('GEOCODE_LIMIT', 5),
+        'cache_days' => (int) env('GEOCODE_CACHE_DAYS', 30),
+        // Kotak wilayah Kota Bogor dalam urutan kontrak [minLng, minLat, maxLng, maxLat]:
+        // lng 106,72-106,88 dan lat -6,68..-6,51.
+        'viewbox' => [106.7200, -6.6800, 106.8800, -6.5100],
+    ],
+
 ];

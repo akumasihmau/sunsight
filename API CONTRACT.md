@@ -504,6 +504,43 @@ Tiap bidang pada `roofs[]` juga memuat keadaan tampilan yang dikirim klien saat 
 { "message": "Simulation deleted successfully" }
 ```
 
+## 7b. Pencarian Alamat
+
+### `GET /geocode`
+
+Mencari alamat di wilayah Kota Bogor. Pencarian dilakukan backend, bukan peramban:
+kebijakan Nominatim mewajibkan identitas pemanggil yang jelas dan membatasi laju
+permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
+
+| Query | Aturan |
+| :---- | :---- |
+| `q` | wajib, 3 s.d. 120 karakter; kueri dinormalkan (huruf kecil, spasi dirapikan) |
+
+```json
+// 200 OK
+{
+  "query": "jl. pajajaran 42",
+  "results": [
+    {
+      "label": "Jalan Pajajaran No. 42, Bogor Tengah, Kota Bogor",
+      "lat": -6.595038,
+      "lng": 106.797241,
+      "bbox": [106.796, -6.596, 106.798, -6.594],
+      "source": "nominatim"
+    }
+  ]
+}
+```
+
+- `results: []` berarti alamat tidak ditemukan — tetap `200`, bukan `404`.
+- `bbox` selalu `[minLng, minLat, maxLng, maxLat]`.
+- Hasil dibatasi ke wilayah Kota Bogor (`viewbox` + `bounded=1`); permintaan di luar
+  wilayah itu tidak mengembalikan hasil.
+- Hasil disimpan di `geocode_cache` selama 30 hari; kueri yang sama dijawab dari cache.
+- `422` bila `q` kurang dari 3 karakter; `503` bila layanan pencarian tidak dapat dihubungi.
+- Route dibatasi `throttle:30,1` per pengguna.
+- Atribusi "© OpenStreetMap contributors" wajib ditampilkan bersama hasil.
+
 ## 8. Ringkasan Endpoint
 
 | Endpoint | Method | Auth | Sukses |
@@ -517,6 +554,7 @@ Tiap bidang pada `roofs[]` juga memuat keadaan tampilan yang dikirim klien saat 
 | `/location` | POST | Bearer | `200` |
 | `/options` | GET | Bearer | `200` |
 | `/roof-detections` | POST | Bearer | `200` |
+| `/geocode` | GET | Bearer | `200` |
 | `/simulate` | POST | Bearer | `200` |
 | `/analyses` | GET | Bearer | `200` |
 | `/analyses` | POST | Bearer | `201` |

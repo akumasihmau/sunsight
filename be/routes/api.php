@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\GeocodeController;
 use App\Http\Controllers\RoofDetectionController;
 use App\Http\Controllers\SimulationController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/location', [SimulationController::class, 'location']);
     Route::get('/options', [SimulationController::class, 'options']);
     Route::post('/roof-detections', RoofDetectionController::class);
+
+    // Pencarian alamat, dibatasi lajunya agar tidak membanjiri Nominatim.
+    Route::get('/geocode', GeocodeController::class)->middleware('throttle:30,1');
     Route::post('/simulate', [SimulationController::class, 'simulate']);
 
     // Riwayat simulasi

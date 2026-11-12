@@ -20,6 +20,7 @@ import {
   type SimulationParameters,
   type SimulationRequest,
   type SimulationResult,
+  type GeocodeResult,
   type SimulationDetail,
   type SimulationRoofInput,
 } from "@/lib/api";
@@ -772,6 +773,9 @@ const FALLBACK_FACET: RoofFacet = {
  * citra nadir arah kemiringan tidak dapat ditentukan. Keduanya diisi nilai awal
  * studio supaya panel properti langsung punya bentuk yang bisa dibaca.
  */
+/** Zoom tujuan setelah alamat ditemukan: cukup dekat untuk memilih atap. */
+const GEOCODE_TARGET_ZOOM = 19;
+
 const DEFAULT_ROOF_TILT_DEG = 22;
 const DEFAULT_ROOF_AZIMUTH_DEG = 188;
 
@@ -1215,6 +1219,10 @@ function StudioPageContent() {
    * mengosongkannya kembali menjadi pratinjau.
    */
   const [serverMetrics, setServerMetrics] = useState<SimulationDetail["result"] | null>(null);
+
+  /** Hasil pencarian alamat yang menunggu dipilih pengguna (lebih dari satu). */
+  const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
+  const [isGeocoding, setIsGeocoding] = useState(false);
   const [detectedRoofs, setDetectedRoofs] = useState<DetectedRoof[]>([]);
   const [selectedDetectedIds, setSelectedDetectedIds] = useState<string[]>([]);
   const [showDetectedRoofs, setShowDetectedRoofs] = useState(false);
@@ -2591,22 +2599,49 @@ function StudioPageContent() {
   }, []);
 
   // OSM Nominatim Geocoding & Preset Search handler (Focused on Kota Bogor & presets)
+  /**
+   * Mengeksekusi hasil pencarian alamat: peta digeser ke titik itu.
+   *
+   * Yang dipindahkan hanya pusat peta. Bidang atap tetap harus dipindai ulang,
+   * karena hasil pencarian alamat menunjukkan lokasi, bukan bentuk atapnya.
+   */
+  const applyGeocodeResult = useCallback(
+    (result: GeocodeResult) => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo([result.lat, result.lng], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
+      }
+
+      updateActiveFacet({ lat: result.lat, lng: result.lng });
+      setAddressInput(result.label);
+      setGeocodeResults([]);
+      setSearchOpen(false);
+
+      const firstPart = result.label.split(",")[0];
+      showToast(`Peta digeser ke ${firstPart}. Tekan pindai untuk memilih bidang atap.`);
+    },
+    [showToast, updateActiveFacet]
+  );
+
+  /**
+   * Mencari alamat lewat backend, bukan langsung ke Nominatim: identitas pemanggil
+   * dan batas laju ditangani server, dan hasil yang sama dijawab dari cache.
+   */
   const handleGeocodeSearch = async (query: string) => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     if (!q) return;
 
-    if (q.includes("gps") || q.includes("lokasi terkini") || q.includes("lokasi saya")) {
+    if (q.toLowerCase().includes("gps") || q.toLowerCase().includes("lokasi terkini") || q.toLowerCase().includes("lokasi saya")) {
       handleUseGps();
       return;
     }
 
-    // Check presets first for instant & accurate jump
+    // Preset Bogor tetap diutamakan: instan, dan tidak membebani layanan luar.
     const matchedPreset = PRESET_ADDRESSES.find(
-      (p) => p.label.toLowerCase().includes(q) || q.includes(p.label.toLowerCase().slice(0, 10))
+      (p) => p.label.toLowerCase().includes(q.toLowerCase()) || q.toLowerCase().includes(p.label.toLowerCase().slice(0, 10))
     );
     if (matchedPreset) {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([matchedPreset.lat, matchedPreset.lon], 21, { duration: 1.2 });
+        mapInstanceRef.current.flyTo([matchedPreset.lat, matchedPreset.lon], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
       }
       updateActiveFacet({
         lat: matchedPreset.lat,
@@ -2618,45 +2653,43 @@ function StudioPageContent() {
         name: matchedPreset.label,
       });
       setAddressInput(matchedPreset.label);
+      setGeocodeResults([]);
       showToast(`Lokasi diterapkan: ${matchedPreset.label}`);
       return;
     }
 
-    if (q.includes("baranangsiang")) {
-      const lat = -6.6110;
-      const lon = 106.8150;
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.2 });
-      }
-      updateActiveFacet({ lat, lng: lon, name: "Baranangsiang Indah" });
-      setAddressInput("Komp. Baranangsiang Indah Blok C, Bogor Timur");
-      showToast("Lokasi: Baranangsiang Indah, Bogor Timur");
+    if (q.length < 3) {
+      showToast("Tulis minimal tiga huruf untuk mencari alamat.");
       return;
     }
 
-    const searchQuery = q.includes("bogor") ? query : `${query}, Kota Bogor`;
-    showToast(`Mencari lokasi: ${searchQuery}...`);
+    setIsGeocoding(true);
+
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          searchQuery
-        )}&viewbox=106.72,-6.51,106.88,-6.68&bounded=0&limit=1`
-      );
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo([lat, lon], 21, { duration: 1.2 });
-        }
-        updateActiveFacet({ lat, lng: lon });
-        setAddressInput(data[0].display_name || searchQuery);
-        showToast(`Lokasi ditemukan: ${data[0].display_name.split(",")[0]}`);
-      } else {
-        showToast("Lokasi tidak ditemukan di OSM. Menggunakan preset Bogor.");
+      const response = await api.geocode(q);
+
+      if (response.results.length === 0) {
+        setGeocodeResults([]);
+        showToast("Alamat tidak ditemukan di Kota Bogor. Geser peta secara manual atau pakai salah satu preset.");
+        return;
       }
-    } catch {
-      showToast("Pencarian lokasi OSM siap digunakan.");
+
+      // Satu hasil langsung diterapkan; lebih dari satu ditawarkan sebagai pilihan.
+      if (response.results.length === 1) {
+        applyGeocodeResult(response.results[0]);
+        return;
+      }
+
+      setGeocodeResults(response.results);
+    } catch (caught) {
+      setGeocodeResults([]);
+      showToast(
+        caught instanceof ApiRequestError
+          ? `Pencarian alamat gagal: ${caught.message}`
+          : "Pencarian alamat gagal. Coba lagi sebentar."
+      );
+    } finally {
+      setIsGeocoding(false);
     }
   };
 
@@ -3503,8 +3536,9 @@ function StudioPageContent() {
                       onChange={(e) => setAddressInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
+                          // Popover tidak ditutup di sini: hasil pencarian bisa lebih
+                          // dari satu dan perlu dipilih lebih dulu.
                           handleGeocodeSearch(addressInput);
-                          setSearchOpen(false);
                         }
                       }}
                       placeholder="Cari proyek atau alamat"
@@ -3533,13 +3567,11 @@ function StudioPageContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        handleGeocodeSearch(addressInput);
-                        setSearchOpen(false);
-                      }}
-                      className="px-2.5 py-1.5 rounded-xl bg-amber-400 text-amber-950 font-bold text-xs hover:bg-amber-500 transition cursor-pointer shrink-0"
+                      disabled={isGeocoding}
+                      onClick={() => handleGeocodeSearch(addressInput)}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-400 text-amber-950 font-bold text-xs hover:bg-amber-500 transition cursor-pointer shrink-0 disabled:opacity-60"
                     >
-                      Cari
+                      {isGeocoding ? "Mencari..." : "Cari"}
                     </button>
                   </div>
 
@@ -3562,6 +3594,41 @@ function StudioPageContent() {
                       Reset
                     </button>
                   </div>
+
+                  {/* Hasil pencarian alamat: pilih salah satu untuk menggeser peta */}
+                  {geocodeResults.length > 0 && (
+                    <div className="mt-2 rounded-2xl border border-amber-200/80 bg-amber-50/60 overflow-hidden">
+                      <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                        Hasil pencarian alamat
+                      </p>
+                      <ul className="max-h-56 overflow-y-auto">
+                        {geocodeResults.map((result, index) => (
+                          <li key={`${result.lat}-${result.lng}-${index}`}>
+                            <button
+                              type="button"
+                              onClick={() => applyGeocodeResult(result)}
+                              className="w-full text-left px-3 py-2 hover:bg-amber-100/70 transition flex items-start gap-2 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-amber-700 mt-0.5 shrink-0">
+                                place
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-xs font-semibold text-slate-800 truncate">
+                                  {result.label.split(",")[0]}
+                                </span>
+                                <span className="block text-[11px] text-slate-500 truncate">
+                                  {result.label}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-amber-200/60">
+                        Pencarian alamat © OpenStreetMap contributors
+                      </p>
+                    </div>
+                  )}
 
                   {/* List Proyek Tersimpan (Format Persis Beranda) */}
                   <div className="max-h-72 overflow-y-auto mt-1 space-y-1">
