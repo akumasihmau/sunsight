@@ -229,6 +229,11 @@ export type SimulationSummary = {
   address: string | null;
   center_point: { lat: number; lng: number };
   roof_count: number;
+  total_area_sqm: number;
+  effective_area_sqm: number;
+  installed: number;
+  co2_reduction_kg_per_year: number;
+  trees_equivalent: number;
   capacity_kwp: number;
   annual_production_kwh: number;
   monthly_saving_idr: number;

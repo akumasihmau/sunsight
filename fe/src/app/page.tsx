@@ -1359,7 +1359,9 @@ function HomePageContent() {
                   {/* Title & Stat */}
                   <div className="relative z-10">
                     <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-emerald-950">Bersih</h3>
-                    <p className="text-[9px] font-semibold text-emerald-800/90 leading-tight mt-1">11.5t CO₂</p>
+                    <p className="text-[9px] font-semibold text-emerald-800/90 leading-tight mt-1">
+                      {activeProj.co2ReductionTon.toLocaleString("id-ID")}t CO₂
+                    </p>
                   </div>
 
                   {/* Bottom CTA Pill */}
@@ -2663,8 +2665,13 @@ function toSavedProject(
   const annualMwh = Math.round((annualKwh / 1000) * 10) / 10;
   const module = modules.get("mono_perc_550");
   const modulePower = module?.power_w ?? 550;
-  const moduleCount =
-    modulePower > 0 ? Math.round((summary.capacity_kwp * 1000) / modulePower) : 0;
+
+  // Semua angka di bawah berasal dari hasil hitungan server; tidak ada yang
+  // diturunkan ulang di sini kecuali satuan (kWh -> MWh, kg -> ton).
+  const effectiveAreaPct =
+    summary.total_area_sqm > 0
+      ? Math.round((summary.effective_area_sqm / summary.total_area_sqm) * 100)
+      : 0;
 
   return {
     id: String(summary.id),
@@ -2676,23 +2683,25 @@ function toSavedProject(
     lng: summary.center_point.lng,
     roofShape: "rectangle",
     shapeLabel: summary.roof_count > 1 ? `${summary.roof_count} bidang` : "1 bidang",
-    dimensions: "-",
+    // Dimensi per bidang tidak ada pada ringkasan; yang ditampilkan adalah luas
+    // total dan luas efektif dari server, bukan tebakan panjang x lebar.
+    dimensions: `${summary.total_area_sqm.toFixed(1)} m² (${effectiveAreaPct}% efektif)`,
     ridgeM: 0,
     slopeM: 0,
     tiltDeg: 0,
     rotationDeg: 0,
     capacityKwp: summary.capacity_kwp,
-    moduleCount,
+    moduleCount: summary.installed,
     modulePower,
     annualProdMwh: annualMwh,
     monthlySavingIdr: summary.monthly_saving_idr,
     paybackYears: summary.payback_years ?? 0,
-    treesCount: 0,
-    co2ReductionTon: Math.round((annualKwh * 0.00085) * 100) / 100,
+    treesCount: summary.trees_equivalent,
+    co2ReductionTon: Math.round((summary.co2_reduction_kg_per_year / 1000) * 100) / 100,
     statusBadge: "Tersimpan",
     date: summary.created_at.slice(0, 10),
     facetsSummary: `${summary.roof_count} bidang atap`,
-    effectiveAreaPct: 0,
+    effectiveAreaPct,
     obstacles: [],
   };
 }

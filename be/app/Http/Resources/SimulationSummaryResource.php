@@ -31,6 +31,13 @@ class SimulationSummaryResource extends JsonResource
             // Dihitung lewat withCount() pada daftarnya; dihitung langsung hanya bila
             // resource ini dipakai tanpa query yang sudah menyiapkannya.
             'roof_count' => (int) ($simulation->roofs_count ?? $simulation->roofs()->count()),
+            // Angka agregat lain dipakai dashboard supaya kartu proyek tidak perlu
+            // menghitung ulang apa pun dari ringkasan.
+            'total_area_sqm' => round((float) $simulation->total_area_sqm, 2),
+            'effective_area_sqm' => round((float) $simulation->effective_area_sqm, 2),
+            'installed' => (int) $simulation->installed,
+            'co2_reduction_kg_per_year' => round((float) $simulation->co2_reduction_kg_per_year, 2),
+            'trees_equivalent' => (int) $simulation->trees_equivalent,
             'capacity_kwp' => round((float) $simulation->capacity_kwp, 3),
             'annual_production_kwh' => round((float) $simulation->annual_production_kwh, 2),
             'monthly_saving_idr' => (int) $simulation->monthly_saving_idr,
