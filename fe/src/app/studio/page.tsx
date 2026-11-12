@@ -20,6 +20,7 @@ import {
   type SimulationParameters,
   type SimulationRequest,
   type SimulationResult,
+  type SimulationDetail,
   type SimulationRoofInput,
 } from "@/lib/api";
 import { formatRp } from "@/lib/format";
@@ -150,6 +151,10 @@ const MODULE_KEYS_BY_POWER: Record<number, string> = {
 function moduleKeyForPower(power: number): string {
   return MODULE_KEYS_BY_POWER[power] ?? MODULE_KEYS_BY_POWER[550];
 }
+
+const MODULE_POWERS_BY_KEY: Record<string, number> = Object.fromEntries(
+  Object.entries(MODULE_KEYS_BY_POWER).map(([power, key]) => [key, Number(power)])
+);
 
 /**
  * Golongan tarif studio dipilih lewat harga per kWh, sedangkan server memakai
@@ -834,6 +839,63 @@ function buildFacetFromDetectedRoof(
 }
 
 /**
+ * Membangun kembali bidang studio dari simulasi yang tersimpan.
+ *
+ * Yang dipakai adalah `roof_polygon_px` asli bersama georeferensi tangkapan, bukan
+ * kotak pembatasnya: bentuk atap, termasuk bentuk L dan poligon bebas, kembali
+ * persis seperti saat disimpan. Parameter per bidang juga dibaca dari baris
+ * tersimpan, sehingga kemiringan, azimuth, modul, dan penanda rintangan tidak
+ * perlu diisi ulang.
+ */
+function buildFacetFromSavedRoof(
+  roof: SimulationDetail["roofs"][number],
+  imagery: NonNullable<SimulationDetail["imagery"]>,
+  index: number
+): RoofFacet {
+  const metersPerPixel = imagery.meters_per_pixel ?? 0.3;
+  const [minLng, , , maxLat] = imagery.bbox;
+
+  // Titik tengah tangkapan menjadi acuan koordinat, sama seperti saat deteksi.
+  const centerX = imagery.width / 2;
+  const centerY = imagery.height / 2;
+
+  const vertices: Point2D[] = roof.roof_polygon_px.map(([x, y]) => ({
+    x: Math.round((x - centerX) * metersPerPixel * 1000) / 1000,
+    y: Math.round((y - centerY) * metersPerPixel * 1000) / 1000,
+  }));
+
+  const bounds = polygonBounds(vertices);
+  const modulePower = MODULE_POWERS_BY_KEY[roof.input.module_key] ?? 550;
+
+  return {
+    id: `saved-${roof.detection_id ?? index}-${index}`,
+    name: roof.label ?? `Bidang Atap ${index + 1}`,
+    shape: roof.shape ?? "custom_polygon",
+    ridge: Math.max(0.1, roundMeters(bounds.width)),
+    slope: Math.max(0.1, roundMeters(bounds.height)),
+    pitch: roof.input.tilt_deg,
+    azimuth: roof.input.azimuth_deg,
+    setback: roof.input.setback_m,
+    gutter: roof.input.gutter_m,
+    rotation: 0,
+    lat: maxLat - (centerY / imagery.height) * (imagery.bbox[3] - imagery.bbox[1]),
+    lng: minLng + (centerX / imagery.width) * (imagery.bbox[2] - imagery.bbox[0]),
+    offsetX: 0,
+    offsetY: 0,
+    hasHvac: roof.has_hvac ?? false,
+    hasSkylight: roof.has_skylight ?? false,
+    modulePower,
+    orientation: roof.input.orientation,
+    panelGap: Math.round(roof.input.clearance_m * 100),
+    slotOverrides: roof.slot_overrides ?? {},
+    customModuleCount: roof.input.panel_count,
+    vertices,
+    alignToAzimuth: roof.align_to_azimuth ?? true,
+    isSolarPopulated: roof.is_solar_populated ?? true,
+  };
+}
+
+/**
  * Kebalikan `buildFacetFromDetectedRoof`: poligon piksel tangkapan untuk payload
  * simulasi. Sudut `rotation` diterapkan lebih dulu karena tampilan memutar
  * poligon tampilan memakai nilai itu, sedangkan `vertices` disimpan apa adanya.
@@ -1146,6 +1208,13 @@ function StudioPageContent() {
   // Hasil deteksi model: georeferensi tangkapan terakhir, bidang kandidat, dan
   // pilihan sementara sebelum diterapkan menjadi bidang proyek.
   const [detection, setDetection] = useState<RoofDetectionResponse | null>(null);
+  /**
+   * Angka server untuk simulasi yang dibuka lewat `?analysis=`. Selama terisi,
+   * ringkasan di layar memakai angka tersimpan, bukan hasil pratinjau lokal, supaya
+   * yang terlihat sama dengan yang tersimpan. Setiap perubahan parameter
+   * mengosongkannya kembali menjadi pratinjau.
+   */
+  const [serverMetrics, setServerMetrics] = useState<SimulationDetail["result"] | null>(null);
   const [detectedRoofs, setDetectedRoofs] = useState<DetectedRoof[]>([]);
   const [selectedDetectedIds, setSelectedDetectedIds] = useState<string[]>([]);
   const [showDetectedRoofs, setShowDetectedRoofs] = useState(false);
@@ -1210,6 +1279,8 @@ function StudioPageContent() {
   }, [facets, activeFacetId]);
 
   const updateActiveFacet = useCallback((patch: Partial<RoofFacet>) => {
+    // Parameter berubah berarti angka tersimpan tidak lagi mewakili rancangan.
+    setServerMetrics(null);
     setFacets((prev) =>
       prev.map((f) => (f.id === activeFacetId ? { ...f, ...patch } : f))
     );
@@ -1305,6 +1376,89 @@ function StudioPageContent() {
     }
   }, [searchParams, updateActiveFacet]);
 
+  /**
+   * Membuka kembali simulasi tersimpan lewat `?analysis=<id>`.
+   *
+   * Bidang dibangun dari `roof_polygon_px` asli, bukan kotak pembatasnya, dan
+   * parameter tiap bidang dibaca dari baris tersimpan. Peta dipindahkan ke titik
+   * dan zoom yang tersimpan supaya tampilannya sama seperti saat disimpan.
+   */
+  useEffect(() => {
+    const analysisId = searchParams.get("analysis");
+    if (analysisId === null) return;
+
+    let cancelled = false;
+
+    const restore = async () => {
+      try {
+        const detail = await api.getSimulation(Number(analysisId));
+        if (cancelled) return;
+
+        if (detail.imagery === null) {
+          showToast("Simulasi ini tidak menyimpan georeferensi, jadi bidang tidak dapat digambar ulang.");
+          return;
+        }
+
+        const restored = detail.roofs.map((roof, index) =>
+          buildFacetFromSavedRoof(roof, detail.imagery!, index)
+        );
+
+        if (restored.length === 0) {
+          showToast("Simulasi ini tidak memuat bidang atap.");
+          return;
+        }
+
+        setFacets(restored);
+        setServerMetrics(detail.result);
+        setSelectedFacetIds(restored.map((facet) => facet.id));
+        setActiveFacetId(restored[restored.length - 1].id);
+        setSelectionDone(true);
+        setShowDetectedRoofs(false);
+        setAddressInput(detail.address ?? "Proyek tersimpan");
+
+        // Penanda agar simpan berikutnya tetap memakai acuan tangkapan yang sama.
+        setDetection({
+          image_id: detail.imagery.image_id,
+          detection_id: `simulasi-${detail.id}`,
+          model: { name: "yolov8-seg", version: detail.imagery.zoom === null ? "" : String(detail.imagery.zoom) },
+          image: {
+            width: detail.imagery.width,
+            height: detail.imagery.height,
+            bbox: detail.imagery.bbox,
+            meters_per_pixel: detail.imagery.meters_per_pixel ?? 0.3,
+            zoom: detail.imagery.zoom,
+          },
+          roofs: [],
+        });
+
+        const map = mapInstanceRef.current;
+        if (map !== null) {
+          map.setView([detail.center_point.lat, detail.center_point.lng], detail.map_zoom ?? map.getZoom());
+        }
+
+        showToast(
+          `Simulasi #${detail.id} dibuka kembali — ${restored.length} bidang, ` +
+            `${detail.result.capacity_kwp.toLocaleString("id-ID")} kWp.`
+        );
+      } catch (caught) {
+        if (cancelled) return;
+        showToast(
+          caught instanceof ApiRequestError && caught.status === 404
+            ? "Simulasi tidak ditemukan atau bukan milik akun ini."
+            : `Gagal membuka simulasi: ${caught instanceof Error ? caught.message : "tidak diketahui"}`
+        );
+      }
+    };
+
+    void restore();
+
+    return () => {
+      cancelled = true;
+    };
+    // `showToast` stabil; `searchParams` berubah saat URL berganti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // Toast notification timer
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -1354,6 +1508,7 @@ function StudioPageContent() {
   );
 
   const populateAllFacetsWithSolar = useCallback(() => {
+    setServerMetrics(null);
     setFacets((prev) => prev.map((f) => ({ ...f, isSolarPopulated: true })));
     showToast("⚡ Modul surya dipasang pada semua bidang atap!");
   }, [showToast]);
@@ -2603,12 +2758,15 @@ function StudioPageContent() {
       bestOrientation: activeMetrics.bestOrientation,
 
       // Total System Aggregate Metrics across ENTIRE PROJECT (Used by Top Ribbon, Tab 3 & Charts)
-      totalGrossArea,
-      totalNetArea,
+      // Saat simulasi tersimpan baru dibuka, angka yang ditampilkan adalah angka
+      // server apa adanya, bukan pratinjau yang bisa berbeda beberapa persen.
+      isFromServer: serverMetrics !== null,
+      totalGrossArea: serverMetrics?.total_area_sqm ?? totalGrossArea,
+      totalNetArea: serverMetrics?.effective_area_sqm ?? totalNetArea,
       totalValidSlotsAggregate: totalValidSlots,
-      totalModulesFitted,
-      actualKwp: totalActualKwp,
-      annualProductionKwh: totalAnnualProductionKwh,
+      totalModulesFitted: serverMetrics?.installed ?? totalModulesFitted,
+      actualKwp: serverMetrics?.capacity_kwp ?? totalActualKwp,
+      annualProductionKwh: serverMetrics?.annual_production_kwh ?? totalAnnualProductionKwh,
       monthlyGenKwh: totalMonthlyGenKwh,
       coveragePct,
       totalCapex,
@@ -2639,6 +2797,7 @@ function StudioPageContent() {
     obstacleFilterActive,
     extraTilt,
     inverterType,
+    serverMetrics,
   ]);
 
   // Save Simulation to Server State & Action
@@ -2685,6 +2844,13 @@ function StudioPageContent() {
         detection_id: detected?.id ?? null,
         confidence: detected?.confidence ?? null,
         roof_polygon_px: polygonPx,
+        // Keadaan tampilan ikut dikirim supaya simulasi dapat dibuka kembali persis.
+        shape: facet.shape,
+        align_to_azimuth: facet.alignToAzimuth ?? null,
+        is_solar_populated: facet.isSolarPopulated ?? null,
+        has_hvac: facet.hasHvac,
+        has_skylight: facet.hasSkylight,
+        slot_overrides: facet.slotOverrides,
         setback_m: facet.setback,
         gutter_m: facet.gutter,
         tilt_deg: facet.pitch,
@@ -2703,6 +2869,7 @@ function StudioPageContent() {
 
     const payload: SimulationRequest = {
       image_id: detection.image_id,
+      address: addressInput.trim() === "" ? null : addressInput.trim(),
       roofs,
       inverter_type: inverterType,
       monthly_bill_idr: monthlyBill,

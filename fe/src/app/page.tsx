@@ -9,7 +9,15 @@ import { LandingView } from "@/components/landing/LandingView";
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { MascotDashboardTour } from "@/components/dashboard/MascotDashboardTour";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
-import { api, type SimulationAssumptions, type SimulationParameters, type SimulationResult } from "@/lib/api";
+import {
+  api,
+  getToken,
+  type ModulePreset,
+  type SimulationAssumptions,
+  type SimulationParameters,
+  type SimulationResult,
+  type SimulationSummary,
+} from "@/lib/api";
 import { useHasToken, useStoredBiodata } from "@/lib/profile";
 
 type DashboardNavTab = "overview" | "history" | "calculator";
@@ -69,346 +77,41 @@ interface SavedRoofProject {
   facets?: ProjectFacet[];
 }
 
-const SAVED_PROJECTS: SavedRoofProject[] = [
-  {
-    id: "proj-bogor-tengah",
-    name: "Menteng Residence",
-    address: "Jl. Pajajaran No. 42, Bogor Tengah",
-    district: "Bogor Tengah",
-    city: "Kota Bogor",
-    lat: -6.595038,
-    lng: 106.797241,
-    roofShape: "rectangle",
-    shapeLabel: "Pelana (Gable)",
-    dimensions: "12.48 m × 7.28 m",
-    ridgeM: 12.48,
-    slopeM: 7.28,
-    tiltDeg: 22,
-    rotationDeg: -4,
-    capacityKwp: 8.3,
-    moduleCount: 36,
-    modulePower: 550,
-    annualProdMwh: 14.4,
-    monthlySavingIdr: 2040000,
-    paybackYears: 2.4,
-    treesCount: 523,
-    co2ReductionTon: 11.5,
-    statusBadge: "Optimal",
-    date: "04 Nov 2026",
-    facetsSummary: "2 Poligon (Pelana)",
-    effectiveAreaPct: 84,
-    polygonPoints: [
-      [10, 15],
-      [90, 15],
-      [90, 85],
-      [10, 85],
-    ],
-    obstacles: [
-      { name: "HVAC", type: "hvac", icon: "mode_fan", xPct: 68, yPct: 35, label: "Outdoor AC 2PK" },
-      { name: "Skylight", type: "skylight", icon: "window", xPct: 32, yPct: 65, label: "Skylight Kaca" },
-    ],
-    facets: [
-      {
-        id: "menteng-f1",
-        name: "Bidang Atap Utama",
-        shapeLabel: "Pelana Sisi Selatan",
-        dimensions: "12.48 m × 7.28 m",
-        ridgeM: 12.48,
-        slopeM: 7.28,
-        capacityKwp: 8.3,
-        moduleCount: 36,
-        effectiveAreaPct: 84,
-        polygonPoints: [
-          [10, 15],
-          [90, 15],
-          [90, 85],
-          [10, 85],
-        ],
-        obstacles: [
-          { name: "HVAC", type: "hvac", icon: "mode_fan", xPct: 68, yPct: 35, label: "Outdoor AC 2PK" },
-          { name: "Skylight", type: "skylight", icon: "window", xPct: 32, yPct: 65, label: "Skylight Kaca" },
-        ],
-      },
-      {
-        id: "menteng-f2",
-        name: "Bidang Atap Sayap (Carport)",
-        shapeLabel: "Pelana Depan",
-        dimensions: "7.50 m × 4.80 m",
-        ridgeM: 7.50,
-        slopeM: 4.80,
-        capacityKwp: 3.3,
-        moduleCount: 12,
-        effectiveAreaPct: 88,
-        polygonPoints: [
-          [14, 18],
-          [86, 18],
-          [86, 82],
-          [14, 82],
-        ],
-        obstacles: [
-          { name: "Pipa Vent", type: "vent", icon: "air", xPct: 64, yPct: 40, label: "Ventilasi Udara" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "proj-baranangsiang",
-    name: "Baranangsiang Indah",
-    address: "Komp. Baranangsiang Indah Blok C, Bogor Timur",
-    district: "Bogor Timur",
-    city: "Kota Bogor",
-    lat: -6.6110,
-    lng: 106.8150,
-    roofShape: "l-shape",
-    shapeLabel: "Bentuk L (Corner)",
-    dimensions: "15.20 m × 8.50 m",
-    ridgeM: 15.2,
-    slopeM: 8.5,
-    tiltDeg: 18,
-    rotationDeg: 12,
-    capacityKwp: 12.5,
-    moduleCount: 25,
-    modulePower: 580,
-    annualProdMwh: 17.5,
-    monthlySavingIdr: 2700000,
-    paybackYears: 4.4,
-    treesCount: 630,
-    co2ReductionTon: 14.0,
-    statusBadge: "Siap Survei",
-    date: "01 Nov 2026",
-    facetsSummary: "2 Poligon (Bentuk L)",
-    effectiveAreaPct: 79,
-    polygonPoints: [
-      [12, 14],
-      [52, 14],
-      [52, 46],
-      [88, 46],
-      [88, 86],
-      [12, 86],
-    ],
-    obstacles: [
-      { name: "Toren Air", type: "tank", icon: "water_drop", xPct: 74, yPct: 68, label: "Toren 1000L" },
-      { name: "Pipa Vent", type: "vent", icon: "air", xPct: 32, yPct: 30, label: "Pipa Ventilasi" },
-    ],
-    facets: [
-      {
-        id: "baranangsiang-f1",
-        name: "Bidang Atap Utama Barat",
-        shapeLabel: "Persegi Panjang",
-        dimensions: "11.20 m × 6.50 m",
-        ridgeM: 11.20,
-        slopeM: 6.50,
-        capacityKwp: 7.5,
-        moduleCount: 15,
-        effectiveAreaPct: 80,
-        polygonPoints: [
-          [12, 16],
-          [88, 16],
-          [88, 84],
-          [12, 84],
-        ],
-        obstacles: [
-          { name: "Toren Air", type: "tank", icon: "water_drop", xPct: 70, yPct: 65, label: "Toren 1000L" },
-        ],
-      },
-      {
-        id: "baranangsiang-f2",
-        name: "Bidang Sayap L-Extension",
-        shapeLabel: "Sayap Timur (L)",
-        dimensions: "7.60 m × 5.20 m",
-        ridgeM: 7.60,
-        slopeM: 5.20,
-        capacityKwp: 5.0,
-        moduleCount: 10,
-        effectiveAreaPct: 78,
-        polygonPoints: [
-          [15, 20],
-          [85, 20],
-          [85, 80],
-          [15, 80],
-        ],
-        obstacles: [
-          { name: "Pipa Vent", type: "vent", icon: "air", xPct: 35, yPct: 45, label: "Pipa Pembuangan" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "proj-yasmin",
-    name: "Taman Yasmin Sektor 3",
-    address: "Jl. Wijaya Kusuma Raya No. 18, Bogor Barat",
-    district: "Bogor Barat",
-    city: "Kota Bogor",
-    lat: -6.5615,
-    lng: 106.7640,
-    roofShape: "rectangle",
-    shapeLabel: "Persegi Standar",
-    dimensions: "10.50 m × 6.20 m",
-    ridgeM: 10.5,
-    slopeM: 6.2,
-    tiltDeg: 15,
-    rotationDeg: 0,
-    capacityKwp: 6.8,
-    moduleCount: 18,
-    modulePower: 450,
-    annualProdMwh: 9.8,
-    monthlySavingIdr: 1550000,
-    paybackYears: 3.2,
-    treesCount: 380,
-    co2ReductionTon: 7.8,
-    statusBadge: "Optimal",
-    date: "28 Okt 2026",
-    facetsSummary: "1 Poligon (Persegi)",
-    effectiveAreaPct: 88,
-    polygonPoints: [
-      [14, 18],
-      [86, 18],
-      [86, 82],
-      [14, 82],
-    ],
-    obstacles: [
-      { name: "Exhaust", type: "vent", icon: "mode_fan", xPct: 60, yPct: 45, label: "Exhaust Fan Dapur" },
-    ],
-    facets: [
-      {
-        id: "yasmin-f1",
-        name: "Bidang Atap Utama",
-        shapeLabel: "Persegi Standar",
-        dimensions: "10.50 m × 6.20 m",
-        ridgeM: 10.50,
-        slopeM: 6.20,
-        capacityKwp: 6.8,
-        moduleCount: 18,
-        effectiveAreaPct: 88,
-        polygonPoints: [
-          [12, 18],
-          [88, 18],
-          [88, 82],
-          [12, 82],
-        ],
-        obstacles: [
-          { name: "Exhaust", type: "vent", icon: "mode_fan", xPct: 60, yPct: 45, label: "Exhaust Fan Dapur" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "proj-bantarjati",
-    name: "Bantarjati Modern House",
-    address: "Jl. Bangbarung Raya No. 09, Bogor Utara",
-    district: "Bogor Utara",
-    city: "Kota Bogor",
-    lat: -6.5780,
-    lng: 106.8080,
-    roofShape: "hip",
-    shapeLabel: "Limasan (Hip)",
-    dimensions: "14.00 m × 7.50 m",
-    ridgeM: 14.0,
-    slopeM: 7.5,
-    tiltDeg: 25,
-    rotationDeg: 8,
-    capacityKwp: 10.2,
-    moduleCount: 28,
-    modulePower: 550,
-    annualProdMwh: 13.2,
-    monthlySavingIdr: 1950000,
-    paybackYears: 3.8,
-    treesCount: 490,
-    co2ReductionTon: 10.5,
-    statusBadge: "Optimal",
-    date: "24 Okt 2026",
-    facetsSummary: "4 Poligon (Limasan)",
-    effectiveAreaPct: 76,
-    polygonPoints: [
-      [18, 16],
-      [82, 16],
-      [90, 50],
-      [84, 84],
-      [16, 84],
-      [10, 50],
-    ],
-    obstacles: [
-      { name: "VRV Outdoor", type: "hvac", icon: "mode_fan", xPct: 62, yPct: 36, label: "VRV AC Multi-Split" },
-      { name: "Petir", type: "vent", icon: "bolt", xPct: 32, yPct: 64, label: "Penyalur Petir" },
-    ],
-    facets: [
-      {
-        id: "bantarjati-f1",
-        name: "Bidang Trapesium Depan",
-        shapeLabel: "Limasan Depan",
-        dimensions: "14.00 m × 5.20 m",
-        ridgeM: 14.00,
-        slopeM: 5.20,
-        capacityKwp: 4.8,
-        moduleCount: 12,
-        effectiveAreaPct: 80,
-        polygonPoints: [
-          [22, 18],
-          [78, 18],
-          [92, 82],
-          [8, 82],
-        ],
-        obstacles: [
-          { name: "VRV Outdoor", type: "hvac", icon: "mode_fan", xPct: 60, yPct: 45, label: "VRV AC Multi-Split" },
-        ],
-      },
-      {
-        id: "bantarjati-f2",
-        name: "Bidang Trapesium Belakang",
-        shapeLabel: "Limasan Belakang",
-        dimensions: "14.00 m × 5.20 m",
-        ridgeM: 14.00,
-        slopeM: 5.20,
-        capacityKwp: 4.0,
-        moduleCount: 10,
-        effectiveAreaPct: 76,
-        polygonPoints: [
-          [8, 18],
-          [92, 18],
-          [78, 82],
-          [22, 82],
-        ],
-        obstacles: [
-          { name: "Petir", type: "vent", icon: "bolt", xPct: 35, yPct: 55, label: "Penyalur Petir" },
-        ],
-      },
-      {
-        id: "bantarjati-f3",
-        name: "Bidang Segitiga Timur",
-        shapeLabel: "Limasan Timur",
-        dimensions: "7.50 m × 4.80 m",
-        ridgeM: 7.50,
-        slopeM: 4.80,
-        capacityKwp: 1.2,
-        moduleCount: 3,
-        effectiveAreaPct: 68,
-        polygonPoints: [
-          [50, 16],
-          [88, 84],
-          [12, 84],
-        ],
-        obstacles: [],
-      },
-      {
-        id: "bantarjati-f4",
-        name: "Bidang Segitiga Barat",
-        shapeLabel: "Limasan Barat",
-        dimensions: "7.50 m × 4.80 m",
-        ridgeM: 7.50,
-        slopeM: 4.80,
-        capacityKwp: 1.2,
-        moduleCount: 3,
-        effectiveAreaPct: 68,
-        polygonPoints: [
-          [50, 16],
-          [88, 84],
-          [12, 84],
-        ],
-        obstacles: [],
-      },
-    ],
-  },
-];
+/**
+ * Proyek yang ditampilkan dashboard berasal dari `GET /analyses`, bukan dari data
+ * contoh. `EMPTY_PROJECT` hanya menjaga agar panel tetap dapat dirender sebelum
+ * daftar termuat atau ketika pengguna belum punya simulasi sama sekali; nilainya
+ * nol dan tidak pernah menyamar sebagai proyek nyata.
+ */
+const EMPTY_PROJECT: SavedRoofProject = {
+  id: "empty",
+  name: "Belum ada proyek",
+  address: "Pindai bidang atap di Studio untuk membuat simulasi pertama.",
+  district: "-",
+  city: "-",
+  lat: -6.611,
+  lng: 106.815,
+  roofShape: "rectangle",
+  shapeLabel: "-",
+  dimensions: "-",
+  ridgeM: 0,
+  slopeM: 0,
+  tiltDeg: 0,
+  rotationDeg: 0,
+  capacityKwp: 0,
+  moduleCount: 0,
+  modulePower: 550,
+  annualProdMwh: 0,
+  monthlySavingIdr: 0,
+  paybackYears: 0,
+  treesCount: 0,
+  co2ReductionTon: 0,
+  statusBadge: "-",
+  date: "-",
+  facetsSummary: "-",
+  effectiveAreaPct: 0,
+  obstacles: [],
+};
 
 const BOGOR_MAP_SPOTS = [
   { id: "bogor-tengah", name: "Bogor Tengah", landmark: "Jl. Pajajaran & Babakan", lat: -6.5890, lng: 106.7970, irr: 4.85, x: 50, y: 48 },
@@ -1088,28 +791,49 @@ function HomePageContent() {
   );
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>(SAVED_PROJECTS);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(SAVED_PROJECTS[0].id);
+  const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [proposalOpen, setProposalOpen] = useState(false);
   const [activePillarModal, setActivePillarModal] = useState<"hemat" | "mandiri" | "bersih" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
 
-  // Sync saved projects with localStorage if available
+  /**
+   * Proyek pada dashboard adalah simulasi tersimpan milik pengguna, dibaca dari
+   * server. Bentuk `SavedRoofProject` dipertahankan supaya panel tidak perlu diubah,
+   * tetapi setiap angkanya berasal dari hasil hitungan server.
+   *
+   * Tanpa token atau saat permintaan gagal, daftar dibiarkan kosong: dashboard
+   * menampilkan ajakan membuat simulasi, bukan proyek contoh.
+   */
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    let cancelled = false;
+
+    const loadProjects = async () => {
+      if (getToken() === null) return;
+
       try {
-        const raw = localStorage.getItem("sunsight.saved_projects");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSavedProjects(parsed);
-          }
-        }
+        const [page, options] = await Promise.all([api.listSimulations(1, 6), api.fetchOptions()]);
+
+        const byKey = new Map(options.modules.map((m) => [m.key, m]));
+        const projects = page.data.map((item) => toSavedProject(item, byKey));
+
+        if (cancelled) return;
+
+        setSavedProjects(projects);
+        setSelectedProjectId((current) =>
+          current !== "" && projects.some((p) => p.id === current) ? current : projects[0]?.id ?? ""
+        );
       } catch {
-        // Fallback to initial projects
+        if (!cancelled) setSavedProjects([]);
       }
-    }
+    };
+
+    void loadProjects();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Interactive Location & Geolocation States
@@ -1164,22 +888,21 @@ function HomePageContent() {
   const [calcMonthlyBill, setCalcMonthlyBill] = useState(2500000);
   const [calcTariff, setCalcTariff] = useState(1699.53);
 
+  /**
+   * Membuka proyek di studio. Simulasi tersimpan dibuka lewat `?analysis=<id>`
+   * supaya studio membangun ulang bidang dari poligon tersimpan; tombol pada
+   * kartu tidak lagi mengirim ringkasan geometri yang bisa berbeda dari aslinya.
+   */
   const openProjectInStudio = useCallback(
     (proj: SavedRoofProject) => {
       setSelectedProjectId(proj.id);
-      const params = new URLSearchParams({
-        proj: proj.id,
-        name: proj.name,
-        lat: String(proj.lat),
-        lng: String(proj.lng),
-        ridge: String(proj.ridgeM),
-        slope: String(proj.slopeM),
-        tilt: String(proj.tiltDeg),
-        rot: String(proj.rotationDeg),
-        shape: proj.roofShape,
-        power: String(proj.modulePower),
-      });
-      router.push(`/studio?${params.toString()}`);
+
+      if (proj.id === "" || proj.id === "empty") {
+        router.push("/studio");
+        return;
+      }
+
+      router.push(`/studio?analysis=${encodeURIComponent(proj.id)}`);
     },
     [router]
   );
@@ -1228,7 +951,7 @@ function HomePageContent() {
 
   // Active Project for Bento display
   const activeProj = useMemo(() => {
-    return savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || SAVED_PROJECTS[0];
+    return savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || EMPTY_PROJECT;
   }, [savedProjects, selectedProjectId]);
 
   // Filtered projects for history list (without category/shape filter)
@@ -2922,6 +2645,56 @@ function HomePageContent() {
       />
     </div>
   );
+}
+
+/**
+ * Ringkasan simulasi dari server dipetakan ke bentuk panel dashboard.
+ *
+ * Panel dibuat sebelum alur simpan ada, sehingga mengharapkan banyak field yang
+ * tidak dimiliki ringkasan `/analyses`. Yang tidak tersedia diisi netral, bukan
+ * dikarang: `ridgeM`, `slopeM`, dan jumlah modul adalah hasil hitungan server dan
+ * tidak dapat diturunkan ulang dari ringkasan tanpa membuka detailnya.
+ */
+function toSavedProject(
+  summary: SimulationSummary,
+  modules: Map<string, ModulePreset>
+): SavedRoofProject {
+  const annualKwh = summary.annual_production_kwh;
+  const annualMwh = Math.round((annualKwh / 1000) * 10) / 10;
+  const module = modules.get("mono_perc_550");
+  const modulePower = module?.power_w ?? 550;
+  const moduleCount =
+    modulePower > 0 ? Math.round((summary.capacity_kwp * 1000) / modulePower) : 0;
+
+  return {
+    id: String(summary.id),
+    name: summary.address ?? `Simulasi #${summary.id}`,
+    address: summary.address ?? "-",
+    district: "-",
+    city: "-",
+    lat: summary.center_point.lat,
+    lng: summary.center_point.lng,
+    roofShape: "rectangle",
+    shapeLabel: summary.roof_count > 1 ? `${summary.roof_count} bidang` : "1 bidang",
+    dimensions: "-",
+    ridgeM: 0,
+    slopeM: 0,
+    tiltDeg: 0,
+    rotationDeg: 0,
+    capacityKwp: summary.capacity_kwp,
+    moduleCount,
+    modulePower,
+    annualProdMwh: annualMwh,
+    monthlySavingIdr: summary.monthly_saving_idr,
+    paybackYears: summary.payback_years ?? 0,
+    treesCount: 0,
+    co2ReductionTon: Math.round((annualKwh * 0.00085) * 100) / 100,
+    statusBadge: "Tersimpan",
+    date: summary.created_at.slice(0, 10),
+    facetsSummary: `${summary.roof_count} bidang atap`,
+    effectiveAreaPct: 0,
+    obstacles: [],
+  };
 }
 
 export default function HomePage() {

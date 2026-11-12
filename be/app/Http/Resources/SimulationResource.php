@@ -44,7 +44,22 @@ class SimulationResource extends JsonResource
             'lat' => $simulation->center_lat,
             'lng' => $simulation->center_lng,
         ];
+        $data['address'] = $simulation->address;
         $data['map_zoom'] = $simulation->map_zoom;
+
+        // Georeferensi tangkapan: tanpa ini, `roof_polygon_px` tidak dapat
+        // dikembalikan ke posisi aslinya saat simulasi dibuka lagi.
+        $asset = $simulation->imageryAsset;
+        $data['imagery'] = $asset === null ? null : [
+            'image_id' => $asset->image_id,
+            'width' => (int) $asset->width,
+            'height' => (int) $asset->height,
+            'bbox' => $asset->bbox,
+            'meters_per_pixel' => $asset->meters_per_pixel === null
+                ? null
+                : round((float) $asset->meters_per_pixel, 4),
+            'zoom' => $asset->zoom === null ? null : (int) $asset->zoom,
+        ];
         $data['roofs'] = $simulation->roofs
             ->map(static fn (SimulationRoof $roof): array => self::roof($roof))
             ->values()
@@ -68,6 +83,12 @@ class SimulationResource extends JsonResource
             'confidence' => $roof->confidence === null ? null : round((float) $roof->confidence, 4),
             'roof_polygon' => $roof->roofPolygonGeoJson(),
             'roof_polygon_px' => $roof->roof_polygon_px,
+            'shape' => $roof->shape,
+            'align_to_azimuth' => $roof->align_to_azimuth,
+            'is_solar_populated' => $roof->is_solar_populated,
+            'has_hvac' => $roof->has_hvac,
+            'has_skylight' => $roof->has_skylight,
+            'slot_overrides' => $roof->slot_overrides,
             'input' => [
                 'setback_m' => round((float) $roof->setback_m, 2),
                 'gutter_m' => round((float) $roof->gutter_m, 2),

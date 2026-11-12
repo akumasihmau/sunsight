@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'imagery_asset_id',
     'center_lat',
     'center_lng',
+    'address',
     'map_zoom',
     'inverter_type',
     'monthly_bill_idr',

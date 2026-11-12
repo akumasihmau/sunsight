@@ -279,13 +279,23 @@ export default function HistoryPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setDetail(null)}
-                className="self-start sm:self-auto px-3 py-1 rounded-full border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 transition"
-              >
-                Tutup Rincian
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                {/* Membuka simulasi di studio dengan bidang dan parameter yang sama. */}
+                <Link
+                  href={`/studio?analysis=${detail.id}`}
+                  className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 active:scale-95 text-amber-950 font-bold text-xs flex items-center gap-1.5 transition border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18)]"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-amber-950">open_in_new</span>
+                  <span>Buka di Studio</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setDetail(null)}
+                  className="px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50 text-xs text-slate-600 transition"
+                >
+                  Tutup Rincian
+                </button>
+              </div>
             </div>
 
             {/* 4 Stat Cards */}

@@ -106,6 +106,12 @@ class SimulationRunner
                 // Ring dalam piksel disimpan apa adanya supaya tata letak, luas, dan
                 // gambar yang dilihat pengguna dapat ditelusuri kembali tanpa citra.
                 'roof_polygon_px' => $polygonPx,
+                'shape' => $roofInput['shape'] ?? null,
+                'align_to_azimuth' => $roofInput['align_to_azimuth'] ?? null,
+                'is_solar_populated' => $roofInput['is_solar_populated'] ?? null,
+                'has_hvac' => $roofInput['has_hvac'] ?? null,
+                'has_skylight' => $roofInput['has_skylight'] ?? null,
+                'slot_overrides' => $roofInput['slot_overrides'] ?? null,
                 'roof_width_m' => round($polygon->roofWidthM, 2),
                 'roof_length_m' => round($polygon->roofLengthM, 2),
                 'rotation_deg' => round($polygon->rotationDeg, 2),
@@ -167,6 +173,7 @@ class SimulationRunner
             'imagery_asset_id' => $image->getKey(),
             'center_lat' => $image->center_lat,
             'center_lng' => $image->center_lng,
+            'address' => $input['address'] ?? null,
             'map_zoom' => $image->zoom,
             'inverter_type' => $inverterType,
             'monthly_bill_idr' => (int) $input['monthly_bill_idr'],

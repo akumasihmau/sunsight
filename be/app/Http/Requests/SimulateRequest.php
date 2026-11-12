@@ -68,6 +68,20 @@ class SimulateRequest extends FormRequest
             // jumlah slot dilakukan mesin tata letak.
             'roofs.*.panel_count' => ['present', 'nullable', 'integer', 'min:0', 'max:5000'],
 
+            // Keadaan tampilan studio, disimpan agar simulasi dapat dibuka kembali
+            // persis seperti saat disimpan. Opsional supaya klien lain tetap dapat
+            // menyimpan tanpa mengirimnya.
+            'roofs.*.shape' => ['sometimes', 'nullable', 'string', Rule::in(['rectangle', 'l-shape', 'trapezoid', 'custom_polygon'])],
+            'roofs.*.align_to_azimuth' => ['sometimes', 'nullable', 'boolean'],
+            'roofs.*.is_solar_populated' => ['sometimes', 'nullable', 'boolean'],
+            'roofs.*.has_hvac' => ['sometimes', 'nullable', 'boolean'],
+            'roofs.*.has_skylight' => ['sometimes', 'nullable', 'boolean'],
+            'roofs.*.slot_overrides' => ['sometimes', 'nullable', 'array'],
+            'roofs.*.slot_overrides.*' => ['string', Rule::in(['active', 'skylight', 'hvac', 'empty'])],
+
+            // Label lokasi seperti yang diketik pengguna; tidak memengaruhi hitungan.
+            'address' => ['sometimes', 'nullable', 'string', 'max:160'],
+
             'inverter_type' => ['required', 'string', Rule::in(['string', 'micro'])],
 
             'monthly_bill_idr' => ['required', 'integer', 'min:0'],

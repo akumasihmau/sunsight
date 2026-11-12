@@ -427,6 +427,12 @@ function buildDetail(
       confidence: roof.confidence ?? null,
       roof_polygon: { type: "Polygon", coordinates: [ring] },
       roof_polygon_px: roof.roof_polygon_px,
+      shape: roof.shape ?? null,
+      align_to_azimuth: roof.align_to_azimuth ?? null,
+      is_solar_populated: roof.is_solar_populated ?? null,
+      has_hvac: roof.has_hvac ?? null,
+      has_skylight: roof.has_skylight ?? null,
+      slot_overrides: roof.slot_overrides ?? null,
       input: {
         setback_m: roof.setback_m,
         gutter_m: roof.gutter_m,
@@ -519,7 +525,16 @@ function buildDetail(
 
   const detail: SimulationDetail = {
     id,
+    address: payload.address ?? null,
     center_point: center,
+    imagery: {
+      image_id: payload.image_id,
+      width: image.width,
+      height: image.height,
+      bbox: image.bbox,
+      meters_per_pixel: image.meters_per_pixel,
+      zoom: image.zoom,
+    },
     map_zoom: image.zoom,
     roofs,
     input: {
@@ -783,6 +798,7 @@ export const mockApi = {
 
     const summaries: SimulationSummary[] = paged.map((item) => ({
       id: item.id,
+      address: item.address ?? null,
       center_point: item.center_point,
       roof_count: item.result.roof_count,
       capacity_kwp: item.result.capacity_kwp,

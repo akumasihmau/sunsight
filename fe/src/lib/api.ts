@@ -143,16 +143,37 @@ export type SimulationRoofParameters = {
 };
 
 /** Satu bidang atap pada payload `POST /simulate` dan `POST /analyses`. */
-export type SimulationRoofInput = SimulationRoofParameters & {
-  label?: string | null;
-  detection_id?: string | null;
-  confidence?: number | null;
-  roof_polygon_px: PixelPoint[];
+export type RoofShapeKey = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
+
+export type SlotStateKey = "active" | "skylight" | "hvac" | "empty";
+
+/**
+ * Keadaan tampilan studio per bidang. Dikirim saat menyimpan supaya simulasi dapat
+ * dibuka kembali persis seperti saat disimpan: bentuk, rintangan per slot, dan
+ * apakah tata letak sudah disusun.
+ */
+export type SimulationRoofViewState = {
+  shape?: RoofShapeKey | null;
+  align_to_azimuth?: boolean | null;
+  is_solar_populated?: boolean | null;
+  has_hvac?: boolean | null;
+  has_skylight?: boolean | null;
+  slot_overrides?: Record<string, SlotStateKey> | null;
 };
+
+export type SimulationRoofInput = SimulationRoofParameters &
+  SimulationRoofViewState & {
+    label?: string | null;
+    detection_id?: string | null;
+    confidence?: number | null;
+    roof_polygon_px: PixelPoint[];
+  };
 
 /** Payload `POST /simulate` dan `POST /analyses`; hanya berisi masukan. */
 export type SimulationRequest = {
   image_id: string;
+  /** Label lokasi seperti yang diketik pengguna; tidak memengaruhi hitungan. */
+  address?: string | null;
   /** 1 s.d. 12 bidang. */
   roofs: SimulationRoofInput[];
   inverter_type: InverterType;
@@ -205,6 +226,7 @@ export type SimulationResult = {
 
 export type SimulationSummary = {
   id: number;
+  address: string | null;
   center_point: { lat: number; lng: number };
   roof_count: number;
   capacity_kwp: number;
@@ -240,8 +262,24 @@ export type SimulationRoofDetail = {
   confidence: number | null;
   roof_polygon: GeoJsonPolygon;
   roof_polygon_px: PixelPoint[];
+  shape: RoofShapeKey | null;
+  align_to_azimuth: boolean | null;
+  is_solar_populated: boolean | null;
+  has_hvac: boolean | null;
+  has_skylight: boolean | null;
+  slot_overrides: Record<string, SlotStateKey> | null;
   input: SimulationRoofParameters;
   result: SimulationRoofResult;
+};
+
+/** Georeferensi tangkapan; dipakai untuk mengembalikan `roof_polygon_px` ke posisi aslinya. */
+export type SimulationImagery = {
+  image_id: string;
+  width: number;
+  height: number;
+  bbox: BoundingBox;
+  meters_per_pixel: number | null;
+  zoom: number | null;
 };
 
 /**
@@ -251,7 +289,9 @@ export type SimulationRoofDetail = {
 export type SimulationDetail = {
   id: number;
   message?: string;
+  address: string | null;
   center_point: { lat: number; lng: number };
+  imagery: SimulationImagery | null;
   /** `null` bila pemanggil tidak mengirim zoom; antarmuka memakai zoom bawaannya. */
   map_zoom: number | null;
   roofs: SimulationRoofDetail[];

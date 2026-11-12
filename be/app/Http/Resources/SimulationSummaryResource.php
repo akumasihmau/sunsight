@@ -22,6 +22,8 @@ class SimulationSummaryResource extends JsonResource
 
         return [
             'id' => $simulation->id,
+            // Dipakai dashboard sebagai nama proyek; tidak memengaruhi hitungan.
+            'address' => $simulation->address,
             'center_point' => [
                 'lat' => $simulation->center_lat,
                 'lng' => $simulation->center_lng,

@@ -257,6 +257,9 @@ class SimulationController extends Controller
         return Simulation::query()
             ->where('user_id', $request->user()->getKey())
             ->whereKey($id)
+            // Aset citra ikut dimuat karena resource mengirim georeferensinya;
+            // tanpa ini setiap simulasi menambah satu query.
+            ->with(['roofs', 'imageryAsset'])
             ->first();
     }
 

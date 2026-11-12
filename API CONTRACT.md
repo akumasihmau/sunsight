@@ -361,6 +361,16 @@ Dipakai oleh `POST /simulate` dan `POST /analyses` (identik).
 | `inverter_type` | string | wajib, `string` atau `micro` |
 | `monthly_bill_idr` | integer | wajib, ≥ 0 |
 | `tariff_key` | string | wajib, salah satu kunci dari `GET /options` |
+| `address` | string \| null | opsional, maks 160; label lokasi, tidak memengaruhi hitungan |
+| `roofs[].shape` | string \| null | opsional; `rectangle`, `l-shape`, `trapezoid`, `custom_polygon` |
+| `roofs[].align_to_azimuth` | boolean \| null | opsional; keadaan tampilan |
+| `roofs[].is_solar_populated` | boolean \| null | opsional; apakah tata letak sudah disusun |
+| `roofs[].has_hvac` | boolean \| null | opsional; penanda rintangan bidang |
+| `roofs[].has_skylight` | boolean \| null | opsional; penanda rintangan bidang |
+| `roofs[].slot_overrides` | object \| null | opsional; peta `<baris>_<kolom>` → `active`/`skylight`/`hvac`/`empty` |
+
+Kunci keadaan tampilan di atas tidak memengaruhi perhitungan. Nilainya disimpan apa adanya
+supaya simulasi dapat dibuka kembali persis seperti saat disimpan.
 
 ### `POST /simulate`
 
@@ -469,6 +479,16 @@ Query: `page` (bawaan 1), `per_page` (bawaan 10, maks 100), `limit` (alias `per_
 Objek datar (tidak dibungkus `data`), memakai bentuk bersama "detail simulasi". Memuat seluruh geometri
 bidang, masukan, hasil, dan asumsi yang dipakai. `map_zoom` dipakai antarmuka untuk memuat ulang peta pada
 tampilan yang sama; bila `null`, antarmuka memakai zoom bawaannya.
+
+`address` adalah label lokasi yang diketik pengguna, dan `imagery` memuat georeferensi
+tangkapan (`image_id`, `width`, `height`, `bbox`, `meters_per_pixel`, `zoom`). Keduanya dipakai
+antarmuka untuk membuka kembali simulasi: bidang dibangun ulang dari `roof_polygon_px` asli
+bersama `imagery`, sehingga bentuk atap dan posisinya kembali sama seperti saat disimpan.
+Karena itu `imagery` **wajib** ada pada simulasi yang dibuat lewat alur studio.
+
+Tiap bidang pada `roofs[]` juga memuat keadaan tampilan yang dikirim klien saat menyimpan:
+`shape`, `align_to_azimuth`, `is_solar_populated`, `has_hvac`, `has_skylight`, dan
+`slot_overrides`. Nilainya `null` bila klien tidak mengirimnya.
 
 `id` yang bukan milik pemanggil menghasilkan `404` yang identik dengan `id` yang tidak ada.
 
