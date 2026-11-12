@@ -7,9 +7,24 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Mouse
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { StudioMascotGuide } from "@/components/studio/StudioMascotGuide";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
-import { api, setToken, type SimulationInput, type SimulationParameters, type SimulationResult } from "@/lib/api";
+import {
+  ApiRequestError,
+  api,
+  setToken,
+  type BoundingBox,
+  type CapturedImage,
+  type DetectedRoof,
+  type PixelPoint,
+  type RoofDetectionResponse,
+  type SimulationAssumptions,
+  type SimulationParameters,
+  type SimulationRequest,
+  type SimulationResult,
+  type SimulationRoofInput,
+} from "@/lib/api";
 import { formatRp } from "@/lib/format";
 import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/profile";
+import { captureMapForDetection } from "@/lib/roofCapture";
 
 type CvLayer = "satellite" | "cv" | "heatmap";
 type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
@@ -121,6 +136,37 @@ const MODULE_SPECS: Record<
     desc: "Bifacial Dual-Glass",
   },
 };
+
+/**
+ * `MODULE_SPECS` memakai daya sebagai kunci internal, sedangkan kontrak memakai
+ * kunci katalog `GET /options`; pemetaan ini yang menjembatani keduanya.
+ */
+const MODULE_KEYS_BY_POWER: Record<number, string> = {
+  450: "compact_450",
+  550: "mono_perc_550",
+  580: "bifacial_580",
+};
+
+function moduleKeyForPower(power: number): string {
+  return MODULE_KEYS_BY_POWER[power] ?? MODULE_KEYS_BY_POWER[550];
+}
+
+/**
+ * Golongan tarif studio dipilih lewat harga per kWh, sedangkan server memakai
+ * kunci katalog. Opsi yang harganya sama jatuh ke kunci yang sama.
+ */
+const TARIFF_KEYS_BY_RATE: Record<number, string> = {
+  1700: "R2",
+  1699.53: "R2",
+  1444.7: "R1",
+  1444.71: "B2",
+  1114.74: "B2",
+  996.74: "B2",
+};
+
+function tariffKeyForRate(rate: number): string {
+  return TARIFF_KEYS_BY_RATE[rate] ?? "R2";
+}
 
 const ECO_TREE_CONFIGS = [
   // --- Back Hill Layer (9 trees) ---
@@ -275,199 +321,6 @@ const PRESET_ADDRESSES = STUDIO_SAVED_PROJECTS.map((p) => ({
   shape: p.shape,
   deg: p.deg,
 }));
-
-export interface DetectedRoofModel {
-  id: string;
-  name: string;
-  confidence: number;
-  area: number;
-  ridge: number;
-  slope: number;
-  pitch: number;
-  azimuth: number;
-  rotation: number;
-  lat: number;
-  lng: number;
-  offsetX: number;
-  offsetY: number;
-  vertices: Point2D[];
-}
-
-export const AI_DETECTED_ROOFS: DetectedRoofModel[] = [
-  {
-    id: "facet-1",
-    name: "Bidang Atap Utama",
-    confidence: 98.4,
-    area: 90.85,
-    ridge: 12.48,
-    slope: 7.28,
-    pitch: 22,
-    azimuth: 188,
-    rotation: -4,
-    lat: -6.6110,
-    lng: 106.8150,
-    offsetX: 0,
-    offsetY: 0,
-    vertices: [
-      { x: -6.24, y: -3.64 },
-      { x: 6.24, y: -3.64 },
-      { x: 6.24, y: 3.64 },
-      { x: -6.24, y: 3.64 },
-    ],
-  },
-  {
-    id: "facet-2",
-    name: "Bidang Atap Sayap",
-    confidence: 94.2,
-    area: 36.0,
-    ridge: 7.5,
-    slope: 4.8,
-    pitch: 18,
-    azimuth: 98,
-    rotation: -4,
-    lat: -6.61092,
-    lng: 106.81518,
-    offsetX: 160,
-    offsetY: 45,
-    vertices: [
-      { x: -3.75, y: -2.4 },
-      { x: 3.75, y: -2.4 },
-      { x: 3.75, y: 2.4 },
-      { x: -3.75, y: 2.4 },
-    ],
-  },
-  {
-    id: "facet-carport",
-    name: "Bidang Atap Carport Depan",
-    confidence: 91.8,
-    area: 23.56,
-    ridge: 6.2,
-    slope: 3.8,
-    pitch: 15,
-    azimuth: 180,
-    rotation: -4,
-    lat: -6.61114,
-    lng: 106.81488,
-    offsetX: -120,
-    offsetY: 110,
-    vertices: [
-      { x: -3.1, y: -1.9 },
-      { x: 3.1, y: -1.9 },
-      { x: 3.1, y: 1.9 },
-      { x: -3.1, y: 1.9 },
-    ],
-  },
-  {
-    id: "facet-east",
-    name: "Atap Bangunan Timur",
-    confidence: 89.5,
-    area: 58.8,
-    ridge: 9.8,
-    slope: 6.0,
-    pitch: 20,
-    azimuth: 190,
-    rotation: 12,
-    lat: -6.61085,
-    lng: 106.81535,
-    offsetX: 240,
-    offsetY: -65,
-    vertices: [
-      { x: -4.9, y: -3.0 },
-      { x: 4.9, y: -3.0 },
-      { x: 4.9, y: 3.0 },
-      { x: -4.9, y: 3.0 },
-    ],
-  },
-  {
-    id: "facet-south",
-    name: "Atap Bangunan Selatan",
-    confidence: 87.2,
-    area: 65.0,
-    ridge: 10.0,
-    slope: 6.5,
-    pitch: 22,
-    azimuth: 184,
-    rotation: -8,
-    lat: -6.61125,
-    lng: 106.81510,
-    offsetX: 70,
-    offsetY: 175,
-    vertices: [
-      { x: -5.0, y: -3.25 },
-      { x: 5.0, y: -3.25 },
-      { x: 5.0, y: 3.25 },
-      { x: -5.0, y: 3.25 },
-    ],
-  },
-];
-
-export function generateGpsCandidates(lat: number, lng: number): DetectedRoofModel[] {
-  return [
-    {
-      id: "gps-roof-main",
-      name: "Bidang Atap Utama",
-      confidence: 98.6,
-      area: 88.5,
-      ridge: 12.0,
-      slope: 7.2,
-      pitch: 22,
-      azimuth: 188,
-      rotation: -4,
-      lat: lat,
-      lng: lng,
-      offsetX: 0,
-      offsetY: 0,
-      vertices: [
-        { x: -6.0, y: -3.6 },
-        { x: 6.0, y: -3.6 },
-        { x: 6.0, y: 3.6 },
-        { x: -6.0, y: 3.6 },
-      ],
-    },
-    {
-      id: "gps-roof-wing",
-      name: "Bidang Atap Sayap",
-      confidence: 94.2,
-      area: 36.0,
-      ridge: 7.5,
-      slope: 4.8,
-      pitch: 18,
-      azimuth: 98,
-      rotation: -4,
-      lat: lat + 0.00008,
-      lng: lng + 0.00015,
-      offsetX: 140,
-      offsetY: 35,
-      vertices: [
-        { x: -3.75, y: -2.4 },
-        { x: 3.75, y: -2.4 },
-        { x: 3.75, y: 2.4 },
-        { x: -3.75, y: 2.4 },
-      ],
-    },
-    {
-      id: "gps-roof-carport",
-      name: "Bidang Atap Carport Depan",
-      confidence: 91.8,
-      area: 24.0,
-      ridge: 6.0,
-      slope: 4.0,
-      pitch: 15,
-      azimuth: 180,
-      rotation: -4,
-      lat: lat - 0.0001,
-      lng: lng - 0.0001,
-      offsetX: -120,
-      offsetY: 85,
-      vertices: [
-        { x: -3.0, y: -2.0 },
-        { x: 3.0, y: -2.0 },
-        { x: 3.0, y: 2.0 },
-        { x: -3.0, y: 2.0 },
-      ],
-    },
-  ];
-}
 
 export function computePolygonArea(vertices: Point2D[]): number {
   if (!vertices || vertices.length < 3) return 0;
@@ -871,53 +724,99 @@ export function getFacetVertices(facet: RoofFacet): Point2D[] {
   ];
 }
 
-const INITIAL_FACETS: RoofFacet[] = [
-  {
-    id: "facet-1",
-    name: "Bidang Atap Utama",
-    shape: "rectangle",
-    ridge: 12.48,
-    slope: 7.28,
-    pitch: 22,
-    azimuth: 188,
+/**
+ * Bidang contoh yang hanya dipakai sebagai bentuk cadangan ketika daftar bidang
+ * masih kosong, mis. sebelum pengguna menjalankan pindai AI. Studio sendiri
+ * mulai tanpa bidang apa pun supaya seluruh bidang berasal dari hasil deteksi.
+ */
+const FALLBACK_FACET: RoofFacet = {
+  id: "facet-fallback",
+  name: "Bidang Atap",
+  shape: "rectangle",
+  ridge: 12.48,
+  slope: 7.28,
+  pitch: 22,
+  azimuth: 188,
+  setback: 0.5,
+  gutter: 0.6,
+  rotation: 0,
+  lat: -6.611,
+  lng: 106.815,
+  offsetX: 0,
+  offsetY: 0,
+  hasHvac: false,
+  hasSkylight: false,
+  modulePower: 550,
+  orientation: "portrait",
+  panelGap: 3,
+  slotOverrides: {},
+  customModuleCount: null,
+  vertices: [
+    { x: -6.24, y: -3.64 },
+    { x: 6.24, y: -3.64 },
+    { x: 6.24, y: 3.64 },
+    { x: -6.24, y: 3.64 },
+  ],
+  alignToAzimuth: true,
+  isSolarPopulated: false,
+};
+
+
+/**
+ * Kemiringan dan azimuth adalah masukan pengguna, bukan hasil deteksi: dari satu
+ * citra nadir arah kemiringan tidak dapat ditentukan. Keduanya diisi nilai awal
+ * studio supaya panel properti langsung punya bentuk yang bisa dibaca.
+ */
+const DEFAULT_ROOF_TILT_DEG = 22;
+const DEFAULT_ROOF_AZIMUTH_DEG = 188;
+
+function roundMeters(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Mengubah bidang hasil deteksi menjadi `RoofFacet`.
+ *
+ * `polygon_px` diterjemahkan langsung memakai `meters_per_pixel` dari respons
+ * deteksi, bukan dihitung ulang dari skala peta. Titik tengah `bbox_px` menjadi
+ * acuan `lat`/`lng` lewat rumus piksel→geografis kontrak, sehingga konversi balik
+ * saat menyimpan simulasi menghasilkan piksel yang sama persis walaupun peta
+ * sudah digeser.
+ *
+ * `rotation` selalu 0 karena `vertices` sudah berada di frame piksel tangkapan.
+ */
+function buildFacetFromDetectedRoof(
+  roof: DetectedRoof,
+  image: CapturedImage,
+  index: number
+): RoofFacet {
+  const centerX = (roof.bbox_px.x1 + roof.bbox_px.x2) / 2;
+  const centerY = (roof.bbox_px.y1 + roof.bbox_px.y2) / 2;
+  const metersPerPixel = image.meters_per_pixel;
+
+  const vertices: Point2D[] = roof.polygon_px.map(([x, y]) => ({
+    x: Math.round((x - centerX) * metersPerPixel * 1000) / 1000,
+    y: Math.round((y - centerY) * metersPerPixel * 1000) / 1000,
+  }));
+
+  const bounds = polygonBounds(vertices);
+  const [minLng, minLat, maxLng, maxLat] = image.bbox;
+
+  return {
+    id: roof.id,
+    name: `Bidang Atap ${index + 1}`,
+    shape: "custom_polygon",
+    ridge: Math.max(0.1, roundMeters(bounds.width)),
+    slope: Math.max(0.1, roundMeters(bounds.height)),
+    pitch: DEFAULT_ROOF_TILT_DEG,
+    azimuth: DEFAULT_ROOF_AZIMUTH_DEG,
     setback: 0.5,
-    gutter: 0.6,
-    rotation: -4,
-    lat: -6.6110,
-    lng: 106.8150,
+    gutter: 0.5,
+    rotation: 0,
+    lat: maxLat - (centerY / image.height) * (maxLat - minLat),
+    lng: minLng + (centerX / image.width) * (maxLng - minLng),
     offsetX: 0,
     offsetY: 0,
-    hasHvac: true,
-    hasSkylight: false,
-    modulePower: 550,
-    orientation: "portrait",
-    panelGap: 3,
-    slotOverrides: {},
-    customModuleCount: null,
-    vertices: [
-      { x: -6.24, y: -3.64 },
-      { x: 6.24, y: -3.64 },
-      { x: 6.24, y: 3.64 },
-      { x: -6.24, y: 3.64 },
-    ],
-    alignToAzimuth: true,
-    isSolarPopulated: false,
-  },
-  {
-    id: "facet-2",
-    name: "Bidang Atap Sayap Timur",
-    shape: "rectangle",
-    ridge: 7.5,
-    slope: 4.8,
-    pitch: 18,
-    azimuth: 98,
-    setback: 0.4,
-    gutter: 0.5,
-    rotation: -4,
-    lat: -6.61092,
-    lng: 106.81518,
-    offsetX: 155,
-    offsetY: 40,
     hasHvac: false,
     hasSkylight: false,
     modulePower: 550,
@@ -925,16 +824,48 @@ const INITIAL_FACETS: RoofFacet[] = [
     panelGap: 3,
     slotOverrides: {},
     customModuleCount: null,
-    vertices: [
-      { x: -3.75, y: -2.4 },
-      { x: 3.75, y: -2.4 },
-      { x: 3.75, y: 2.4 },
-      { x: -3.75, y: 2.4 },
-    ],
+    vertices,
     alignToAzimuth: true,
-    isSolarPopulated: false,
-  },
-];
+    // Bidang hasil deteksi sudah punya geometri yang pasti, jadi tata letak panel
+    // langsung diisi. Tombol "Susun Tata Letak Panel Otomatis" tetap tersedia untuk
+    // menyusun ulang setelah parameter diubah.
+    isSolarPopulated: true,
+  };
+}
+
+/**
+ * Kebalikan `buildFacetFromDetectedRoof`: poligon piksel tangkapan untuk payload
+ * simulasi. Sudut `rotation` diterapkan lebih dulu karena tampilan memutar
+ * poligon tampilan memakai nilai itu, sedangkan `vertices` disimpan apa adanya.
+ */
+function facetPolygonPx(facet: RoofFacet, image: CapturedImage): PixelPoint[] {
+  const [minLng, minLat, maxLng, maxLat] = image.bbox;
+  const centerX = ((facet.lng - minLng) / (maxLng - minLng)) * image.width;
+  const centerY = ((maxLat - facet.lat) / (maxLat - minLat)) * image.height;
+
+  const radians = (facet.rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const metersPerPixel = image.meters_per_pixel;
+
+  return getFacetVertices(facet).map((vertex) => [
+    Math.round((centerX + (vertex.x * cos - vertex.y * sin) / metersPerPixel) * 10) / 10,
+    Math.round((centerY + (vertex.x * sin + vertex.y * cos) / metersPerPixel) * 10) / 10,
+  ]);
+}
+
+/** Kontrak menolak poligon yang keluar dari batas berkas tangkapan. */
+function polygonInsideImage(points: PixelPoint[], image: CapturedImage): boolean {
+  const tolerance = 1;
+
+  return points.every(
+    ([x, y]) =>
+      x >= -tolerance &&
+      y >= -tolerance &&
+      x <= image.width + tolerance &&
+      y <= image.height + tolerance
+  );
+}
 
 function computeFacetMetrics(
   facet: RoofFacet,
@@ -1183,8 +1114,10 @@ function StudioPageContent() {
   const [probePos, setProbePos] = useState<{ x: number; y: number } | null>(null);
 
   // Multi-Polygon Roof Facets State & Selection
-  const [facets, setFacets] = useState<RoofFacet[]>(INITIAL_FACETS);
-  const [selectedFacetIds, setSelectedFacetIds] = useState<string[]>(["facet-1"]);
+  // Daftar dimulai kosong: seluruh bidang berasal dari hasil deteksi model,
+  // ditambah poligon yang digambar sendiri oleh pengguna bila perlu.
+  const [facets, setFacets] = useState<RoofFacet[]>([]);
+  const [selectedFacetIds, setSelectedFacetIds] = useState<string[]>([]);
 
   // Active facet ID is the primary focus facet for single-facet properties editing
   const activeFacetId = useMemo(() => {
@@ -1210,11 +1143,18 @@ function StudioPageContent() {
   const [measureMousePos, setMeasureMousePos] = useState<Point2D | null>(null);
   const [isMeasureClosed, setIsMeasureClosed] = useState(false);
 
-  // AI Rooftop Detection States (Front End Simulation)
-  const [showDetectedRoofs, setShowDetectedRoofs] = useState(true);
+  // Hasil deteksi model: georeferensi tangkapan terakhir, bidang kandidat, dan
+  // pilihan sementara sebelum diterapkan menjadi bidang proyek.
+  const [detection, setDetection] = useState<RoofDetectionResponse | null>(null);
+  const [detectedRoofs, setDetectedRoofs] = useState<DetectedRoof[]>([]);
+  const [selectedDetectedIds, setSelectedDetectedIds] = useState<string[]>([]);
+  const [showDetectedRoofs, setShowDetectedRoofs] = useState(false);
   const [isAiScanning, setIsAiScanning] = useState(false);
   const [selectionDone, setSelectionDone] = useState(false);
-  const [detectedRoofsList, setDetectedRoofsList] = useState<DetectedRoofModel[]>(AI_DETECTED_ROOFS);
+
+  // Pratinjau tangkapan sebagai object URL; ditampilkan sebagai image overlay
+  // pada bbox yang sama dengan yang dikirim ke model.
+  const [capturePreviewUrl, setCapturePreviewUrl] = useState<string | null>(null);
 
   // Map synchronization state for real-time scale & position tracking
   const [mapTick, setMapTick] = useState(0);
@@ -1225,6 +1165,9 @@ function StudioPageContent() {
   const esriSatelliteLayerRef = useRef<any>(null);
   const osmStreetLayerRef = useRef<any>(null);
   const labelsLayerRef = useRef<any>(null);
+
+  // Layer bidang kandidat hasil deteksi, dikunci per id bidang.
+  const detectionLayersRef = useRef<Map<string, any>>(new Map());
 
   // Exact Real-World Physical Scale (Pixels per meter based on Web Mercator & Latitude)
   const pixelsPerMeter = useMemo(() => {
@@ -1263,7 +1206,7 @@ function StudioPageContent() {
 
   // Active Facet accessor
   const activeFacet = useMemo(() => {
-    return facets.find((f) => f.id === activeFacetId) || facets[0] || INITIAL_FACETS[0];
+    return facets.find((f) => f.id === activeFacetId) || facets[0] || FALLBACK_FACET;
   }, [facets, activeFacetId]);
 
   const updateActiveFacet = useCallback((patch: Partial<RoofFacet>) => {
@@ -1325,6 +1268,7 @@ function StudioPageContent() {
     const pName = searchParams.get("name");
     const pLat = searchParams.get("lat");
     const pLng = searchParams.get("lng");
+    const pZoom = searchParams.get("zoom");
     const pRidge = searchParams.get("ridge");
     const pSlope = searchParams.get("slope");
     const pTilt = searchParams.get("tilt");
@@ -1338,6 +1282,7 @@ function StudioPageContent() {
       }
       const latNum = pLat ? Number(pLat) : null;
       const lngNum = pLng ? Number(pLng) : null;
+      const zoomNum = pZoom ? Number(pZoom) : null;
 
       updateActiveFacet({
         ...(pName ? { name: pName } : {}),
@@ -1352,7 +1297,10 @@ function StudioPageContent() {
       });
 
       if (latNum !== null && lngNum !== null && !isNaN(latNum) && !isNaN(lngNum) && mapInstanceRef.current) {
-        mapInstanceRef.current.setView([latNum, lngNum], 21);
+        // `zoom` berasal dari `map_zoom` respons server, sehingga proyek tersimpan
+        // terbuka lagi pada tampilan yang sama.
+        const zoom = zoomNum !== null && !isNaN(zoomNum) ? zoomNum : 21;
+        mapInstanceRef.current.setView([latNum, lngNum], zoom);
       }
     }
   }, [searchParams, updateActiveFacet]);
@@ -1420,92 +1368,203 @@ function StudioPageContent() {
     return facets.filter((f) => selectedFacetIds.includes(f.id));
   }, [facets, selectedFacetIds]);
 
-  const selectDetectedRoof = useCallback(
-    (detected: DetectedRoofModel) => {
-      const existing = facets.find((f) => f.id === detected.id);
-      if (existing) {
-        setActiveFacetId(detected.id);
-        showToast(`🎯 Beralih ke ${detected.name}`);
-      } else {
-        const newFacet: RoofFacet = {
-          id: detected.id,
-          name: detected.name,
-          shape: "custom_polygon",
-          ridge: detected.ridge,
-          slope: detected.slope,
-          pitch: detected.pitch,
-          azimuth: detected.azimuth,
-          setback: 0.5,
-          gutter: 0.5,
-          rotation: detected.rotation,
-          lat: detected.lat,
-          lng: detected.lng,
-          offsetX: detected.offsetX,
-          offsetY: detected.offsetY,
-          hasHvac: false,
-          hasSkylight: false,
-          modulePower: 550,
-          orientation: "portrait",
-          panelGap: 3,
-          slotOverrides: {},
-          customModuleCount: null,
-          vertices: detected.vertices,
-          isSolarPopulated: false,
-          ...buildPolygonPatch(detected.vertices, {
-            lat: detected.lat,
-            lng: detected.lng,
-            offsetX: detected.offsetX,
-            offsetY: detected.offsetY,
-            rotation: detected.rotation,
-          }),
-        };
-        setFacets((prev) => [...prev, newFacet]);
-        setSelectedFacetIds((prev) => [...prev.filter((x) => x !== detected.id), detected.id]);
-        showToast(
-          `🎯 ${detected.name} terpilih! Panel surya otomatis dipasang (${detected.area.toFixed(1)} m²)`
-        );
-      }
-    },
-    [facets, showToast, buildPolygonPatch, setActiveFacetId]
+  // Bidang kandidat yang belum diterapkan menjadi bidang proyek.
+  const remainingDetectedRoofs = useMemo(
+    () => detectedRoofs.filter((roof) => !facets.some((facet) => facet.id === roof.id)),
+    [detectedRoofs, facets]
   );
 
+  const selectDetectedRoof = useCallback(
+    (roofId: string) => {
+      setSelectedDetectedIds((prev) =>
+        prev.includes(roofId) ? prev.filter((id) => id !== roofId) : [...prev, roofId]
+      );
+    },
+    []
+  );
+
+  /** Pesan kesalahan yang bisa dibaca pengguna, dengan saran per status. */
+  const detectionErrorMessage = useCallback((caught: unknown): string => {
+    if (caught instanceof ApiRequestError) {
+      if (caught.status === 413) {
+        return "Tangkapan peta terlalu besar untuk diunggah. Perkecil jendela peramban, lalu pindai ulang.";
+      }
+
+      return `Deteksi gagal: ${caught.message}`;
+    }
+
+    if (caught instanceof Error && caught.message !== "") {
+      return caught.message;
+    }
+
+    return "Deteksi atap gagal. Coba pindai ulang.";
+  }, []);
+
+  /**
+   * Menampilkan seluruh area tangkapan tanpa menggeser titik tengah peta.
+   *
+   * Tangkapan dibuat pada cakupan 180–230 m, sedangkan tampilan pengguna bisa
+   * jauh lebih rapat; tanpa penyesuaian ini poligon hasil deteksi akan meluber
+   * keluar layar sehingga tidak bisa dipilih. Zoom hanya diturunkan seperlunya,
+   * dan tampilan pengguna tidak disentuh sama sekali bila areanya sudah muat.
+   */
+  const revealCaptureArea = useCallback((bbox: BoundingBox) => {
+    const map = mapInstanceRef.current;
+
+    if (!map) return;
+
+    const [minLng, minLat, maxLng, maxLat] = bbox;
+    const view = map.getBounds();
+    const alreadyVisible =
+      view.getWest() <= minLng &&
+      view.getEast() >= maxLng &&
+      view.getSouth() <= minLat &&
+      view.getNorth() >= maxLat;
+
+    if (alreadyVisible) return;
+
+    // Zoom diturunkan seperlunya dari perbandingan rentang geografis, lalu peta
+    // dipusatkan ke titik tengah area tangkapan; tidak ada perhitungan batas
+    // Leaflet yang perlu dikonstruksi ulang di sini.
+    const lngRatio = (maxLng - minLng) / Math.max(view.getEast() - view.getWest(), 1e-9);
+    const latRatio = (maxLat - minLat) / Math.max(view.getNorth() - view.getSouth(), 1e-9);
+    const steps = Math.ceil(Math.log2(Math.max(lngRatio, latRatio, 1)));
+    const zoom = Math.max(map.getMinZoom(), Math.round(map.getZoom()) - steps);
+
+    map.setView([(minLat + maxLat) / 2, (minLng + maxLng) / 2], zoom);
+  }, []);
+
+  /**
+   * Menjalankan deteksi sungguhan: menangkap area peta yang tampil, mengirimnya
+   * ke `POST /roof-detections` sebagai multipart, lalu menyimpan bidang hasinya
+   * untuk dipilih pengguna. Tidak ada kandidat karangan di jalur ini.
+   */
+  const runRoofDetection = useCallback(async () => {
+    const map = mapInstanceRef.current;
+
+    if (!map) {
+      showToast("Peta belum siap. Tunggu sebentar, lalu pindai ulang.");
+      return;
+    }
+
+    setIsAiScanning(true);
+    setShowDetectedRoofs(false);
+    setSelectionDone(false);
+    setSelectedDetectedIds([]);
+
+    try {
+      const capture = await captureMapForDetection(map, {
+        layer: esriSatelliteLayerRef.current,
+      });
+
+
+      const response = await api.detectRoofs({
+        blob: capture.blob,
+        bbox: capture.bbox,
+        width: capture.width,
+        height: capture.height,
+        zoom: capture.zoom,
+      });
+
+      setDetection(response);
+      setDetectedRoofs(response.roofs);
+      setSelectedDetectedIds([]);
+      setShowDetectedRoofs(response.roofs.length > 0);
+
+      // Pratinjau di peta memakai bbox yang sama dengan yang dikirim ke model,
+      // supaya area yang dilihat pengguna identik dengan area yang dipindai.
+      revealCaptureArea(response.image.bbox);
+      setCapturePreviewUrl(URL.createObjectURL(capture.blob));
+
+      if (response.roofs.length === 0) {
+        showToast(
+          "Model tidak menemukan bidang atap di area ini. Geser peta ke atap lain, lalu pindai ulang."
+        );
+      } else {
+        showToast(
+          `${response.roofs.length} bidang atap terdeteksi. Klik bidang pada peta untuk memilih.`
+        );
+      }
+    } catch (caught) {
+      setDetection(null);
+      setDetectedRoofs([]);
+      setShowDetectedRoofs(false);
+      setCapturePreviewUrl(null);
+      showToast(detectionErrorMessage(caught));
+    } finally {
+      setIsAiScanning(false);
+    }
+  }, [detectionErrorMessage, revealCaptureArea, showToast]);
+
+  const handleRunAiDetection = useCallback(() => {
+    showToast("Menjalankan model AI untuk memindai kontur atap...");
+    void runRoofDetection();
+  }, [runRoofDetection, showToast]);
+
+  /**
+   * Memindahkan bidang terpilih dari hasil deteksi menjadi bidang proyek.
+   * Kemiringan dan azimuth tetap diisi pengguna setelah bidang diterapkan.
+   */
+  const commitDetectedSelection = useCallback(() => {
+    const image = detection?.image;
+
+    if (!image) {
+      setShowDetectedRoofs(false);
+      setSelectionDone(true);
+      return;
+    }
+
+    const chosen = detectedRoofs.filter((roof) => selectedDetectedIds.includes(roof.id));
+
+    if (chosen.length === 0) {
+      showToast("Pilih minimal satu bidang atap pada peta terlebih dahulu.");
+      return;
+    }
+
+    const startIndex = facets.length;
+    const added = chosen.map((roof, index) =>
+      buildFacetFromDetectedRoof(roof, image, startIndex + index)
+    );
+    const totalArea = chosen.reduce((sum, roof) => sum + roof.area_sqm, 0);
+
+    setFacets((prev) => [...prev, ...added]);
+    setSelectedFacetIds(added.map((facet) => facet.id));
+    setActiveFacetId(added[added.length - 1].id);
+    setSelectedDetectedIds([]);
+    setShowDetectedRoofs(false);
+    setSelectionDone(true);
+    showToast(
+      `${added.length} bidang atap diterapkan (${totalArea.toFixed(1)} m²). Sesuaikan kemiringan dan azimuth sesuai kondisi nyata.`
+    );
+  }, [
+    detection,
+    detectedRoofs,
+    selectedDetectedIds,
+    facets.length,
+    showToast,
+    setActiveFacetId,
+  ]);
+
+  /** Alur GPS: pindah ke koordinat, lalu jalankan deteksi nyata di sana. */
   const triggerGpsDetectionFlow = useCallback(
     (latitude: number, longitude: number) => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([latitude, longitude], 21, { duration: 1.5 });
+        mapInstanceRef.current.flyTo([latitude, longitude], 21, { duration: 1.2 });
       }
-      setAddressInput("Lokasi GPS Terkini");
 
-      // Reset facets to empty: ONLY show detected roofs first (no solar panels yet!)
+      setAddressInput("Lokasi GPS Terkini");
       setFacets([]);
       setSelectedFacetIds([]);
+      setDetection(null);
+      setDetectedRoofs([]);
+      setSelectedDetectedIds([]);
       setSelectionDone(false);
+      setCapturePreviewUrl(null);
 
-      // Generate localized detected candidates
-      const gpsCandidates = generateGpsCandidates(latitude, longitude);
-      setDetectedRoofsList(gpsCandidates);
-
-      // Run AI Scanning animation
-      setIsAiScanning(true);
-      setShowDetectedRoofs(true);
-      setTimeout(() => {
-        setIsAiScanning(false);
-        showToast("✨ 3 Bidang atap terdeteksi oleh AI! Klik bidang atap di peta untuk memasang panel surya.");
-      }, 900);
+      void runRoofDetection();
     },
-    [showToast]
+    [runRoofDetection]
   );
-
-  const handleRunAiDetection = useCallback(() => {
-    setIsAiScanning(true);
-    setShowDetectedRoofs(true);
-    setSelectionDone(false);
-    showToast("🔍 Menjalankan model AI Computer Vision untuk memindai kontur atap...");
-    setTimeout(() => {
-      setIsAiScanning(false);
-      showToast("✨ Deteksi atap selesai. Silakan pilih bidang atap untuk dipasang panel.");
-    }, 900);
-  }, [showToast]);
 
   const startVertexDrag = useCallback(
     (e: ReactMouseEvent, facetId: string, vertexIdx: number) => {
@@ -2159,21 +2218,24 @@ function StudioPageContent() {
         });
 
         // Real Earth Esri World Imagery (High-resolution satellite nadir tiles)
+        // `crossOrigin` wajib: tanpa itu kanvas tangkapan menjadi tainted dan
+        // ekspor JPEG untuk deteksi atap akan gagal.
         const esriSatellite = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          { maxNativeZoom: 19, maxZoom: 22 }
+          { maxNativeZoom: 19, maxZoom: 22, crossOrigin: true }
         );
 
         // OpenStreetMap (OSM) standard vector road tile layer
         const osmStreet = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
           maxNativeZoom: 19,
           maxZoom: 22,
+          crossOrigin: true,
         });
 
         // Hybrid labels layer (Street & City reference)
         const labelsLayer = L.tileLayer(
           "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-          { maxNativeZoom: 19, maxZoom: 22 }
+          { maxNativeZoom: 19, maxZoom: 22, crossOrigin: true }
         );
 
         esriSatellite.addTo(map);
@@ -2269,6 +2331,109 @@ function StudioPageContent() {
       if (!map.hasLayer(labels)) labels.addTo(map);
     }
   }, [activeLayer, mapLoaded]);
+
+  /**
+   * Pratinjau tangkapan: gambar berkas yang benar-benar dikirim ke model pada
+   * `bbox` yang sama, sehingga batas area yang dianalisis terlihat langsung di
+   * peta. Overlay ikut hilang bersama poligon kandidat.
+   */
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const L = (window as any).L;
+
+    if (!map || !L || !mapLoaded || !showDetectedRoofs) return;
+    if (capturePreviewUrl === null || detection === null) return;
+
+    const [minLng, minLat, maxLng, maxLat] = detection.image.bbox;
+    const overlay = L.imageOverlay(
+      capturePreviewUrl,
+      [
+        [minLat, minLng],
+        [maxLat, maxLng],
+      ],
+      { opacity: 0.9, interactive: false }
+    ).addTo(map);
+
+    return () => {
+      overlay.remove();
+    };
+  }, [showDetectedRoofs, capturePreviewUrl, detection, mapLoaded]);
+
+  // Object URL pratinjau dilepas saat diganti atau saat halaman ditinggalkan.
+  useEffect(() => {
+    if (capturePreviewUrl === null) return;
+
+    return () => {
+      URL.revokeObjectURL(capturePreviewUrl);
+    };
+  }, [capturePreviewUrl]);
+
+  /**
+   * Poligon hasil deteksi digambar sebagai layer Leaflet dari `polygon_lnglat`
+   * apa adanya, jadi posisinya tetap benar di pan/zoom mana pun. Klik poligon
+   * menambah atau mencabut pilihannya.
+   */
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const L = (window as any).L;
+
+    if (!map || !L || !mapLoaded) return;
+
+    const layers: Map<string, any> = detectionLayersRef.current;
+    const visible = showDetectedRoofs ? remainingDetectedRoofs : [];
+    const wanted = new Set(visible.map((roof) => roof.id));
+
+    for (const [id, layer] of layers) {
+      if (!wanted.has(id)) {
+        map.removeLayer(layer);
+        layers.delete(id);
+      }
+    }
+
+    for (const roof of visible) {
+      const isSelected = selectedDetectedIds.includes(roof.id);
+      const style = {
+        color: isSelected ? "#b45309" : "#f59e0b",
+        weight: isSelected ? 4 : 2.5,
+        dashArray: isSelected ? null : "6 4",
+        fillColor: "#f59e0b",
+        fillOpacity: isSelected ? 0.34 : 0.18,
+      };
+
+      const existing = layers.get(roof.id);
+
+      if (existing) {
+        existing.setStyle(style);
+        continue;
+      }
+
+      // Kontrak memakai urutan GeoJSON `[lng, lat]`, Leaflet memakai `[lat, lng]`.
+      const latLngs = roof.polygon_lnglat.map(([lng, lat]) => [lat, lng]);
+      const polygon = L.polygon(latLngs, style).addTo(map);
+      polygon.on("click", () => selectDetectedRoof(roof.id));
+      polygon.bindTooltip(
+        `${roof.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(roof.confidence * 100)}%`,
+        { sticky: true }
+      );
+      layers.set(roof.id, polygon);
+    }
+  }, [
+    remainingDetectedRoofs,
+    selectedDetectedIds,
+    showDetectedRoofs,
+    mapLoaded,
+    selectDetectedRoof,
+  ]);
+
+  // Layer deteksi hanya milik peta yang sedang aktif; bersihkan daftarnya saat
+  // komponen dilepas supaya tidak menunjuk layer dari peta yang sudah dihancurkan.
+  useEffect(() => {
+    const layers: Map<string, any> = detectionLayersRef.current;
+
+    return () => {
+      layers.clear();
+    };
+  }, []);
 
   // OSM Nominatim Geocoding & Preset Search handler (Focused on Kota Bogor & presets)
   const handleGeocodeSearch = async (query: string) => {
@@ -2481,35 +2646,80 @@ function StudioPageContent() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const handleSaveSimulation = async () => {
-    setIsSaving(true);
-    try {
-      const payload: SimulationInput = {
-        image_id: "default-bogor-orthophoto",
-        roof_rect: {
-          x: Math.round(activeFacet.offsetX || 100),
-          y: Math.round(activeFacet.offsetY || 100),
-          width: Math.round(activeFacet.ridge * 10),
-          height: Math.round(activeFacet.slope * 10),
-          rotation_deg: activeFacet.rotation || 0,
-        },
-        setback_m: activeFacet.setback,
-        gutter_m: activeFacet.gutter,
-        tilt_deg: activeFacet.pitch,
-        azimuth_deg: activeFacet.azimuth,
-        module_key: `module_${activeFacet.modulePower}`,
-        orientation: activeFacet.orientation,
-        clearance_m: activeFacet.panelGap / 100,
-        panel_count: calc.modulesFitted,
-        inverter_type: inverterType,
-        monthly_bill_idr: monthlyBill,
-        tariff_key: "R2",
-      };
+    if (detection === null) {
+      showToast("Pindai bidang atap terlebih dahulu supaya bidang punya acuan tangkapan.");
+      return;
+    }
 
+    const image = detection.image;
+
+    // Bidang yang tersimpan adalah yang dicentang; bila tidak ada yang dicentang,
+    // bidang yang sedang aktif saja.
+    const targetFacets =
+      selectedFacets.length > 0
+        ? selectedFacets
+        : facets.filter((facet) => facet.id === activeFacetId);
+
+    if (targetFacets.length === 0) {
+      showToast("Belum ada bidang atap untuk disimpan. Pilih minimal satu bidang.");
+      return;
+    }
+
+    const roofs: SimulationRoofInput[] = [];
+    const skipped: string[] = [];
+
+    for (const facet of targetFacets) {
+      const polygonPx = facetPolygonPx(facet, image);
+
+      // Kontrak menolak poligon yang keluar dari batas berkas tangkapan, jadi
+      // bidang yang sudah digeser keluar area dipisahkan agar simpan tidak gagal.
+      if (!polygonInsideImage(polygonPx, image)) {
+        skipped.push(facet.name);
+        continue;
+      }
+
+      const detected = detectedRoofs.find((roof) => roof.id === facet.id);
+
+      roofs.push({
+        label: facet.name,
+        detection_id: detected?.id ?? null,
+        confidence: detected?.confidence ?? null,
+        roof_polygon_px: polygonPx,
+        setback_m: facet.setback,
+        gutter_m: facet.gutter,
+        tilt_deg: facet.pitch,
+        azimuth_deg: facet.azimuth,
+        module_key: moduleKeyForPower(facet.modulePower),
+        orientation: facet.orientation,
+        clearance_m: facet.panelGap / 100,
+        panel_count: facet.customModuleCount,
+      });
+    }
+
+    if (roofs.length === 0) {
+      showToast("Tidak ada bidang di dalam area tangkapan terakhir. Pindai ulang area ini.");
+      return;
+    }
+
+    const payload: SimulationRequest = {
+      image_id: detection.image_id,
+      roofs,
+      inverter_type: inverterType,
+      monthly_bill_idr: monthlyBill,
+      tariff_key: tariffKeyForRate(plnTariff),
+    };
+
+    setIsSaving(true);
+
+    try {
+      // Seluruh angka pada konfirmasi berasal dari respons server, bukan dari
+      // perhitungan lokal `calc`.
       const res = await api.saveSimulation(payload);
-      setIsSaving(false);
+
       setSaveSuccess(true);
 
-      // Simpan status tur beranda & sinkronisasi proyek lokal
+      // Sinkronkan proyek lokal memakai `center_point` dan `map_zoom` dari
+      // server supaya peta bisa dibuka kembali pada tampilan yang sama.
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("sunsight_tour_pending", "true");
@@ -2517,24 +2727,43 @@ function StudioPageContent() {
           const arr = stored ? JSON.parse(stored) : [];
           arr.unshift({
             id: res.id,
-            name: activeFacet.name || "Rancangan Atap Studio",
+            name: roofs.length === 1 ? roofs[0].label : `${roofs.length} Bidang Atap`,
             address: addressInput,
-            date: new Date().toISOString().split("T")[0],
-            capacityKwp: calc.actualKwp,
-            annualOutputKwh: Math.round(calc.annualProductionKwh),
-            monthlySavingsRp: Math.round((calc.annualProductionKwh * 1444.7) / 12),
-            bepYears: calc.actualKwp > 0 ? 4.8 : 5.0,
-            roofShape: activeFacet.shape,
+            date: res.created_at.split("T")[0],
+            lat: res.center_point.lat,
+            lon: res.center_point.lng,
+            zoom: res.map_zoom,
+            capacityKwp: res.result.capacity_kwp,
+            annualOutputKwh: Math.round(res.result.annual_production_kwh),
+            monthlySavingsRp: res.result.monthly_saving_idr,
+            bepYears: res.result.payback_years,
+            roofCount: res.result.roof_count,
           });
           localStorage.setItem("sunsight_saved_projects", JSON.stringify(arr));
         } catch {}
       }
 
-      showToast(`✅ Desain tersimpan! Sunny siap memandu fitur Beranda ☀️`);
+      const skippedNote =
+        skipped.length > 0
+          ? ` ${skipped.length} bidang di luar area tangkapan tidak disertakan.`
+          : "";
+
+      showToast(
+        `Simulasi #${res.id} tersimpan — ${res.result.capacity_kwp.toLocaleString("id-ID")} kWp, ${
+          Math.round(res.result.annual_production_kwh).toLocaleString("id-ID")
+        } kWh/tahun.${skippedNote}`
+      );
       setTimeout(() => setSaveSuccess(false), 3500);
-    } catch (err: any) {
+    } catch (caught) {
+      showToast(
+        `Gagal menyimpan: ${
+          caught instanceof Error && caught.message !== ""
+            ? caught.message
+            : "Periksa koneksi backend"
+        }`
+      );
+    } finally {
       setIsSaving(false);
-      showToast(`Gagal menyimpan: ${err?.message || "Periksa koneksi backend"}`);
     }
   };
 
@@ -2963,46 +3192,40 @@ function StudioPageContent() {
   }, [plnTariff]);
 
   const simulationResultForModal: SimulationResult = {
-    geometry: {
-      roof_width_m: activeFacet.slope,
-      roof_length_m: activeFacet.ridge,
-      total_area_sqm: calc.totalGrossArea,
-      effective_area_sqm: calc.totalNetArea,
-    },
-    layout: {
-      max_slots: calc.totalValidSlotsAggregate || calc.totalValidSlots,
-      installed: calc.totalModulesFitted,
-      rows: calc.rows,
-      columns: calc.cols,
-      module_area_sqm: calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l,
-      density_ratio: calc.totalNetArea > 0 ? (calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l) / calc.totalNetArea : 0,
-    },
-    energy: {
-      capacity_kwp: calc.actualKwp,
-      annual_production_kwh: calc.annualProductionKwh,
-      daily_irradiance_kwh_per_sqm: 4.85,
-      incidence_factor: 0.984,
-      performance_ratio: 0.8,
-      irradiance_source: "Model Radiasi Surya Tropis",
-      irradiance_period: "Rata-rata Tahunan",
-    },
-    finance: {
-      capex_total_idr: calc.totalCapex,
-      capex_breakdown: {
-        modules_idr: calc.costModules,
-        inverter_idr: calc.costInverter,
-        racking_idr: calc.costRacking,
-        installation_idr: calc.costInstall,
-      },
-      monthly_saving_idr: calc.cappedSaving,
-      annual_saving_idr: calc.annualSaving,
-      payback_years: calc.paybackYears,
-      tariff_key: "PLN",
-      tariff_label: selectedTariffLabel,
-      tariff_idr_per_kwh: plnTariff,
-      monthly_bill_idr: monthlyBill,
-      co2_reduction_kg_per_year: calc.co2ReductionTon * 1000,
-      trees_equivalent: calc.treesEquivalent,
+    roof_count: facets.length,
+    total_area_sqm: calc.totalGrossArea,
+    effective_area_sqm: calc.totalNetArea,
+    max_slots: calc.totalValidSlotsAggregate || calc.totalValidSlots,
+    installed: calc.totalModulesFitted,
+    module_area_sqm: calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l,
+    density_ratio:
+      calc.totalNetArea > 0
+        ? (calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l) / calc.totalNetArea
+        : 0,
+    capacity_kwp: calc.actualKwp,
+    annual_production_kwh: calc.annualProductionKwh,
+    capex_total_idr: calc.totalCapex,
+    monthly_saving_idr: calc.cappedSaving,
+    annual_saving_idr: calc.annualSaving,
+    payback_years: calc.paybackYears,
+    co2_reduction_kg_per_year: calc.co2ReductionTon * 1000,
+    trees_equivalent: calc.treesEquivalent,
+  };
+
+  const simulationAssumptionsForModal: SimulationAssumptions = {
+    daily_irradiance_kwh_per_sqm: 4.85,
+    irradiance_source: "Model Radiasi Surya Tropis",
+    irradiance_period: "Rata-rata Tahunan",
+    incidence_factor: 0.984,
+    performance_ratio: 0.8,
+    tariff_key: tariffKeyForRate(plnTariff),
+    tariff_label: selectedTariffLabel,
+    tariff_idr_per_kwh: plnTariff,
+    capex_breakdown: {
+      modules_idr: calc.costModules,
+      inverter_idr: calc.costInverter,
+      racking_idr: calc.costRacking,
+      installation_idr: calc.costInstall,
     },
   };
 
@@ -3011,13 +3234,13 @@ function StudioPageContent() {
     gutter_m: activeFacet.gutter ?? 0.5,
     tilt_deg: activeFacet.pitch ?? 20,
     azimuth_deg: activeFacet.azimuth ?? 188,
-    module_key: `module_${modulePower}`,
+    module_key: moduleKeyForPower(modulePower),
     orientation: activeFacet.orientation ?? "portrait",
     clearance_m: (activeFacet.panelGap ?? 3) / 100,
     panel_count: calc.totalModulesFitted,
     inverter_type: inverterType,
     monthly_bill_idr: monthlyBill,
-    tariff_key: "PLN",
+    tariff_key: tariffKeyForRate(plnTariff),
   };
 
   return (
@@ -4256,111 +4479,48 @@ function StudioPageContent() {
             </div>
           )}
 
-          {/* AI Detection Floating Mode Guidance Banners (Bottom-Docked to avoid navbar overlap) */}
-          {showDetectedRoofs && facets.length === 0 && !isAiScanning && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+          {/* Panduan seleksi bidang hasil deteksi model */}
+          {showDetectedRoofs && remainingDetectedRoofs.length > 0 && !isAiScanning && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
                 <span className="material-symbols-outlined text-[15px]">psychology</span>
               </span>
-              <span className="font-medium text-slate-800">
-                <strong>{detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length} Bidang atap terdeteksi AI</strong>. Klik bidang di peta untuk memasang panel surya.
-              </span>
-            </div>
-          )}
-
-          {showDetectedRoofs && facets.length > 0 && !selectionDone && !isAiScanning && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
-              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold shrink-0">
-                <span className="material-symbols-outlined text-[14px]">check_circle</span>
-              </span>
               <span className="font-medium text-slate-800 truncate">
-                <strong>{facets.length} Bidang terpilih</strong> (Panel surya aktif)
+                <strong>{remainingDetectedRoofs.length} bidang atap terdeteksi</strong>
+                {selectedDetectedIds.length > 0
+                  ? ` · ${selectedDetectedIds.length} dipilih`
+                  : " · klik bidang pada peta untuk memilih"}
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  setShowDetectedRoofs(false);
-                  setSelectionDone(true);
-                  showToast("✨ Desain diterapkan! Poligon atap yang tidak dipilih disembunyikan.");
-                }}
-                className="px-3 py-1 rounded-xl bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 font-bold text-[11px] shadow-xs border border-amber-300 transition cursor-pointer shrink-0"
-                title="Sembunyikan poligon deteksi atap lainnya"
+                onClick={commitDetectedSelection}
+                disabled={selectedDetectedIds.length === 0}
+                className={`px-3 py-1 rounded-xl font-bold text-[11px] shadow-xs border transition shrink-0 ${
+                  selectedDetectedIds.length > 0
+                    ? "bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 border-amber-300 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                }`}
+                title="Jadikan bidang terpilih sebagai bidang atap proyek"
               >
                 Selesai Memilih
               </button>
             </div>
           )}
 
+          {/* Deteksi selesai tanpa bidang: peta tetap bisa dipakai */}
+          {detection !== null && detectedRoofs.length === 0 && !isAiScanning && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-slate-300 shadow-[0_8px_30px_rgba(15,23,42,0.12)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+              <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
+                <span className="material-symbols-outlined text-[15px]">search_off</span>
+              </span>
+              <span className="font-medium text-slate-700">
+                Model tidak menemukan bidang atap di area ini. Geser peta ke atas atap, lalu tekan tombol pindai AI.
+              </span>
+            </div>
+          )}
+
           {/* Interactive Multi-Roof Surface Polygons & Solar Arrays */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none z-25">
-            {/* 1. Google Sunroof Style Heatmap Polygons for Detected Satellite Roofs (Unselected) */}
-            {showDetectedRoofs &&
-              detectedRoofsList
-                .filter((roof) => !facets.some((f) => f.id === roof.id))
-                .map((roof) => {
-              const screenPos = getFacetScreenPosition(roof as any);
-              const styleLeft = screenPos ? `${screenPos.x}px` : `calc(50% + ${roof.offsetX}px)`;
-              const styleTop = screenPos ? `${screenPos.y}px` : `calc(50% + ${roof.offsetY}px)`;
-              const polyWidth = Math.max(16, Math.round(roof.ridge * pixelsPerMeter));
-              const polyHeight = Math.max(16, Math.round(roof.slope * pixelsPerMeter));
-              const verts = roof.vertices || [
-                { x: -roof.ridge / 2, y: -roof.slope / 2 },
-                { x: roof.ridge / 2, y: -roof.slope / 2 },
-                { x: roof.ridge / 2, y: roof.slope / 2 },
-                { x: -roof.ridge / 2, y: roof.slope / 2 },
-              ];
-
-              const svgPoints = verts
-                .map(
-                  (v) =>
-                    `${polyWidth / 2 + v.x * pixelsPerMeter},${
-                      polyHeight / 2 + v.y * pixelsPerMeter
-                    }`
-                )
-                .join(" ");
-
-              return (
-                <div
-                  key={roof.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectDetectedRoof(roof);
-                  }}
-                  className="absolute pointer-events-auto cursor-pointer group select-none transition-all duration-300 hover:scale-[1.03] z-10"
-                  style={{
-                    left: styleLeft,
-                    top: styleTop,
-                    width: `${polyWidth}px`,
-                    height: `${polyHeight}px`,
-                    transform: `translate(-50%, -50%) rotate(${roof.rotation}deg)`,
-                  }}
-                  title={`Klik untuk memilih atap ini (${roof.name}, ${roof.area.toFixed(1)} m²)`}
-                >
-                  <svg className="w-full h-full overflow-visible">
-                    <polygon
-                      points={svgPoints}
-                      fill="rgba(245, 158, 11, 0.22)"
-                      stroke="#F59E0B"
-                      strokeWidth="3.5"
-                      strokeDasharray="6,3"
-                      strokeLinejoin="round"
-                      className="group-hover:fill-amber-400/35 group-hover:stroke-amber-400 group-hover:stroke-[4.5] transition-all filter drop-shadow-[0_2px_12px_rgba(245,158,11,0.35)]"
-                    />
-                  </svg>
-
-                  {/* Floating Mini Tag on Hover or Normal (Luas area & AI Confidence badge) */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-90 group-hover:opacity-100 transition-opacity gap-0.5">
-                    <span className="px-2.5 py-0.5 rounded-full bg-slate-900/90 text-amber-200 font-mono text-[10px] font-bold shadow-sm whitespace-nowrap border border-amber-300/40 backdrop-blur-xs flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[11px] text-amber-400">roofing</span>
-                      <span>{Math.round(roof.area)} m²</span>
-                    </span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400/90 text-amber-950 font-bold text-[8.5px] shadow-2xs opacity-0 group-hover:opacity-100 transition-opacity">
-                      Akurasi {roof.confidence}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
 
             {/* 2. Active Facets & Solar PV Arrays */}
             {facets.map((facet) => {
@@ -4956,8 +5116,10 @@ function StudioPageContent() {
               type="button"
               onClick={handleRunAiDetection}
               disabled={isAiScanning}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                showDetectedRoofs || isAiScanning
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${
+                isAiScanning ? "cursor-progress opacity-70" : "cursor-pointer"
+              } ${
+                detection !== null || isAiScanning
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.25),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-amber-700 hover:bg-amber-50/70"
               }`}
@@ -5393,7 +5555,7 @@ function StudioPageContent() {
                       })}
                     </div>
 
-                    {/* Helper Banner when 0 Facets in Project vs 0 Selected */}
+                    {/* Panduan & daftar bidang kandidat hasil deteksi */}
                     {facets.length === 0 ? (
                       <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2 shadow-2xs">
                         <div className="flex items-center gap-2">
@@ -5402,24 +5564,44 @@ function StudioPageContent() {
                           </span>
                           <div>
                             <span className="font-bold text-slate-900 block text-xs">Deteksi Bidang Atap AI</span>
-                            <span className="text-[10.5px] text-slate-500 block">Pilih bidang atap di peta atau di bawah untuk memasang panel surya</span>
+                            <span className="text-[10.5px] text-slate-500 block">
+                              Tekan tombol pindai AI untuk memindai area atap yang tampil di peta
+                            </span>
                           </div>
                         </div>
-                        {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length > 0 && (
+                        {remainingDetectedRoofs.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200/60">
-                            {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).map((detected) => (
-                              <button
-                                key={detected.id}
-                                type="button"
-                                onClick={() => selectDetectedRoof(detected)}
-                                className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-amber-100 text-amber-950 border border-amber-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                              >
-                                <span className="material-symbols-outlined text-[14px] text-amber-600">roofing</span>
-                                <span>{detected.name}</span>
-                                <span className="text-amber-800 text-[10px] font-mono">({Math.round(detected.area)} m²)</span>
-                              </button>
-                            ))}
+                            {remainingDetectedRoofs.map((detected) => {
+                              const isPicked = selectedDetectedIds.includes(detected.id);
+
+                              return (
+                                <button
+                                  key={detected.id}
+                                  type="button"
+                                  onClick={() => selectDetectedRoof(detected.id)}
+                                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+                                    isPicked
+                                      ? "bg-amber-400 text-amber-950 border-amber-400"
+                                      : "bg-white hover:bg-amber-100 text-amber-950 border-amber-200"
+                                  }`}
+                                  title={`${detected.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(detected.confidence * 100)}%`}
+                                >
+                                  <span className="material-symbols-outlined text-[14px] text-amber-700">
+                                    {isPicked ? "check_circle" : "roofing"}
+                                  </span>
+                                  <span>{detected.area_sqm.toFixed(1)} m²</span>
+                                  <span className="text-amber-800 text-[10px] font-mono">
+                                    {Math.round(detected.confidence * 100)}%
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
+                        )}
+                        {detection !== null && detectedRoofs.length === 0 && (
+                          <p className="text-[10.5px] text-slate-500 pt-1 border-t border-amber-200/60">
+                            Model tidak menemukan bidang atap di area ini. Geser peta ke atas atap, lalu pindai ulang.
+                          </p>
                         )}
                       </div>
                     ) : (
@@ -5440,39 +5622,52 @@ function StudioPageContent() {
                       )
                     )}
 
-                    {/* Atap Terdeteksi Satelit AI Lainnya (Jika ada dan showDetectedRoofs aktif) */}
-                    {showDetectedRoofs && facets.length > 0 && detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).length > 0 && (
+                    {/* Bidang kandidat yang belum diterapkan menjadi bidang proyek */}
+                    {showDetectedRoofs && facets.length > 0 && remainingDetectedRoofs.length > 0 && (
                       <div className="pt-2 border-t border-amber-100/70 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="text-[10.5px] font-bold text-slate-500 block">
-                            Atap Terdeteksi Satelit AI:
+                            Bidang Terdeteksi Belum Diterapkan:
                           </span>
                           <button
                             type="button"
-                            onClick={() => {
-                              setShowDetectedRoofs(false);
-                              setSelectionDone(true);
-                              showToast("Poligon kandidat lainnya disembunyikan");
-                            }}
-                            className="text-[10.5px] font-bold text-amber-800 hover:underline cursor-pointer"
+                            onClick={commitDetectedSelection}
+                            disabled={selectedDetectedIds.length === 0}
+                            className={`text-[10.5px] font-bold hover:underline ${
+                              selectedDetectedIds.length > 0
+                                ? "text-amber-800 cursor-pointer"
+                                : "text-slate-300 cursor-not-allowed"
+                            }`}
                           >
                             Selesai Memilih ✕
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                          {detectedRoofsList.filter((r) => !facets.some((f) => f.id === r.id)).map((detected) => (
-                            <button
-                              key={detected.id}
-                              type="button"
-                              onClick={() => selectDetectedRoof(detected)}
-                              className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200/80 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                              title={`Pilih atap ini: ${detected.name} (${detected.area.toFixed(1)} m²)`}
-                            >
-                              <span className="material-symbols-outlined text-[14px] text-amber-600">roofing</span>
-                              <span className="font-semibold">{detected.name}</span>
-                              <span className="text-amber-700 font-mono text-[10px]">({Math.round(detected.area)} m²)</span>
-                            </button>
-                          ))}
+                          {remainingDetectedRoofs.map((detected) => {
+                            const isPicked = selectedDetectedIds.includes(detected.id);
+
+                            return (
+                              <button
+                                key={detected.id}
+                                type="button"
+                                onClick={() => selectDetectedRoof(detected.id)}
+                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                                  isPicked
+                                    ? "bg-amber-400 text-amber-950 border-amber-400 font-bold"
+                                    : "bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-200/80"
+                                }`}
+                                title={`${detected.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(detected.confidence * 100)}%`}
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-amber-700">
+                                  {isPicked ? "check_circle" : "roofing"}
+                                </span>
+                                <span className="font-semibold">{detected.area_sqm.toFixed(1)} m²</span>
+                                <span className="text-amber-700 font-mono text-[10px]">
+                                  {Math.round(detected.confidence * 100)}%
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -7322,6 +7517,7 @@ function StudioPageContent() {
         open={proposalOpen}
         onClose={() => setProposalOpen(false)}
         result={simulationResultForModal}
+        assumptions={simulationAssumptionsForModal}
         parameters={simulationParamsForModal}
         latitude={activeFacet.lat ? activeFacet.lat.toFixed(6) : "-6.595500"}
         longitude={activeFacet.lng ? activeFacet.lng.toFixed(6) : "106.799500"}

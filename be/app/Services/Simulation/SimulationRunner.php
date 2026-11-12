@@ -4,18 +4,26 @@ namespace App\Services\Simulation;
 
 use App\Models\ImageryAsset;
 use App\Models\Simulation;
+use App\Models\SimulationRoof;
 use App\Services\EnergyModel;
 use App\Services\FinanceModel;
 use App\Services\PanelLayout;
 use App\Services\RoofGeometry;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Satu-satunya jalur perhitungan simulasi.
  *
  * Dipakai oleh `POST /simulate` maupun `POST /analyses`, sehingga angka yang
  * ditampilkan dan angka yang tersimpan mustahil menyimpang. Hasilnya berupa model
- * Simulation yang belum disimpan: pemanggil yang menentukan apakah ia disimpan,
- * dan presenter yang menentukan bentuk keluarannya.
+ * `Simulation` yang **belum** disimpan, lengkap dengan baris bidangnya: pemanggil
+ * yang menentukan apakah ia disimpan, dan presenter yang menentukan bentuk
+ * keluarannya. Karena itu `POST /simulate` dapat menjawab tanpa menulis apa pun.
+ *
+ * Hitungan dilakukan per bidang lalu diagregat. Itu bukan sekadar kerapian: tiap
+ * bidang punya kemiringan, azimuth, dan modul sendiri, sehingga produksi dan biaya
+ * modulnya berbeda, dan menjumlahkan kapasitas saja tidak cukup untuk memperoleh
+ * produksi maupun belanja modal yang benar.
  */
 class SimulationRunner
 {
@@ -28,100 +36,190 @@ class SimulationRunner
      */
     public function run(int $userId, ImageryAsset $image, array $input): Simulation
     {
-        $module = SimulationCatalog::module((string) $input['module_key']);
         $tariff = SimulationCatalog::tariff((string) $input['tariff_key']);
+        $inverterType = (string) $input['inverter_type'];
 
-        $area = RoofGeometry::areaFromRect(
-            rect: $input['roof_rect'],
-            metersPerPixel: (float) $image->meters_per_pixel,
-            setbackM: (float) $input['setback_m'],
-            gutterM: (float) $input['gutter_m'],
-        );
+        $metersPerPixel = (float) $image->meters_per_pixel;
+        $bbox = (array) $image->bbox;
+        $imageWidth = (int) $image->width;
+        $imageHeight = (int) $image->height;
 
-        $layout = PanelLayout::fit(
-            area: $area,
-            module: $module,
-            orientation: (string) $input['orientation'],
-            clearanceM: (float) $input['clearance_m'],
-            requestedCount: $input['panel_count'] === null ? null : (int) $input['panel_count'],
-        );
+        $roofs = [];
+        $breakdowns = [];
+        $energies = [];
 
-        $capacityKwp = $layout->installed * (float) $module['power_w'] / 1000.0;
+        $totalAreaSqm = 0.0;
+        $effectiveAreaSqm = 0.0;
+        $moduleAreaSqm = 0.0;
+        $capacityKwp = 0.0;
+        $annualProductionKwh = 0.0;
+        $weightedIncidence = 0.0;
+        $maxSlots = 0;
+        $installed = 0;
+        $rows = 0;
+        $columns = 0;
 
-        $energy = $this->energy->estimate(
-            capacityKwp: $capacityKwp,
-            tiltDeg: (float) $input['tilt_deg'],
-            azimuthDeg: (float) $input['azimuth_deg'],
-            latitude: (float) $image->center_lat,
-            longitude: (float) $image->center_lng,
-        );
+        foreach ($input['roofs'] as $roofInput) {
+            /** @var array<string, mixed> $roofInput */
+            $module = SimulationCatalog::module((string) $roofInput['module_key']);
+            $polygonPx = self::ring((array) $roofInput['roof_polygon_px']);
 
-        $capex = FinanceModel::capex(
-            installedCount: $layout->installed,
-            module: $module,
-            inverterType: (string) $input['inverter_type'],
-            capacityKwp: $energy->capacityKwp,
-        );
+            $polygon = RoofGeometry::areaFromPolygon(
+                polygonPx: $polygonPx,
+                metersPerPixel: $metersPerPixel,
+                setbackM: (float) $roofInput['setback_m'],
+            );
+
+            $layout = PanelLayout::fit(
+                area: $polygon->toRoofArea(),
+                module: $module,
+                orientation: (string) $roofInput['orientation'],
+                clearanceM: (float) $roofInput['clearance_m'],
+                requestedCount: $roofInput['panel_count'] === null ? null : (int) $roofInput['panel_count'],
+                // Bidang yang habis oleh setback tidak punya poligon untuk disaring,
+                // dan kisi persegi pembatasnya juga nol sehingga tidak ada slot.
+                maskPolygon: $polygon->hasEffectivePolygon() ? $polygon->effectivePolygonPx : null,
+                maskFrame: $polygon->maskFrame(),
+            );
+
+            $energy = $this->energy->estimate(
+                capacityKwp: $layout->installed * (float) $module['power_w'] / 1000.0,
+                tiltDeg: (float) $roofInput['tilt_deg'],
+                azimuthDeg: (float) $roofInput['azimuth_deg'],
+                latitude: (float) $image->center_lat,
+                longitude: (float) $image->center_lng,
+            );
+
+            $breakdowns[] = FinanceModel::capex(
+                installedCount: $layout->installed,
+                module: $module,
+                inverterType: $inverterType,
+                capacityKwp: $energy->capacityKwp,
+            );
+
+            $energies[] = $energy;
+
+            $roof = new SimulationRoof([
+                'label' => $roofInput['label'] ?? null,
+                'detection_id' => $roofInput['detection_id'] ?? null,
+                'confidence' => $roofInput['confidence'] ?? null,
+                // Ring dalam piksel disimpan apa adanya supaya tata letak, luas, dan
+                // gambar yang dilihat pengguna dapat ditelusuri kembali tanpa citra.
+                'roof_polygon_px' => $polygonPx,
+                'roof_width_m' => round($polygon->roofWidthM, 2),
+                'roof_length_m' => round($polygon->roofLengthM, 2),
+                'rotation_deg' => round($polygon->rotationDeg, 2),
+                'setback_m' => (float) $roofInput['setback_m'],
+                'gutter_m' => (float) $roofInput['gutter_m'],
+                'tilt_deg' => (float) $roofInput['tilt_deg'],
+                'azimuth_deg' => (float) $roofInput['azimuth_deg'],
+                'module_key' => (string) $roofInput['module_key'],
+                'orientation' => (string) $roofInput['orientation'],
+                'clearance_m' => (float) $roofInput['clearance_m'],
+                'panel_count' => $roofInput['panel_count'] === null ? null : (int) $roofInput['panel_count'],
+                'total_area_sqm' => round($polygon->totalAreaSqm, 2),
+                'effective_area_sqm' => round($polygon->effectiveAreaSqm, 2),
+                'max_slots' => $layout->maxSlots,
+                'installed' => $layout->installed,
+                'rows' => $layout->rows,
+                'columns' => $layout->columns,
+                'module_area_sqm' => $layout->moduleAreaSqm,
+                'density_ratio' => $layout->densityRatio,
+                'capacity_kwp' => $energy->capacityKwp,
+                'annual_production_kwh' => $energy->annualProductionKwh,
+            ]);
+
+            // Geometri disimpan apa adanya dari pengguna, bukan poligon efektifnya:
+            // yang harus dapat ditelusuri kembali adalah bidang yang dipilih pengguna,
+            // dan setback dapat berubah tanpa menggambar ulang bidangnya.
+            $roof->setRoofPolygon(RoofGeometry::ringLngLat($polygonPx, $bbox, $imageWidth, $imageHeight));
+
+            $roofs[] = $roof;
+
+            $totalAreaSqm += round($polygon->totalAreaSqm, 2);
+            $effectiveAreaSqm += round($polygon->effectiveAreaSqm, 2);
+            $moduleAreaSqm += $layout->moduleAreaSqm;
+            $capacityKwp += $energy->capacityKwp;
+            $annualProductionKwh += $energy->annualProductionKwh;
+            $weightedIncidence += $energy->capacityKwp * $energy->incidenceFactor;
+            $maxSlots += $layout->maxSlots;
+            $installed += $layout->installed;
+            $rows += $layout->rows;
+            $columns += $layout->columns;
+        }
+
+        $capex = FinanceModel::sumBreakdowns($breakdowns);
 
         $finance = FinanceModel::summarise(
             capex: $capex,
-            annualProductionKwh: $energy->annualProductionKwh,
+            annualProductionKwh: $annualProductionKwh,
             monthlyBillIdr: (int) $input['monthly_bill_idr'],
             tariff: $tariff,
         );
+
+        // Iradiasi dan performance ratio sama untuk seluruh bidang karena lokasinya
+        // satu. Yang berbeda hanyalah faktor sudut datang, dan itu dirata-ratakan
+        // dengan bobot kapasitas supaya bidang yang lebih besar lebih menentukan.
+        $first = $energies[0];
 
         $simulation = new Simulation([
             'user_id' => $userId,
             'imagery_asset_id' => $image->getKey(),
             'center_lat' => $image->center_lat,
             'center_lng' => $image->center_lng,
-            'roof_width_m' => $area->roofWidthM,
-            'roof_length_m' => $area->roofLengthM,
-            'rotation_deg' => (float) $input['roof_rect']['rotation_deg'],
-            'setback_m' => (float) $input['setback_m'],
-            'gutter_m' => (float) $input['gutter_m'],
-            'tilt_deg' => (float) $input['tilt_deg'],
-            'azimuth_deg' => (float) $input['azimuth_deg'],
-            'module_key' => (string) $input['module_key'],
-            'orientation' => (string) $input['orientation'],
-            'clearance_m' => (float) $input['clearance_m'],
-            'inverter_type' => (string) $input['inverter_type'],
-            'panel_count' => $input['panel_count'] === null ? null : (int) $input['panel_count'],
+            'map_zoom' => $image->zoom,
+            'inverter_type' => $inverterType,
             'monthly_bill_idr' => (int) $input['monthly_bill_idr'],
             'tariff_key' => (string) $input['tariff_key'],
-            'total_area_sqm' => $area->totalAreaSqm,
-            'effective_area_sqm' => $area->effectiveAreaSqm,
-            'max_slots' => $layout->maxSlots,
-            'installed' => $layout->installed,
-            'rows' => $layout->rows,
-            'columns' => $layout->columns,
-            'module_area_sqm' => $layout->moduleAreaSqm,
-            'density_ratio' => $layout->densityRatio,
-            'capacity_kwp' => $energy->capacityKwp,
-            'annual_production_kwh' => $energy->annualProductionKwh,
-            'capex_total_idr' => $finance->capex->totalIdr(),
+            'total_area_sqm' => round($totalAreaSqm, 2),
+            'effective_area_sqm' => round($effectiveAreaSqm, 2),
+            'max_slots' => $maxSlots,
+            'installed' => $installed,
+            'rows' => $rows,
+            'columns' => $columns,
+            'module_area_sqm' => round($moduleAreaSqm, 2),
+            'density_ratio' => $effectiveAreaSqm > 0.0
+                ? round($moduleAreaSqm / $effectiveAreaSqm, 4)
+                : 0.0,
+            'capacity_kwp' => round($capacityKwp, 3),
+            'annual_production_kwh' => round($annualProductionKwh, 2),
+            'capex_total_idr' => $capex->totalIdr(),
             'monthly_saving_idr' => $finance->monthlySavingIdr,
             'annual_saving_idr' => $finance->annualSavingIdr,
             'payback_years' => $finance->paybackYears,
             'co2_reduction_kg_per_year' => $finance->co2ReductionKgPerYear,
             'trees_equivalent' => $finance->treesEquivalent,
-            'daily_irradiance_kwh_per_sqm' => $energy->dailyIrradianceKwhPerSqm,
-            'irradiance_source' => $energy->irradianceSource,
-            'irradiance_period' => $energy->irradiancePeriod,
-            'incidence_factor' => $energy->incidenceFactor,
-            'performance_ratio' => $energy->performanceRatio,
+            'daily_irradiance_kwh_per_sqm' => $first->dailyIrradianceKwhPerSqm,
+            'irradiance_source' => $first->irradianceSource,
+            'irradiance_period' => $first->irradiancePeriod,
+            'incidence_factor' => $capacityKwp > 0.0
+                ? $weightedIncidence / $capacityKwp
+                : $first->incidenceFactor,
+            'performance_ratio' => $first->performanceRatio,
             'tariff_idr_per_kwh' => $finance->tariffIdrPerKwh,
             'tariff_label' => $finance->tariffLabel,
-            'capex_breakdown' => $finance->capex->toArray(),
+            'capex_breakdown' => $capex->toArray(),
         ]);
 
-        $simulation->setRoofPolygon(RoofGeometry::polygonLngLat(
-            rect: $input['roof_rect'],
-            bbox: (array) $image->bbox,
-            imageWidth: (int) $image->width,
-            imageHeight: (int) $image->height,
-        ));
+        // Model yang belum tersimpan belum punya waktu simpan, sedangkan bentuk
+        // bersama pada kontrak selalu memuatnya. Diisi sekarang, dan Eloquent memakai
+        // nilai ini apa adanya saat barisnya benar-benar disimpan.
+        $simulation->created_at = now();
+
+        $simulation->setRelation('roofs', new Collection($roofs));
 
         return $simulation;
+    }
+
+    /**
+     * @param  array<int, array{0: float|int, 1: float|int}>  $ring
+     * @return array<int, array{0: float, 1: float}>
+     */
+    private static function ring(array $ring): array
+    {
+        return array_map(
+            static fn (array $point): array => [(float) $point[0], (float) $point[1]],
+            array_values($ring),
+        );
     }
 }

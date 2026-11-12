@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\StoresPolygonGeometry;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Satu simulasi PLTS tersimpan: masukan, hasil, dan asumsi yang dipakai.
+ * Satu simulasi PLTS tersimpan: agregat dari seluruh bidang atapnya.
+ *
+ * Geometri, masukan teknis, dan hasil tata letak tiap bidang berada di
+ * `SimulationRoof`; yang disimpan di sini adalah masukan global dan angka agregat
+ * yang dihitung dari seluruh bidang.
  *
  * Hasil disimpan bersama asumsinya supaya simulasi lama tetap menampilkan angka
  * seperti saat dihitung, meskipun tarif atau harga modul di konfigurasi berubah.
@@ -18,18 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'imagery_asset_id',
     'center_lat',
     'center_lng',
-    'roof_width_m',
-    'roof_length_m',
-    'rotation_deg',
-    'setback_m',
-    'gutter_m',
-    'tilt_deg',
-    'azimuth_deg',
-    'module_key',
-    'orientation',
-    'clearance_m',
+    'map_zoom',
     'inverter_type',
-    'panel_count',
     'monthly_bill_idr',
     'tariff_key',
     'total_area_sqm',
@@ -59,8 +53,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Simulation extends Model
 {
-    use StoresPolygonGeometry;
-
     /**
      * @return array<string, string>
      */
@@ -69,15 +61,7 @@ class Simulation extends Model
         return [
             'center_lat' => 'float',
             'center_lng' => 'float',
-            'roof_width_m' => 'float',
-            'roof_length_m' => 'float',
-            'rotation_deg' => 'float',
-            'setback_m' => 'float',
-            'gutter_m' => 'float',
-            'tilt_deg' => 'float',
-            'azimuth_deg' => 'float',
-            'clearance_m' => 'float',
-            'panel_count' => 'integer',
+            'map_zoom' => 'integer',
             'monthly_bill_idr' => 'integer',
             'total_area_sqm' => 'float',
             'effective_area_sqm' => 'float',
@@ -114,18 +98,14 @@ class Simulation extends Model
     }
 
     /**
-     * @param  array<int, array{0: float, 1: float}>  $ring
+     * Bidang atap simulasi, berurutan seperti saat dikirim pengguna.
+     *
+     * Urutannya dipatok, bukan diserahkan pada basis data: tanpa itu, daftar bidang
+     * dapat berubah urutan antar pemanggilan, dan antarmuka yang mencocokkan bidang
+     * berdasarkan posisinya akan salah menampilkan hasil.
      */
-    public function setRoofPolygon(array $ring): static
+    public function roofs(): HasMany
     {
-        return $this->setPolygon('roof_polygon', $ring);
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function roofPolygonGeoJson(): ?array
-    {
-        return $this->polygonGeoJson('roof_polygon');
+        return $this->hasMany(SimulationRoof::class)->orderBy('id');
     }
 }

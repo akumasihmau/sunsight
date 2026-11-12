@@ -2,123 +2,123 @@
 
 namespace Tests\Unit;
 
+use App\Services\Geometry\PolygonGeometry;
 use App\Services\RoofGeometry;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 class RoofGeometryTest extends TestCase
 {
-    /** @var array{x: float, y: float, width: float, height: float, rotation_deg: float} */
-    private const RECT = ['x' => 100.0, 'y' => 100.0, 'width' => 100.0, 'height' => 50.0, 'rotation_deg' => 0.0];
+    /** Persegi 60 x 40 piksel, yaitu 30 x 20 meter pada 0,5 m/px. */
+    private const SQUARE = [[150, 150], [210, 150], [210, 190], [150, 190]];
 
-    public function test_luas_diturunkan_dari_skala_dan_dikurangi_setback_serta_talang(): void
+    /** Tangkapan 512 x 512 piksel yang skalanya tepat 0,5 m/px. */
+    private const BBOX = [106.8000000, -6.6023152, 106.8023151, -6.6000000];
+
+    public function test_luas_dan_persegi_pembatas_diturunkan_dari_poligon(): void
     {
-        // 100 x 50 piksel pada 0,5 m/px = 50 x 25 m. Setback 1 m keliling, talang 1 m di sisi lebar.
-        $area = RoofGeometry::areaFromRect(self::RECT, 0.5, 1.0, 1.0);
+        $area = RoofGeometry::areaFromPolygon(self::SQUARE, 0.5, 0.5);
 
-        $this->assertSame(50.0, $area->roofLengthM);
-        $this->assertSame(25.0, $area->roofWidthM);
-        $this->assertSame(1250.0, $area->totalAreaSqm);
-        $this->assertSame(48.0, $area->effectiveLengthM);
-        $this->assertSame(22.0, $area->effectiveWidthM);
-        $this->assertSame(1056.0, $area->effectiveAreaSqm);
+        $this->assertEqualsWithDelta(600.0, $area->totalAreaSqm, 0.01);
+        $this->assertEqualsWithDelta(29.0, $area->roofLengthM, 0.01);
+        $this->assertEqualsWithDelta(19.0, $area->roofWidthM, 0.01);
+        $this->assertEqualsWithDelta(551.0, $area->effectiveAreaSqm, 0.01);
+        $this->assertSame(0.0, $area->rotationDeg);
+        $this->assertTrue($area->hasEffectivePolygon());
     }
 
-    public function test_luas_total_sebanding_dengan_kuadrat_skala(): void
+    public function test_luas_sebanding_dengan_kuadrat_skala(): void
     {
-        $kecil = RoofGeometry::areaFromRect(self::RECT, 0.5, 0.0, 0.0);
-        $besar = RoofGeometry::areaFromRect(self::RECT, 1.0, 0.0, 0.0);
+        $kecil = RoofGeometry::areaFromPolygon(self::SQUARE, 0.5, 0.0);
+        $besar = RoofGeometry::areaFromPolygon(self::SQUARE, 1.0, 0.0);
 
-        $this->assertSame(4.0, $besar->totalAreaSqm / $kecil->totalAreaSqm);
+        $this->assertEqualsWithDelta(4.0, $besar->totalAreaSqm / $kecil->totalAreaSqm, 1e-9);
     }
 
     public function test_skala_nol_atau_negatif_ditolak(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
-        RoofGeometry::areaFromRect(self::RECT, 0.0, 0.5, 0.5);
+        RoofGeometry::areaFromPolygon(self::SQUARE, 0.0, 0.5);
     }
 
-    public function test_dimensi_nol_ditolak(): void
+    public function test_poligon_yang_tidak_membentuk_bidang_menghasilkan_nol(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        // Dua titik, dan tiga titik yang berimpit: keduanya tidak membentuk bidang,
+        // tetapi tetap masukan yang sah sehingga tidak boleh menggagalkan permintaan.
+        foreach ([[[150, 150], [210, 150]], [[150, 150], [150, 150], [150, 150]]] as $ring) {
+            $area = RoofGeometry::areaFromPolygon($ring, 0.5, 0.5);
 
-        RoofGeometry::areaFromRect(['x' => 0.0, 'y' => 0.0, 'width' => 0.0, 'height' => 10.0, 'rotation_deg' => 0.0], 0.5, 0.0, 0.0);
+            $this->assertSame(0.0, $area->totalAreaSqm);
+            $this->assertSame(0.0, $area->effectiveAreaSqm);
+            $this->assertSame(0.0, $area->roofLengthM);
+            $this->assertSame([], $area->effectivePolygonPx);
+            $this->assertNull($area->maskFrame());
+        }
     }
 
     public function test_setback_yang_menghabiskan_bidang_menghasilkan_nol_bukan_negatif(): void
     {
-        // Lebar bidang 25 m; setback 20 m keliling plus talang 1 m melebihi separuh lebarnya.
-        $area = RoofGeometry::areaFromRect(self::RECT, 0.5, 20.0, 1.0);
+        // Bidang 40 x 4 piksel: setback 5 meter (10 piksel) melebihi tingginya.
+        $area = RoofGeometry::areaFromPolygon([[150, 150], [190, 150], [190, 154], [150, 154]], 0.5, 5.0);
 
-        $this->assertSame(0.0, $area->effectiveWidthM);
         $this->assertSame(0.0, $area->effectiveAreaSqm);
-        $this->assertGreaterThan(0.0, $area->totalAreaSqm);
+        $this->assertEqualsWithDelta(40.0, $area->totalAreaSqm, 0.01);
+        $this->assertSame(0.0, $area->roofLengthM);
+        $this->assertSame([], $area->effectivePolygonPx);
+        $this->assertNull($area->maskFrame());
     }
 
-    public function test_rotasi_tidak_mengubah_luas(): void
+    public function test_luas_efektif_tidak_pernah_melebihi_luas_total(): void
     {
-        $datar = RoofGeometry::areaFromRect(self::RECT, 0.5, 0.5, 0.6);
-        $miring = RoofGeometry::areaFromRect(
-            array_merge(self::RECT, ['rotation_deg' => 30.0]),
-            0.5,
-            0.5,
-            0.6,
-        );
-        $tegak = RoofGeometry::areaFromRect(
-            array_merge(self::RECT, ['rotation_deg' => 90.0]),
-            0.5,
-            0.5,
-            0.6,
-        );
+        foreach ([0.0, 0.5, 2.0] as $setback) {
+            $area = RoofGeometry::areaFromPolygon(self::SQUARE, 0.5, $setback);
 
-        $this->assertSame($datar->totalAreaSqm, $miring->totalAreaSqm);
-        $this->assertSame($datar->totalAreaSqm, $tegak->totalAreaSqm);
-        $this->assertSame($datar->effectiveAreaSqm, $miring->effectiveAreaSqm);
-        $this->assertSame(25.0, $tegak->roofWidthM, 'Rotasi tidak menukar sisi persegi.');
-        $this->assertSame(50.0, $tegak->roofLengthM);
+            $this->assertGreaterThanOrEqual(0.0, $area->effectiveAreaSqm);
+            $this->assertLessThanOrEqual($area->totalAreaSqm, $area->effectiveAreaSqm);
+        }
     }
 
-    public function test_sudut_persegi_tanpa_rotasi_berada_di_tempat_yang_benar(): void
+    public function test_persegi_pembatas_mengikuti_arah_bidang_yang_diputar(): void
     {
-        $corners = RoofGeometry::corners(self::RECT);
+        // Persegi panjang 60 x 20 piksel yang dimiringkan 20 derajat.
+        $angle = deg2rad(20.0);
+        $cos = cos($angle);
+        $sin = sin($angle);
+        $ring = [];
 
-        $this->assertCount(5, $corners, 'Ring harus tertutup.');
-        $this->assertSame([100.0, 100.0], $corners[0]);
-        $this->assertSame([200.0, 100.0], $corners[1]);
-        $this->assertSame([200.0, 150.0], $corners[2]);
-        $this->assertSame([100.0, 150.0], $corners[3]);
-        $this->assertSame($corners[0], $corners[4], 'Titik terakhir harus sama dengan titik pertama.');
-    }
+        foreach ([[-30, -10], [30, -10], [30, 10], [-30, 10]] as [$dx, $dy]) {
+            $ring[] = [256.0 + $dx * $cos - $dy * $sin, 256.0 + $dx * $sin + $dy * $cos];
+        }
 
-    public function test_rotasi_memutar_persegi_terhadap_pusatnya(): void
-    {
-        // Persegi 100x50 berpusat di (150, 125). Diputar 90 derajat, sisi 100 menjadi tegak.
-        $corners = RoofGeometry::corners(array_merge(self::RECT, ['rotation_deg' => 90.0]));
+        $area = RoofGeometry::areaFromPolygon($ring, 1.0, 0.0);
 
-        $xs = array_column($corners, 0);
-        $ys = array_column($corners, 1);
-
-        $this->assertEqualsWithDelta(125.0, min($xs), 1e-6);
-        $this->assertEqualsWithDelta(175.0, max($xs), 1e-6);
-        $this->assertEqualsWithDelta(75.0, min($ys), 1e-6);
-        $this->assertEqualsWithDelta(175.0, max($ys), 1e-6);
+        $this->assertEqualsWithDelta(60.0, $area->roofLengthM, 1e-3);
+        $this->assertEqualsWithDelta(20.0, $area->roofWidthM, 1e-3);
+        $this->assertEqualsWithDelta(20.0, $area->rotationDeg, 1e-3);
     }
 
     public function test_poligon_geografis_berada_di_dalam_bbox_dan_tertutup(): void
     {
-        $bbox = [106.7993, -6.5907, 106.8007, -6.5893];
-
-        $ring = RoofGeometry::polygonLngLat(self::RECT, $bbox, 512, 512);
+        $ring = RoofGeometry::ringLngLat(self::SQUARE, self::BBOX, 512, 512);
 
         $this->assertCount(5, $ring);
         $this->assertSame($ring[0], $ring[4]);
+        $this->assertTrue(PolygonGeometry::isClosedRing($ring));
 
         foreach ($ring as [$lng, $lat]) {
-            $this->assertGreaterThanOrEqual($bbox[0], $lng);
-            $this->assertLessThanOrEqual($bbox[2], $lng);
-            $this->assertGreaterThanOrEqual($bbox[1], $lat);
-            $this->assertLessThanOrEqual($bbox[3], $lat);
+            $this->assertGreaterThanOrEqual(self::BBOX[0], $lng);
+            $this->assertLessThanOrEqual(self::BBOX[2], $lng);
+            $this->assertGreaterThanOrEqual(self::BBOX[1], $lat);
+            $this->assertLessThanOrEqual(self::BBOX[3], $lat);
         }
+    }
+
+    public function test_sudut_kiri_atas_piksel_menjadi_pojok_barat_laut(): void
+    {
+        [$lng, $lat] = RoofGeometry::ringLngLat([[0, 0]], self::BBOX, 512, 512)[0];
+
+        $this->assertEqualsWithDelta(self::BBOX[0], $lng, 1e-9);
+        $this->assertEqualsWithDelta(self::BBOX[3], $lat, 1e-9);
     }
 }

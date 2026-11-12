@@ -35,4 +35,23 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Layanan model segmentasi bidang atap
+    |--------------------------------------------------------------------------
+    |
+    | Layanan terpisah (Python) yang menerima berkas citra dan mengembalikan poligon
+    | bidang atap. Batas waktunya jauh lebih longgar daripada permintaan biasa karena
+    | inferensinya berjalan di CPU: permintaan pertama setelah layanan dinyalakan
+    | memerlukan sekitar 11-13 detik untuk pemanasan model, dan permintaan berikutnya
+    | 3-8 detik untuk citra 1280 piksel. Nilai 60 detik memberi ruang bagi mesin yang
+    | lebih lambat; 504 dijawab hanya setelah batas ini benar-benar terlampaui.
+    |
+    */
+
+    'ml' => [
+        'url' => env('ML_SERVICE_URL', 'http://127.0.0.1:8001'),
+        'timeout' => (int) env('ML_SERVICE_TIMEOUT', 60),
+    ],
+
 ];

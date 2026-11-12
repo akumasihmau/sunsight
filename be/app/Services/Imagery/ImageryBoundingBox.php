@@ -26,6 +26,29 @@ final class ImageryBoundingBox
     }
 
     /**
+     * Skala tangkapan yang batasnya sudah diketahui klien.
+     *
+     * Kebalikan dari `forPoint()`: panjang bbox dalam derajat dibagi ukuran berkas
+     * dalam piksel. Dua nilai dikembalikan karena keduanya harus saling cocok —
+     * bbox yang tidak konsisten dengan ukuran berkas membuat luas menjadi karangan,
+     * dan selisihnya dapat diperiksa dari sini.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox  [minLng, minLat, maxLng, maxLat].
+     * @return array{lat: float, lng: float} Meter per piksel menurut lintang dan bujur.
+     */
+    public static function metersPerPixelFromBbox(array $bbox, int $width, int $height): array
+    {
+        [$minLng, $minLat, $maxLng, $maxLat] = $bbox;
+        $centerLat = ($minLat + $maxLat) / 2.0;
+
+        return [
+            'lat' => ($maxLat - $minLat) * self::METERS_PER_DEGREE_LATITUDE / $height,
+            'lng' => ($maxLng - $minLng) * self::METERS_PER_DEGREE_LONGITUDE_AT_EQUATOR
+                * cos(deg2rad($centerLat)) / $width,
+        ];
+    }
+
+    /**
      * Kotak pembatas yang berpusat pada satu titik dan mencakup tepat satu citra penuh.
      *
      * @return array{0: float, 1: float, 2: float, 3: float} Urutan [minLng, minLat, maxLng, maxLat].

@@ -1,6 +1,8 @@
 <?php
 
 use App\Services\Imagery\ImageryUnavailableException;
+use App\Services\Ml\MlTimeoutException;
+use App\Services\Ml\MlUnavailableException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -29,5 +31,24 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return response()->json(['message' => $e->getMessage()], 500);
+        });
+
+        // Kegagalan layanan model dibedakan sesuai kontrak: layanan yang tidak dapat
+        // dihubungi adalah 503, layanan yang kehabisan waktu adalah 504. Keduanya
+        // berasal dari luar aplikasi ini, jadi bukan 500.
+        $exceptions->render(function (MlUnavailableException $e, Request $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            return response()->json(['message' => $e->getMessage()], 503);
+        });
+
+        $exceptions->render(function (MlTimeoutException $e, Request $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return null;
+            }
+
+            return response()->json(['message' => $e->getMessage()], 504);
         });
     })->create();

@@ -90,4 +90,42 @@ class PanelLayoutTest extends TestCase
         $this->assertEqualsWithDelta(10.33, $layout->moduleAreaSqm, 0.01);
         $this->assertEqualsWithDelta(0.5299, $layout->densityRatio, 0.001);
     }
+
+    public function test_slot_yang_jatuh_di_luar_poligon_efektif_tidak_dihitung(): void
+    {
+        // Area efektif 5 x 5 meter, ditempatkan pada bingkai 10 x 10 piksel: dua
+        // piksel mewakili satu meter.
+        $area = new RoofArea(
+            roofLengthM: 5.0,
+            roofWidthM: 5.0,
+            totalAreaSqm: 25.0,
+            effectiveLengthM: 5.0,
+            effectiveWidthM: 5.0,
+            effectiveAreaSqm: 25.0,
+        );
+
+        $tanpaSaring = PanelLayout::fit($area, SimulationCatalog::module('mono_perc_550'), 'portrait', 0.0, null);
+
+        // Separuh kiri bingkai saja yang merupakan bagian dari bidang.
+        $separuhKiri = [[0.0, 0.0], [5.0, 0.0], [5.0, 10.0], [0.0, 10.0]];
+
+        $denganSaring = PanelLayout::fit(
+            area: $area,
+            module: SimulationCatalog::module('mono_perc_550'),
+            orientation: 'portrait',
+            clearanceM: 0.0,
+            requestedCount: null,
+            maskPolygon: $separuhKiri,
+            maskFrame: ['center' => [5.0, 5.0], 'length' => 10.0, 'width' => 10.0, 'rotation_deg' => 0.0],
+        );
+
+        $this->assertSame(2, $tanpaSaring->columns);
+        $this->assertSame(4, $tanpaSaring->rows);
+        $this->assertSame(8, $tanpaSaring->maxSlots);
+
+        // Kolom kiri berpusat di x = 2,278 dan kolom kanan di x = 6,834.
+        $this->assertSame(4, $denganSaring->maxSlots);
+        $this->assertSame(4, $denganSaring->installed);
+        $this->assertSame(2, $denganSaring->columns, 'Jumlah kolom kisi tidak berubah oleh penyaringan.');
+    }
 }

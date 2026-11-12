@@ -1,6 +1,6 @@
 "use client";
 
-import type { CapexBreakdown, SimulationResult } from "@/lib/api";
+import type { CapexBreakdown, SimulationAssumptions, SimulationResult } from "@/lib/api";
 import { decimal, idr, integer } from "@/lib/format";
 
 type CapexTableProps = {
@@ -37,46 +37,39 @@ export function CapexTable({ breakdown, total }: CapexTableProps) {
 
 type Props = {
   result: SimulationResult;
+  assumptions: SimulationAssumptions;
 };
 
-/** Rincian bidang, tata letak, anggaran, dan asumsi dari satu hasil simulasi. */
-export function ResultDetails({ result }: Props) {
-  const { geometry, layout, energy, finance } = result;
-
+/** Rincian agregat bidang, anggaran, dan asumsi dari satu hasil simulasi. */
+export function ResultDetails({ result, assumptions }: Props) {
   const geometryRows = [
-    { label: "Luas bidang", value: `${decimal.format(geometry.total_area_sqm)} m²` },
-    { label: "Luas efektif", value: `${decimal.format(geometry.effective_area_sqm)} m²` },
-    { label: "Lebar atap", value: `${decimal.format(geometry.roof_width_m)} m` },
-    { label: "Panjang atap", value: `${decimal.format(geometry.roof_length_m)} m` },
-    { label: "Slot maksimum", value: integer.format(layout.max_slots) },
-    { label: "Modul terpasang", value: integer.format(layout.installed) },
-    {
-      label: "Kisi",
-      value: `${integer.format(layout.rows)} baris × ${integer.format(layout.columns)} kolom`,
-    },
-    { label: "Luas modul", value: `${decimal.format(layout.module_area_sqm)} m²` },
-    { label: "Rasio kerapatan", value: decimal.format(layout.density_ratio) },
+    { label: "Jumlah bidang", value: integer.format(result.roof_count) },
+    { label: "Luas bidang", value: `${decimal.format(result.total_area_sqm)} m²` },
+    { label: "Luas efektif", value: `${decimal.format(result.effective_area_sqm)} m²` },
+    { label: "Slot maksimum", value: integer.format(result.max_slots) },
+    { label: "Modul terpasang", value: integer.format(result.installed) },
+    { label: "Luas modul", value: `${decimal.format(result.module_area_sqm)} m²` },
+    { label: "Rasio kerapatan", value: decimal.format(result.density_ratio) },
   ];
 
   const assumptionRows = [
     {
       label: "Iradiasi harian rata-rata",
-      value: `${decimal.format(energy.daily_irradiance_kwh_per_sqm)} kWh/m²/hari`,
+      value: `${decimal.format(assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari`,
     },
     {
       label: "Sumber iradiasi",
-      value: `${energy.irradiance_source} · ${energy.irradiance_period}`,
+      value: `${assumptions.irradiance_source} · ${assumptions.irradiance_period}`,
     },
-    { label: "Faktor sudut datang", value: decimal.format(energy.incidence_factor) },
-    { label: "Performance ratio", value: decimal.format(energy.performance_ratio) },
+    { label: "Faktor sudut datang", value: decimal.format(assumptions.incidence_factor) },
+    { label: "Performance ratio", value: decimal.format(assumptions.performance_ratio) },
     {
       label: "Golongan tarif",
-      value: `${finance.tariff_label} · ${idr.format(finance.tariff_idr_per_kwh)}/kWh`,
+      value: `${assumptions.tariff_label} · ${idr.format(assumptions.tariff_idr_per_kwh)}/kWh`,
     },
-    { label: "Tagihan listrik bulanan", value: idr.format(finance.monthly_bill_idr) },
     {
       label: "Reduksi CO₂",
-      value: `${decimal.format(finance.co2_reduction_kg_per_year)} kg/tahun · setara ${integer.format(finance.trees_equivalent)} pohon`,
+      value: `${decimal.format(result.co2_reduction_kg_per_year)} kg/tahun · setara ${integer.format(result.trees_equivalent)} pohon`,
     },
   ];
 
@@ -104,7 +97,7 @@ export function ResultDetails({ result }: Props) {
           <h2 className="card__title">Rincian CAPEX</h2>
           <p className="card__hint">Biaya modal awal sebagai dasar perhitungan payback.</p>
         </div>
-        <CapexTable breakdown={finance.capex_breakdown} total={finance.capex_total_idr} />
+        <CapexTable breakdown={assumptions.capex_breakdown} total={result.capex_total_idr} />
       </section>
 
       <section className="card">

@@ -20,9 +20,6 @@ import { decimal, idr, integer, paybackYearsText } from "@/lib/format";
 type PageMeta = { current_page: number; per_page: number; total: number; last_page: number };
 
 const INPUT_LABELS: Record<string, string> = {
-  roof_width_m: "Lebar Atap",
-  roof_length_m: "Panjang Atap",
-  rotation_deg: "Rotasi Orientasi",
   setback_m: "Setback Tepi",
   gutter_m: "Jalur Talang",
   tilt_deg: "Kemiringan Bidang",
@@ -37,9 +34,6 @@ const INPUT_LABELS: Record<string, string> = {
 };
 
 const INPUT_UNITS: Record<string, string> = {
-  roof_width_m: " m",
-  roof_length_m: " m",
-  rotation_deg: "°",
   setback_m: " m",
   gutter_m: " m",
   tilt_deg: "°",
@@ -196,6 +190,9 @@ export default function HistoryPage() {
     });
   }
 
+  // Bidang pertama dipakai sebagai contoh masukan geometri pada panel detail.
+  const primaryRoof = detail?.roofs[0] ?? null;
+
   return (
     <div className="min-h-screen w-full bg-[#f8fafc] text-slate-800 flex flex-col font-sans antialiased selection:bg-sky-100 selection:text-sky-900">
       <SiteHeader />
@@ -338,6 +335,12 @@ export default function HistoryPage() {
                   Masukan Geometri
                 </h3>
                 <div className="divide-y divide-slate-100 text-xs">
+                  <div className="py-2 flex items-center justify-between">
+                    <span className="text-slate-500">Jumlah Bidang Atap</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">
+                      {integer.format(detail.roofs.length)}
+                    </span>
+                  </div>
                   {Object.entries(detail.input).map(([key, value]) => (
                     <div key={key} className="py-2 flex items-center justify-between">
                       <span className="text-slate-500">{INPUT_LABELS[key] ?? key}</span>
@@ -346,7 +349,24 @@ export default function HistoryPage() {
                       </span>
                     </div>
                   ))}
+                  {primaryRoof !== null &&
+                    Object.entries(primaryRoof.input).map(([key, value]) => (
+                      <div key={key} className="py-2 flex items-center justify-between">
+                        <span className="text-slate-500">{INPUT_LABELS[key] ?? key}</span>
+                        <span className="font-semibold text-slate-800 tracking-tight">
+                          {inputValueText(key, value as string | number | null)}
+                        </span>
+                      </div>
+                    ))}
                 </div>
+                {primaryRoof !== null && (
+                  <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                    Nilai geometri di atas milik bidang pertama
+                    {detail.roofs.length > 1
+                      ? `; ${detail.roofs.length - 1} bidang lain memakai masukan masing-masing.`
+                      : "."}
+                  </p>
+                )}
               </div>
 
               {/* Card 2: Tata Letak & Hasil */}
@@ -364,8 +384,8 @@ export default function HistoryPage() {
                     <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.result.effective_area_sqm)} m²</span>
                   </div>
                   <div className="py-2 flex items-center justify-between">
-                    <span className="text-slate-500">Susunan Grid Modul</span>
-                    <span className="font-semibold text-slate-800 tracking-tight">{integer.format(detail.result.rows)} × {integer.format(detail.result.columns)}</span>
+                    <span className="text-slate-500">Luas Modul</span>
+                    <span className="font-semibold text-slate-800 tracking-tight">{decimal.format(detail.result.module_area_sqm)} m²</span>
                   </div>
                   <div className="py-2 flex items-center justify-between">
                     <span className="text-slate-500">Modul Terpasang</span>

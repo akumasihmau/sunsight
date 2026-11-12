@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\RoofDetectionController;
 use App\Http\Controllers\SimulationController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,9 +17,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // Lokasi, katalog, dan simulasi
+    // Lokasi, katalog, deteksi, dan simulasi
     Route::post('/location', [SimulationController::class, 'location']);
     Route::get('/options', [SimulationController::class, 'options']);
+    Route::post('/roof-detections', RoofDetectionController::class);
     Route::post('/simulate', [SimulationController::class, 'simulate']);
 
     // Riwayat simulasi

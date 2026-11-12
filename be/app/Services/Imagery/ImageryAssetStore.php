@@ -17,6 +17,10 @@ use RuntimeException;
  *
  * Berkas selalu berada di bawah direktori pemiliknya, sehingga kepemilikan
  * ditegakkan dua kali: oleh kueri atas user_id, dan oleh letak berkasnya.
+ *
+ * Satu jenis aset tidak punya berkas sama sekali: tangkapan peta dari antarmuka
+ * studio. Aset itu tetap dicatat di sini karena justru georeferensinya yang dipakai
+ * perhitungan, dan kepemilikannya harus tetap dapat diperiksa.
  */
 class ImageryAssetStore
 {
@@ -54,12 +58,51 @@ class ImageryAssetStore
     }
 
     /**
+     * Mencatat georeferensi tangkapan peta tanpa menyimpan berkasnya.
+     *
+     * Tangkapan berasal dari penyedia ubin pihak ketiga: menyalinnya ke penyimpanan
+     * server berarti menyimpan ulang citra yang bukan milik aplikasi ini, dan tidak
+     * ada satu pun langkah berikutnya yang membutuhkannya. Yang wajib ada hanyalah
+     * batas, ukuran, dan skala, karena dari situlah luas serta tata letak dihitung.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox
+     */
+    public function storeCapture(
+        int $userId,
+        int $width,
+        int $height,
+        ?int $zoom,
+        array $bbox,
+        float $metersPerPixel,
+    ): ImageryAsset {
+        return ImageryAsset::create([
+            'image_id' => (string) Str::uuid(),
+            'user_id' => $userId,
+            'kind' => ImageryAsset::KIND_CAPTURE,
+            'path' => null,
+            'extension' => null,
+            'mime_type' => null,
+            'width' => $width,
+            'height' => $height,
+            'meters_per_pixel' => $metersPerPixel,
+            'center_lat' => ($bbox[1] + $bbox[3]) / 2.0,
+            'center_lng' => ($bbox[0] + $bbox[2]) / 2.0,
+            'zoom' => $zoom,
+            'bbox' => $bbox,
+        ]);
+    }
+
+    /**
      * Mencari aset milik user tertentu.
      *
      * Mengembalikan null baik ketika aset tidak ada maupun ketika aset itu milik
      * user lain, sehingga keberadaan aset orang lain tidak dapat dibedakan.
+     *
+     * `kind` dikosongkan secara bawaan karena `image_id` sudah menjadi penanda yang
+     * cukup: simulasi menerima aset apa pun yang punya georeferensi, baik bidikan
+     * `/location` maupun tangkapan studio.
      */
-    public function findFor(int $userId, string $imageId, string $kind = ImageryAsset::KIND_RAW): ?ImageryAsset
+    public function findFor(int $userId, string $imageId, ?string $kind = null): ?ImageryAsset
     {
         if (! Str::isUuid($imageId)) {
             return null;
@@ -68,7 +111,7 @@ class ImageryAssetStore
         return ImageryAsset::query()
             ->where('user_id', $userId)
             ->where('image_id', $imageId)
-            ->where('kind', $kind)
+            ->when($kind !== null, fn ($query) => $query->where('kind', $kind))
             ->first();
     }
 

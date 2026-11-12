@@ -5,19 +5,19 @@ namespace App\Http\Controllers;
 use App\Http\Requests\LocationRequest;
 use App\Http\Requests\SimulateRequest;
 use App\Http\Requests\StoreSimulationRequest;
-use App\Http\Resources\SimulationMetricsResource;
 use App\Http\Resources\SimulationResource;
 use App\Http\Resources\SimulationSummaryResource;
 use App\Models\ImageryAsset;
 use App\Models\Simulation;
+use App\Services\Geometry\PolygonGeometry;
 use App\Services\Imagery\ImageryAssetStore;
 use App\Services\Imagery\ImageryProvider;
-use App\Services\RoofGeometry;
 use App\Services\Simulation\SimulationCatalog;
 use App\Services\Simulation\SimulationRunner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class SimulationController extends Controller
 {
@@ -56,65 +56,55 @@ class SimulationController extends Controller
         return response()->json(SimulationCatalog::options());
     }
 
-    public function simulate(SimulateRequest $request): SimulationMetricsResource|JsonResponse
+    /**
+     * Hitung simulasi lengkap tanpa menyimpan apa pun.
+     */
+    public function simulate(SimulateRequest $request): SimulationResource|JsonResponse
     {
-        $asset = $this->assets->findFor(
-            (int) $request->user()->getKey(),
-            (string) $request->validated('image_id'),
-        );
+        $simulation = $this->calculate($request);
 
-        if ($asset === null) {
-            return $this->imageNotFound();
-        }
-
-        $problem = $this->rectProblem($request, $asset);
-
-        if ($problem !== null) {
-            return $problem;
-        }
-
-        return new SimulationMetricsResource($this->runner->run(
-            userId: (int) $request->user()->getKey(),
-            image: $asset,
-            input: $request->simulationInput(),
-        ));
+        return $simulation instanceof JsonResponse
+            ? $simulation
+            : new SimulationResource($simulation);
     }
 
+    /**
+     * Hitung ulang lalu simpan sebagai riwayat.
+     *
+     * Simulasi dan seluruh baris bidangnya ditulis dalam satu transaksi: simulasi
+     * yang tersimpan tanpa bidangnya tidak dapat ditampilkan, sehingga tidak boleh
+     * pernah ada.
+     */
     public function store(StoreSimulationRequest $request): JsonResponse
     {
-        $userId = (int) $request->user()->getKey();
+        $simulation = $this->calculate($request);
 
-        $asset = $this->assets->findFor($userId, (string) $request->validated('image_id'));
-
-        if ($asset === null) {
-            return $this->imageNotFound();
+        if ($simulation instanceof JsonResponse) {
+            return $simulation;
         }
 
-        $problem = $this->rectProblem($request, $asset);
+        DB::transaction(function () use ($simulation): void {
+            $simulation->save();
 
-        if ($problem !== null) {
-            return $problem;
-        }
+            foreach ($simulation->roofs as $roof) {
+                $roof->simulation_id = $simulation->getKey();
+                $roof->save();
+            }
+        });
 
-        // Angka hasil selalu dihitung di sini. Kunci hasil pada payload kiriman
-        // tidak pernah dibaca, sehingga klien tidak dapat mengarang hasilnya.
-        $simulation = $this->runner->run($userId, $asset, $request->simulationInput());
-        $simulation->save();
+        $body = (new SimulationResource($simulation))->resolve($request);
 
-        return response()->json([
-            'message' => 'Simulation saved',
-            'id' => $simulation->id,
-            'capacity_kwp' => round((float) $simulation->capacity_kwp, 3),
-            'payback_years' => $simulation->payback_years === null
-                ? null
-                : round((float) $simulation->payback_years, 2),
-        ], 201);
+        // `message` ditempel langsung, bukan lewat `additional()`: pada resource tanpa
+        // pembungkus, `additional()` justru menambahkan pembungkus `data`, sedangkan
+        // bentuk bersama pada kontrak adalah objek datar.
+        return response()->json(array_merge(['message' => 'Simulation saved'], $body), 201);
     }
 
     public function index(Request $request): AnonymousResourceCollection
     {
         $simulations = Simulation::query()
             ->where('user_id', $request->user()->getKey())
+            ->withCount('roofs')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate($this->perPage($request));
@@ -126,7 +116,13 @@ class SimulationController extends Controller
     {
         $simulation = $this->findOwned($request, $id);
 
-        return $simulation === null ? $this->notFound() : new SimulationResource($simulation);
+        if ($simulation === null) {
+            return $this->notFound();
+        }
+
+        $simulation->load('roofs');
+
+        return new SimulationResource($simulation);
     }
 
     public function destroy(Request $request, int $id): JsonResponse
@@ -143,32 +139,114 @@ class SimulationController extends Controller
     }
 
     /**
-     * Persegi bidang atap harus berada di dalam citra.
+     * Menghitung simulasi, atau mengembalikan kesalahan yang menghalanginya.
      *
-     * Diperiksa setelah aset diketahui, karena batasnya bergantung pada ukuran citra.
-     * Sudut diperiksa, bukan hanya kotak pembatasnya, supaya persegi yang diputar
-     * tidak dapat keluar citra pada salah satu sudutnya.
+     * Dipakai baik oleh jalur hitung maupun jalur simpan, sehingga keduanya tidak
+     * mungkin memakai masukan, citra, atau aturan yang berbeda.
      */
-    private function rectProblem(SimulateRequest $request, ImageryAsset $asset): ?JsonResponse
+    private function calculate(SimulateRequest $request): Simulation|JsonResponse
     {
-        /** @var array{x: float, y: float, width: float, height: float, rotation_deg: float} $rect */
-        $rect = $request->validated('roof_rect');
+        $userId = (int) $request->user()->getKey();
 
-        foreach (RoofGeometry::corners($rect) as [$x, $y]) {
-            $inside = $x >= -0.5
-                && $y >= -0.5
-                && $x <= (float) $asset->width + 0.5
-                && $y <= (float) $asset->height + 0.5;
+        $asset = $this->assets->findFor($userId, (string) $request->validated('image_id'));
 
-            if (! $inside) {
-                return response()->json([
-                    'message' => 'Persegi bidang atap berada di luar citra.',
-                    'errors' => ['roof_rect' => ['Persegi bidang atap berada di luar citra.']],
-                ], 422);
+        if ($asset === null) {
+            return $this->imageNotFound();
+        }
+
+        $problem = $this->polygonProblem($request, $asset);
+
+        if ($problem !== null) {
+            return $problem;
+        }
+
+        // Angka hasil selalu dihitung di sini. Kunci hasil pada payload kiriman tidak
+        // pernah dibaca, sehingga klien tidak dapat mengarang hasilnya.
+        return $this->runner->run($userId, $asset, $this->simulationInput($request));
+    }
+
+    /**
+     * Seluruh titik poligon bidang atap harus berada di dalam citra.
+     *
+     * Diperiksa setelah aset diketahui karena batasnya bergantung pada ukuran
+     * tangkapan. Titik di luar citra berarti bidangnya tidak dapat dipetakan kembali
+     * ke koordinat geografis, dan itu masukan yang salah, bukan kesalahan sistem.
+     */
+    private function polygonProblem(SimulateRequest $request, ImageryAsset $asset): ?JsonResponse
+    {
+        /** @var array<int, array<string, mixed>> $roofs */
+        $roofs = $request->validated('roofs');
+
+        $width = (float) $asset->width;
+        $height = (float) $asset->height;
+        $errors = [];
+
+        foreach ($roofs as $index => $roof) {
+            /** @var array<int, array{0: float|int, 1: float|int}> $polygon */
+            $polygon = $roof['roof_polygon_px'] ?? [];
+
+            // Ring yang menyilang dirinya sendiri masih dapat dirapikan, tetapi ring
+            // yang tidak menyisakan bidang tidak dapat dihitung sama sekali.
+            if (count(PolygonGeometry::openRing(PolygonGeometry::makeSimple($polygon))) < 3) {
+                $errors["roofs.{$index}.roof_polygon_px"] = [
+                    'Poligon bidang atap tidak membentuk bidang.',
+                ];
+
+                continue;
+            }
+
+            foreach ($polygon as $point) {
+                $x = (float) $point[0];
+                $y = (float) $point[1];
+
+                if ($x < -0.5 || $y < -0.5 || $x > $width + 0.5 || $y > $height + 0.5) {
+                    $errors["roofs.{$index}.roof_polygon_px"] = [
+                        'Seluruh titik poligon bidang atap harus berada di dalam citra.',
+                    ];
+
+                    continue 2;
+                }
             }
         }
 
-        return null;
+        if ($errors === []) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => 'Poligon bidang atap berada di luar citra.',
+            'errors' => $errors,
+        ], 422);
+    }
+
+    /**
+     * Masukan simulasi dengan ring yang sudah dirapikan.
+     *
+     * Pengguna dapat menggeser verteks sampai poligonnya menyilang. Ring seperti itu
+     * tidak dapat disimpan sebagai geometri yang sah, sehingga dirapikan sekali di
+     * sini: perhitungan, GeoJSON, dan baris tersimpan memakai ring yang sama.
+     *
+     * @return array<string, mixed>
+     */
+    private function simulationInput(SimulateRequest $request): array
+    {
+        $input = $request->simulationInput();
+
+        /** @var array<int, array<string, mixed>> $roofs */
+        $roofs = $input['roofs'];
+
+        $input['roofs'] = array_map(
+            static function (array $roof): array {
+                $roof['roof_polygon_px'] = PolygonGeometry::openRing(
+                    PolygonGeometry::makeSimple((array) $roof['roof_polygon_px']),
+                );
+
+                return $roof;
+            },
+            $roofs,
+        );
+
+        return $input;
     }
 
     /**

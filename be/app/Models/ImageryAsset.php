@@ -30,7 +30,20 @@ use Illuminate\Support\Facades\Storage;
 ])]
 class ImageryAsset extends Model
 {
+    /**
+     * Bidikan citra lengkap yang berkasnya tersimpan server.
+     */
     public const KIND_RAW = 'raw';
+
+    /**
+     * Tangkapan peta dari antarmuka studio.
+     *
+     * Berkasnya tidak pernah ditulis server: citranya datang dari penyedia ubin
+     * pihak ketiga dan hanya dipakai sekali untuk deteksi. Yang tersimpan adalah
+     * georeferensinya, karena tanpa bbox dan skala, luas bidang atap tidak dapat
+     * dihitung maupun dipertanggungjawabkan.
+     */
+    public const KIND_CAPTURE = 'capture';
 
     /**
      * @return array<string, string>
@@ -53,11 +66,18 @@ class ImageryAsset extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Hanya bermakna untuk aset yang berkasnya tersimpan; tangkapan peta tidak
+     * punya berkas dan tidak pernah ditautkan sebagai citra.
+     */
     public function url(): string
     {
         return Storage::disk('public')->url($this->path);
     }
 
+    /**
+     * Hanya bermakna untuk aset yang berkasnya tersimpan.
+     */
     public function absolutePath(): string
     {
         return Storage::disk('public')->path($this->path);

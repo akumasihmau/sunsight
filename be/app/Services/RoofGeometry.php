@@ -3,97 +3,112 @@
 namespace App\Services;
 
 use App\Services\Geometry\PixelGeoMapper;
-use App\Services\Geometry\RoofArea;
+use App\Services\Geometry\PolygonGeometry;
+use App\Services\Geometry\RoofPolygonArea;
 use InvalidArgumentException;
 
 /**
- * Menurunkan luas bidang atap dari persegi dalam koordinat piksel.
+ * Menurunkan geometri bidang atap dari poligon dalam koordinat piksel.
  *
- * Persegi punya sumbu sendiri, sehingga `width` dan `height` adalah dimensi
- * sebenarnya dan rotasi tidak mengubah luas. Yang dikurangi adalah setback pada
- * seluruh sisi, ditambah jalur talang pada satu sisi kemiringan.
+ * Alurnya mengikuti kontrak: luas dihitung dari poligon apa adanya, poligon efektif
+ * diperoleh dengan mengurangi setback, lalu dimensi dan rotasi diambil dari persegi
+ * pembatas minimum poligon efektif tersebut. Talang (`gutter_m`) sengaja tidak ikut
+ * dikurangi: sisi bawah kemiringan tidak dapat ditentukan dari citra nadir, sehingga
+ * memotong salah satu sisi poligon hanya akan mengurangi luas secara sewenang-wenang.
+ * Nilainya tetap divalidasi dan disimpan di tempat lain agar maksud pengguna terbaca.
  */
 class RoofGeometry
 {
     /**
-     * @param  array{x: float, y: float, width: float, height: float, rotation_deg: float}  $rect
+     * @param  array<int, array{0: float|int, 1: float|int}>  $polygonPx
      */
-    public static function areaFromRect(array $rect, float $metersPerPixel, float $setbackM, float $gutterM): RoofArea
+    public static function areaFromPolygon(array $polygonPx, float $metersPerPixel, float $setbackM): RoofPolygonArea
     {
         if ($metersPerPixel <= 0.0) {
             throw new InvalidArgumentException('Skala meter per piksel harus lebih besar dari nol.');
         }
 
-        if ($rect['width'] <= 0.0 || $rect['height'] <= 0.0) {
-            throw new InvalidArgumentException('Dimensi persegi bidang atap harus lebih besar dari nol.');
+        $polygon = PolygonGeometry::closeRing($polygonPx);
+        $squareMetersPerPixel = $metersPerPixel * $metersPerPixel;
+
+        // Titik yang berimpit atau segaris tidak membentuk bidang, tetapi masukan
+        // seperti itu tetap sah menurut kontrak — yang diperiksa hanyalah jumlah
+        // titiknya. Karena itu jawabannya adalah bidang tanpa luas, bukan kegagalan
+        // yang menyesatkan pemanggil menjadi mencari kesalahan di tempat lain.
+        if (count(PolygonGeometry::openRing($polygon)) < 3) {
+            return new RoofPolygonArea(
+                roofLengthM: 0.0,
+                roofWidthM: 0.0,
+                rotationDeg: 0.0,
+                totalAreaSqm: 0.0,
+                effectiveAreaSqm: 0.0,
+                effectivePolygonPx: [],
+                frameCenterPx: PolygonGeometry::centroid($polygon),
+                frameLengthPx: 0.0,
+                frameWidthPx: 0.0,
+            );
         }
 
-        $roofLengthM = $rect['width'] * $metersPerPixel;
-        $roofWidthM = $rect['height'] * $metersPerPixel;
+        $totalAreaSqm = PolygonGeometry::area($polygon) * $squareMetersPerPixel;
 
-        // Setback berlaku keliling, talang hanya pada satu sisi kemiringan.
-        $effectiveLengthM = max(0.0, $roofLengthM - 2 * $setbackM);
-        $effectiveWidthM = max(0.0, $roofWidthM - 2 * $setbackM - $gutterM);
+        // Setback diubah ke satuan ring, bukan dikurangkan dalam meter: offset bekerja
+        // pada koordinat piksel.
+        $effective = PolygonGeometry::inset($polygon, $setbackM / $metersPerPixel);
 
-        return new RoofArea(
-            roofLengthM: round($roofLengthM, 2),
-            roofWidthM: round($roofWidthM, 2),
-            totalAreaSqm: round($roofLengthM * $roofWidthM, 2),
-            effectiveLengthM: round($effectiveLengthM, 2),
-            effectiveWidthM: round($effectiveWidthM, 2),
-            effectiveAreaSqm: round($effectiveLengthM * $effectiveWidthM, 2),
+        if ($effective === []) {
+            return new RoofPolygonArea(
+                roofLengthM: 0.0,
+                roofWidthM: 0.0,
+                rotationDeg: 0.0,
+                totalAreaSqm: $totalAreaSqm,
+                effectiveAreaSqm: 0.0,
+                effectivePolygonPx: [],
+                frameCenterPx: PolygonGeometry::centroid($polygon),
+                frameLengthPx: 0.0,
+                frameWidthPx: 0.0,
+            );
+        }
+
+        $rectangle = PolygonGeometry::minAreaRectangle($effective, $metersPerPixel);
+
+        // Luas efektif tidak pernah melebihi luas aslinya; selisih hanya mungkin
+        // muncul dari pembulatan.
+        $effectiveAreaSqm = min(PolygonGeometry::area($effective) * $squareMetersPerPixel, $totalAreaSqm);
+
+        return new RoofPolygonArea(
+            roofLengthM: $rectangle['length_m'],
+            roofWidthM: $rectangle['width_m'],
+            rotationDeg: $rectangle['rotation_deg'],
+            totalAreaSqm: $totalAreaSqm,
+            effectiveAreaSqm: $effectiveAreaSqm,
+            effectivePolygonPx: $effective,
+            frameCenterPx: $rectangle['center'],
+            frameLengthPx: $rectangle['length'],
+            frameWidthPx: $rectangle['width'],
         );
     }
 
     /**
-     * Keempat sudut persegi dalam koordinat piksel, sebagai ring tertutup.
+     * Poligon bidang atap dalam koordinat geografis, sebagai ring tertutup siap
+     * disimpan sebagai geometri maupun dikirim sebagai GeoJSON.
      *
-     * Rotasi dinyatakan searah jarum jam terhadap pusat persegi; sumbu y citra
-     * tumbuh ke bawah sehingga putaran layar biasa memakai tanda positif.
-     *
-     * @param  array{x: float, y: float, width: float, height: float, rotation_deg: float}  $rect
-     * @return array<int, array{0: float, 1: float}>
-     */
-    public static function corners(array $rect): array
-    {
-        $centerX = $rect['x'] + $rect['width'] / 2;
-        $centerY = $rect['y'] + $rect['height'] / 2;
-        $halfWidth = $rect['width'] / 2;
-        $halfHeight = $rect['height'] / 2;
-
-        $angle = deg2rad($rect['rotation_deg']);
-        $cos = cos($angle);
-        $sin = sin($angle);
-
-        $corners = [];
-
-        foreach ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as [$sx, $sy]) {
-            $dx = $sx * $halfWidth;
-            $dy = $sy * $halfHeight;
-
-            $corners[] = [
-                $centerX + $dx * $cos - $dy * $sin,
-                $centerY + $dx * $sin + $dy * $cos,
-            ];
-        }
-
-        $corners[] = $corners[0];
-
-        return $corners;
-    }
-
-    /**
-     * Poligon bidang atap dalam koordinat geografis, siap disimpan sebagai geometri.
-     *
-     * @param  array{x: float, y: float, width: float, height: float, rotation_deg: float}  $rect
+     * @param  array<int, array{0: float|int, 1: float|int}>  $polygonPx
      * @param  array{0: float, 1: float, 2: float, 3: float}  $bbox
      * @return array<int, array{0: float, 1: float}>
      */
-    public static function polygonLngLat(array $rect, array $bbox, int $imageWidth, int $imageHeight): array
+    public static function ringLngLat(array $polygonPx, array $bbox, int $imageWidth, int $imageHeight): array
     {
-        return array_map(
-            static fn (array $corner): array => PixelGeoMapper::toLngLat($corner, $bbox, $imageWidth, $imageHeight),
-            self::corners($rect),
-        );
+        $ring = [];
+
+        foreach ($polygonPx as $point) {
+            $ring[] = PixelGeoMapper::toLngLat(
+                [(float) $point[0], (float) $point[1]],
+                $bbox,
+                $imageWidth,
+                $imageHeight,
+            );
+        }
+
+        return PolygonGeometry::closeRing($ring);
     }
 }

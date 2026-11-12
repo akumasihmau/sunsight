@@ -43,6 +43,40 @@ class FinanceModel
     }
 
     /**
+     * Menjumlahkan rincian biaya seluruh bidang menjadi belanja modal satu simulasi.
+     *
+     * Biaya instalasi bersifat tetap per simulasi, bukan per bidang, sehingga diambil
+     * sekali dari rincian pertama alih-alih dijumlahkan. Perhitungan per bidangnya
+     * tetap memakai `capex()`, jadi harga modul dan inverter tidak disalin ke sini.
+     *
+     * @param  array<int, CostBreakdown>  $breakdowns
+     */
+    public static function sumBreakdowns(array $breakdowns): CostBreakdown
+    {
+        $modulesIdr = 0;
+        $inverterIdr = 0;
+        $rackingIdr = 0;
+        $installationIdr = 0;
+
+        foreach ($breakdowns as $index => $breakdown) {
+            $modulesIdr += $breakdown->modulesIdr;
+            $inverterIdr += $breakdown->inverterIdr;
+            $rackingIdr += $breakdown->rackingIdr;
+
+            if ($index === 0) {
+                $installationIdr = $breakdown->installationIdr;
+            }
+        }
+
+        return new CostBreakdown(
+            modulesIdr: $modulesIdr,
+            inverterIdr: $inverterIdr,
+            rackingIdr: $rackingIdr,
+            installationIdr: $installationIdr,
+        );
+    }
+
+    /**
      * @param  array{key: string, label: string, idr_per_kwh: float}  $tariff
      */
     public static function summarise(

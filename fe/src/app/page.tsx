@@ -9,7 +9,7 @@ import { LandingView } from "@/components/landing/LandingView";
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { MascotDashboardTour } from "@/components/dashboard/MascotDashboardTour";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
-import { api, type SimulationParameters, type SimulationResult } from "@/lib/api";
+import { api, type SimulationAssumptions, type SimulationParameters, type SimulationResult } from "@/lib/api";
 import { useHasToken, useStoredBiodata } from "@/lib/profile";
 
 type DashboardNavTab = "overview" | "history" | "calculator";
@@ -1271,46 +1271,37 @@ function HomePageContent() {
 
   // Mock Result & Params for Proposal Export Modal
   const simulationResultForModal: SimulationResult = {
-    geometry: {
-      roof_width_m: activeProj.ridgeM,
-      roof_length_m: activeProj.slopeM,
-      total_area_sqm: activeProj.ridgeM * activeProj.slopeM,
-      effective_area_sqm: (activeProj.ridgeM - 1.0) * (activeProj.slopeM - 1.1),
-    },
-    layout: {
-      max_slots: activeProj.moduleCount + 4,
-      installed: activeProj.moduleCount,
-      rows: 2,
-      columns: Math.ceil(activeProj.moduleCount / 2),
-      module_area_sqm: 2.56,
-      density_ratio: 0.78,
-    },
-    energy: {
-      capacity_kwp: activeProj.capacityKwp,
-      annual_production_kwh: activeProj.annualProdMwh * 1000,
-      daily_irradiance_kwh_per_sqm: 4.85,
-      incidence_factor: 0.98,
-      performance_ratio: 0.8,
-      irradiance_source: "NASA POWER Climatology (Kota Bogor)",
-      irradiance_period: "2024",
-    },
-    finance: {
-      capex_total_idr: activeProj.capacityKwp * 12_500_000,
-      capex_breakdown: {
-        modules_idr: activeProj.capacityKwp * 6_500_000,
-        inverter_idr: activeProj.capacityKwp * 2_500_000,
-        racking_idr: activeProj.capacityKwp * 1_500_000,
-        installation_idr: activeProj.capacityKwp * 2_000_000,
-      },
-      monthly_saving_idr: activeProj.monthlySavingIdr,
-      annual_saving_idr: activeProj.monthlySavingIdr * 12,
-      payback_years: activeProj.paybackYears,
-      tariff_key: "R2",
-      tariff_label: "R-2 / 3.500-5.500 VA (PLN)",
-      tariff_idr_per_kwh: 1699.53,
-      monthly_bill_idr: calcMonthlyBill,
-      co2_reduction_kg_per_year: activeProj.co2ReductionTon * 1000,
-      trees_equivalent: activeProj.treesCount,
+    roof_count: 1,
+    total_area_sqm: activeProj.ridgeM * activeProj.slopeM,
+    effective_area_sqm: (activeProj.ridgeM - 1.0) * (activeProj.slopeM - 1.1),
+    max_slots: activeProj.moduleCount + 4,
+    installed: activeProj.moduleCount,
+    module_area_sqm: activeProj.moduleCount * 2.56,
+    density_ratio: 0.78,
+    capacity_kwp: activeProj.capacityKwp,
+    annual_production_kwh: activeProj.annualProdMwh * 1000,
+    capex_total_idr: activeProj.capacityKwp * 12_500_000,
+    monthly_saving_idr: activeProj.monthlySavingIdr,
+    annual_saving_idr: activeProj.monthlySavingIdr * 12,
+    payback_years: activeProj.paybackYears,
+    co2_reduction_kg_per_year: activeProj.co2ReductionTon * 1000,
+    trees_equivalent: activeProj.treesCount,
+  };
+
+  const simulationAssumptionsForModal: SimulationAssumptions = {
+    daily_irradiance_kwh_per_sqm: 4.85,
+    irradiance_source: "NASA POWER Climatology (Kota Bogor)",
+    irradiance_period: "2024",
+    incidence_factor: 0.98,
+    performance_ratio: 0.8,
+    tariff_key: "R2",
+    tariff_label: "R-2 / 3.500-5.500 VA (PLN)",
+    tariff_idr_per_kwh: 1699.53,
+    capex_breakdown: {
+      modules_idr: activeProj.capacityKwp * 6_500_000,
+      inverter_idr: activeProj.capacityKwp * 2_500_000,
+      racking_idr: activeProj.capacityKwp * 1_500_000,
+      installation_idr: activeProj.capacityKwp * 2_000_000,
     },
   };
 
@@ -1319,7 +1310,13 @@ function HomePageContent() {
     gutter_m: 0.6,
     tilt_deg: activeProj.tiltDeg,
     azimuth_deg: 188,
-    module_key: `module_${activeProj.modulePower}`,
+    // Kontrak memakai kunci katalog `GET /options`, bukan daya modul.
+    module_key:
+      activeProj.modulePower === 450
+        ? "compact_450"
+        : activeProj.modulePower === 580
+          ? "bifacial_580"
+          : "mono_perc_550",
     orientation: "portrait",
     clearance_m: 0.02,
     panel_count: activeProj.moduleCount,
@@ -2917,6 +2914,7 @@ function HomePageContent() {
         open={proposalOpen}
         onClose={() => setProposalOpen(false)}
         result={simulationResultForModal}
+        assumptions={simulationAssumptionsForModal}
         parameters={simulationParamsForModal}
         latitude="-6.5950"
         longitude="106.7972"

@@ -1,6 +1,6 @@
 "use client";
 
-import type { SimulationParameters, SimulationResult } from "@/lib/api";
+import type { SimulationAssumptions, SimulationParameters, SimulationResult } from "@/lib/api";
 import { decimal, idr, integer, paybackYearsText } from "@/lib/format";
 import type { UserBiodata } from "@/lib/profile";
 
@@ -8,6 +8,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   result: SimulationResult;
+  assumptions: SimulationAssumptions;
   parameters: SimulationParameters;
   latitude: string;
   longitude: string;
@@ -32,6 +33,7 @@ export function ProposalModal({
   open,
   onClose,
   result,
+  assumptions,
   parameters,
   latitude,
   longitude,
@@ -47,18 +49,16 @@ export function ProposalModal({
 }: Props) {
   if (!open) return null;
 
-  const { geometry, layout, energy, finance } = result;
-
-  const effectiveCumulative25 = cumulative25 ?? finance.annual_saving_idr * 25;
+  const effectiveCumulative25 = cumulative25 ?? result.annual_saving_idr * 25;
   const effectiveNewBill =
-    newMonthlyBill ?? Math.max(0, finance.monthly_bill_idr - finance.monthly_saving_idr);
+    newMonthlyBill ?? Math.max(0, parameters.monthly_bill_idr - result.monthly_saving_idr);
   const effectiveCoveragePct =
     coveragePct ??
     Math.min(
       100,
-      Math.round((finance.monthly_saving_idr / Math.max(1, finance.monthly_bill_idr)) * 100)
+      Math.round((result.monthly_saving_idr / Math.max(1, parameters.monthly_bill_idr)) * 100)
     );
-  const effectiveMonthlyKwh = monthlyGenKwh ?? Math.round(energy.annual_production_kwh / 12);
+  const effectiveMonthlyKwh = monthlyGenKwh ?? Math.round(result.annual_production_kwh / 12);
 
   const documentNo = `SS-PROP-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}-${Math.abs(
     Math.round(Number(latitude) * 100) + Math.round(Number(longitude) * 100)
@@ -152,13 +152,13 @@ export function ProposalModal({
                   Data Kelistrikan PLN Eksisting
                 </span>
                 <p className="m-0 font-bold text-slate-900">
-                  Golongan: <span className="text-amber-800">{finance.tariff_label}</span>
+                  Golongan: <span className="text-amber-800">{assumptions.tariff_label}</span>
                 </p>
                 <p className="m-0 text-slate-600 font-code-metric">
-                  Tarif Listrik: <strong>Rp {finance.tariff_idr_per_kwh.toLocaleString("id-ID")}/kWh</strong>
+                  Tarif Listrik: <strong>Rp {assumptions.tariff_idr_per_kwh.toLocaleString("id-ID")}/kWh</strong>
                 </p>
                 <p className="m-0 text-slate-600 font-code-metric">
-                  Tagihan Rekening: <strong>{idr.format(finance.monthly_bill_idr)}/bln</strong>
+                  Tagihan Rekening: <strong>{idr.format(parameters.monthly_bill_idr)}/bln</strong>
                 </p>
               </div>
             </div>
@@ -170,10 +170,10 @@ export function ProposalModal({
                   Kapasitas Terpasang
                 </span>
                 <span className="font-title text-base font-extrabold text-amber-950 block font-code-metric">
-                  {decimal.format(energy.capacity_kwp)} kWp
+                  {decimal.format(result.capacity_kwp)} kWp
                 </span>
                 <span className="text-[9px] text-slate-500 font-medium">
-                  {integer.format(layout.installed)} Modul ({modulePower}W)
+                  {integer.format(result.installed)} Modul ({modulePower}W)
                 </span>
               </div>
 
@@ -182,7 +182,7 @@ export function ProposalModal({
                   Produksi Tahunan
                 </span>
                 <span className="font-title text-base font-extrabold text-sky-950 block font-code-metric">
-                  ~{(energy.annual_production_kwh / 1000).toFixed(1)} MWh
+                  ~{(result.annual_production_kwh / 1000).toFixed(1)} MWh
                 </span>
                 <span className="text-[9px] text-slate-500 font-medium font-code-metric">
                   ~{effectiveMonthlyKwh.toLocaleString("id-ID")} kWh / bln
@@ -197,7 +197,7 @@ export function ProposalModal({
                   -{effectiveCoveragePct}%
                 </span>
                 <span className="text-[9px] text-emerald-800 font-medium font-code-metric">
-                  {idr.format(finance.monthly_saving_idr)} / bln
+                  {idr.format(result.monthly_saving_idr)} / bln
                 </span>
               </div>
 
@@ -206,7 +206,7 @@ export function ProposalModal({
                   Periode Balik Modal
                 </span>
                 <span className="font-title text-base font-extrabold text-teal-950 block font-code-metric">
-                  {paybackYearsText(finance.payback_years)}
+                  {paybackYearsText(result.payback_years)}
                 </span>
                 <span className="text-[9px] text-teal-800 font-medium font-code-metric">
                   IRR: {irr}% / tahun
@@ -234,13 +234,13 @@ export function ProposalModal({
                 <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex justify-between items-center">
                   <span className="text-slate-500">Total Luas Bidang Atap</span>
                   <span className="font-bold text-slate-900 font-code-metric">
-                    {decimal.format(geometry.total_area_sqm)} m²
+                    {decimal.format(result.total_area_sqm)} m²
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex justify-between items-center">
                   <span className="text-slate-500">Luas Efektif Terpasang</span>
                   <span className="font-bold text-emerald-800 font-code-metric">
-                    {decimal.format(geometry.effective_area_sqm)} m²
+                    {decimal.format(result.effective_area_sqm)} m²
                   </span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex justify-between items-center">
@@ -266,7 +266,7 @@ export function ProposalModal({
                 <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 flex justify-between items-center">
                   <span className="text-slate-500">Performance Ratio (PR)</span>
                   <span className="font-bold text-emerald-700 font-code-metric">
-                    {(energy.performance_ratio * 100).toFixed(0)}% (Efisiensi Sistem)
+                    {(assumptions.performance_ratio * 100).toFixed(0)}% (Efisiensi Sistem)
                   </span>
                 </div>
               </div>
@@ -297,12 +297,12 @@ export function ProposalModal({
                       Beban Listrik Eksisting (Sebelum PLTS)
                     </span>
                     <div className="font-title text-base font-extrabold text-slate-900 font-code-metric mt-1">
-                      {idr.format(finance.monthly_bill_idr)}
+                      {idr.format(parameters.monthly_bill_idr)}
                       <span className="text-[10px] font-normal text-slate-500 ml-1">/ bulan</span>
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-500 font-code-metric pt-1 border-t border-slate-200/60">
-                    Konsumsi Energi: ~{Math.round(finance.monthly_bill_idr / finance.tariff_idr_per_kwh).toLocaleString("id-ID")} kWh / bln
+                    Konsumsi Energi: ~{Math.round(parameters.monthly_bill_idr / assumptions.tariff_idr_per_kwh).toLocaleString("id-ID")} kWh / bln
                   </div>
                 </div>
 
@@ -318,7 +318,7 @@ export function ProposalModal({
                     </div>
                   </div>
                   <div className="text-[10px] text-emerald-800 font-bold font-code-metric pt-1 border-t border-emerald-200/60">
-                    Turun {idr.format(finance.monthly_saving_idr)} / bulan (-{effectiveCoveragePct}%)
+                    Turun {idr.format(result.monthly_saving_idr)} / bulan (-{effectiveCoveragePct}%)
                   </div>
                 </div>
               </div>
@@ -330,7 +330,7 @@ export function ProposalModal({
                     Penghematan 1 Tahun
                   </span>
                   <span className="font-title text-sm font-extrabold text-slate-900 font-code-metric">
-                    {idr.format(finance.annual_saving_idr)}
+                    {idr.format(result.annual_saving_idr)}
                   </span>
                   <span className="text-[8.5px] text-slate-400">Tahun pertama operasi</span>
                 </div>
@@ -350,7 +350,7 @@ export function ProposalModal({
                     Periode Balik Modal (BEP)
                   </span>
                   <span className="font-title text-sm font-extrabold text-teal-800 font-code-metric">
-                    {paybackYearsText(finance.payback_years)}
+                    {paybackYearsText(result.payback_years)}
                   </span>
                   <span className="text-[8.5px] text-teal-700">Estimasi IRR {irr}%</span>
                 </div>
@@ -369,7 +369,7 @@ export function ProposalModal({
                   </h4>
                 </div>
                 <span className="text-[10px] font-bold text-slate-700 font-code-metric">
-                  Total: {idr.format(finance.capex_total_idr)}
+                  Total: {idr.format(result.capex_total_idr)}
                 </span>
               </div>
 
@@ -385,10 +385,10 @@ export function ProposalModal({
                   <tr>
                     <td className="p-2.5 font-semibold text-slate-900">Modul Surya Fotovoltaik</td>
                     <td className="p-2.5 text-slate-500">
-                      {integer.format(layout.installed)} Unit Modul Surya Tier-1 {modulePower}W Monokristalin Bifacial
+                      {integer.format(result.installed)} Unit Modul Surya Tier-1 {modulePower}W Monokristalin Bifacial
                     </td>
                     <td className="p-2.5 text-right font-code-metric font-semibold text-slate-800">
-                      {idr.format(finance.capex_breakdown.modules_idr)}
+                      {idr.format(assumptions.capex_breakdown.modules_idr)}
                     </td>
                   </tr>
                   <tr>
@@ -397,7 +397,7 @@ export function ProposalModal({
                       {parameters.inverter_type === "micro" ? "Microinverter Enphase IP67" : "Central String Inverter On-Grid"} + Panel SPD &amp; MCB
                     </td>
                     <td className="p-2.5 text-right font-code-metric font-semibold text-slate-800">
-                      {idr.format(finance.capex_breakdown.inverter_idr)}
+                      {idr.format(assumptions.capex_breakdown.inverter_idr)}
                     </td>
                   </tr>
                   <tr>
@@ -406,7 +406,7 @@ export function ProposalModal({
                       Struktur Penopang Aluminium Anodized AL6005-T5 Tahan Cuaca Tropis
                     </td>
                     <td className="p-2.5 text-right font-code-metric font-semibold text-slate-800">
-                      {idr.format(finance.capex_breakdown.racking_idr)}
+                      {idr.format(assumptions.capex_breakdown.racking_idr)}
                     </td>
                   </tr>
                   <tr>
@@ -415,7 +415,7 @@ export function ProposalModal({
                       Jasa Instalasi Kelistrikan, Pengujian, Sertifikasi Laik Operasi &amp; Net-Metering
                     </td>
                     <td className="p-2.5 text-right font-code-metric font-semibold text-slate-800">
-                      {idr.format(finance.capex_breakdown.installation_idr)}
+                      {idr.format(assumptions.capex_breakdown.installation_idr)}
                     </td>
                   </tr>
                   <tr className="bg-amber-50/70 font-bold border-t-2 border-amber-300">
@@ -423,7 +423,7 @@ export function ProposalModal({
                       Total Estimasi Investasi Turnkey
                     </td>
                     <td className="p-2.5 text-right font-code-metric text-amber-950 text-xs">
-                      {idr.format(finance.capex_total_idr)}
+                      {idr.format(result.capex_total_idr)}
                     </td>
                   </tr>
                 </tbody>
@@ -451,10 +451,10 @@ export function ProposalModal({
                       Reduksi Emisi Karbon CO₂
                     </span>
                     <span className="font-title text-sm font-extrabold text-emerald-800 font-code-metric">
-                      {decimal.format(finance.co2_reduction_kg_per_year / 1000)} Ton / tahun
+                      {decimal.format(result.co2_reduction_kg_per_year / 1000)} Ton / tahun
                     </span>
                     <span className="text-[9px] text-slate-400 block font-code-metric">
-                      Kumulatif 25 Thn: ~{decimal.format((finance.co2_reduction_kg_per_year * 25) / 1000)} Ton CO₂
+                      Kumulatif 25 Thn: ~{decimal.format((result.co2_reduction_kg_per_year * 25) / 1000)} Ton CO₂
                     </span>
                   </div>
                 </div>
@@ -468,10 +468,10 @@ export function ProposalModal({
                       Serapan Karbon Ekuivalen Pohon
                     </span>
                     <span className="font-title text-sm font-extrabold text-teal-800 font-code-metric">
-                      {integer.format(finance.trees_equivalent)} Pohon / tahun
+                      {integer.format(result.trees_equivalent)} Pohon / tahun
                     </span>
                     <span className="text-[9px] text-slate-400 block font-code-metric">
-                      Kumulatif 25 Thn: ~{integer.format(finance.trees_equivalent * 25)} Pohon
+                      Kumulatif 25 Thn: ~{integer.format(result.trees_equivalent * 25)} Pohon
                     </span>
                   </div>
                 </div>

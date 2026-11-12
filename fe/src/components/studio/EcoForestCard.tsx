@@ -65,12 +65,10 @@ function renderTreeGroup(trees: TreeDef[], sproutedCount: number) {
 }
 
 export function EcoForestCard({ result }: Props) {
-  const { finance, layout } = result;
-
   const slotRatio =
-    layout.max_slots > 0 ? Math.min(1, layout.installed / layout.max_slots) : 0;
+    result.max_slots > 0 ? Math.min(1, result.installed / result.max_slots) : 0;
   const sproutedCount =
-    layout.installed === 0
+    result.installed === 0
       ? 0
       : Math.max(1, Math.min(24, Math.round(slotRatio * 24)));
 
@@ -89,8 +87,8 @@ export function EcoForestCard({ result }: Props) {
         <span className="inline-flex items-center gap-1 bg-emerald-800 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
           <span>
-            {sproutedCount}/24 Pohon Visual ({integer.format(layout.installed)}/
-            {integer.format(layout.max_slots)} slot)
+            {sproutedCount}/24 Pohon Visual ({integer.format(result.installed)}/
+            {integer.format(result.max_slots)} slot)
           </span>
         </span>
       </div>
@@ -153,10 +151,10 @@ export function EcoForestCard({ result }: Props) {
       {/* Bottom Telemetry Strip */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold mt-auto">
         <span className="bg-white/90 backdrop-blur-xs text-emerald-950 px-2.5 py-0.5 rounded-lg border border-emerald-200/80 shadow-2xs">
-          Setara {integer.format(finance.trees_equivalent)} pohon / tahun
+          Setara {integer.format(result.trees_equivalent)} pohon / tahun
         </span>
         <span className="bg-white/90 backdrop-blur-xs text-emerald-800 px-2.5 py-0.5 rounded-lg border border-emerald-200/80 shadow-2xs font-semibold tracking-tight">
-          Reduksi CO₂: {decimal.format(finance.co2_reduction_kg_per_year)} kg/tahun
+          Reduksi CO₂: {decimal.format(result.co2_reduction_kg_per_year)} kg/tahun
         </span>
       </div>
     </div>

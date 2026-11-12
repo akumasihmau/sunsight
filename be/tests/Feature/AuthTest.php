@@ -125,7 +125,13 @@ class AuthTest extends TestCase
     {
         $uris = collect(Route::getRoutes()->getRoutes())->map(fn ($route) => $route->uri());
 
-        $this->assertNotContains('api/forgot-password', $uris);
-        $this->assertNotContains('api/reset-password', $uris);
+        // Yang dimaksud "di luar lingkup" adalah endpoint produk lama (analisis
+        // bayangan dan poligon) yang sudah dihapus dari produk ini. Pemulihan
+        // kata sandi tetap ada dan dipakai antarmuka, jadi bukan bagian dari
+        // daftar ini.
+        $this->assertNotContains('api/cv/fetch-osm', $uris);
+        $this->assertNotContains('api/cv/refine-polygon', $uris);
+        $this->assertNotContains('api/cv/detect-shadow', $uris);
+        $this->assertNotContains('api/solar/calculate', $uris);
     }
 }
