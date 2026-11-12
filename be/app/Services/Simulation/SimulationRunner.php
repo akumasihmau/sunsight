@@ -44,6 +44,11 @@ class SimulationRunner
         $imageWidth = (int) $image->width;
         $imageHeight = (int) $image->height;
 
+        // Masukan global studio. Nilai bawaannya sudah diisi permintaan, tetapi
+        // dibaca di sini supaya jalur hitung dan jalur simpan tidak dapat berbeda.
+        $sunHour = (float) ($input['sun_hour'] ?? 12.0);
+        $extraTilt = (float) ($input['extra_tilt'] ?? 10.0);
+
         $roofs = [];
         $breakdowns = [];
         $energies = [];
@@ -70,6 +75,14 @@ class SimulationRunner
                 setbackM: (float) $roofInput['setback_m'],
             );
 
+            $alignToAzimuth = ($roofInput['align_to_azimuth'] ?? false) === true;
+            $gridRotation = $alignToAzimuth
+                ? self::gridRotation(
+                    (float) $roofInput['azimuth_deg'],
+                    (float) ($roofInput['facet_rotation_deg'] ?? 0.0),
+                )
+                : 0.0;
+
             $layout = PanelLayout::fit(
                 area: $polygon->toRoofArea(),
                 module: $module,
@@ -80,14 +93,21 @@ class SimulationRunner
                 // dan kisi persegi pembatasnya juga nol sehingga tidak ada slot.
                 maskPolygon: $polygon->hasEffectivePolygon() ? $polygon->effectivePolygonPx : null,
                 maskFrame: $polygon->maskFrame(),
+                obstaclePolygons: array_map(
+                    static fn (array $obstacle): array => $obstacle['polygon_px'],
+                    (array) ($roofInput['obstacles'] ?? []),
+                ),
+                gridRotationDeg: $gridRotation,
+                populated: ($roofInput['is_solar_populated'] ?? true) !== false,
             );
 
             $energy = $this->energy->estimate(
                 capacityKwp: $layout->installed * (float) $module['power_w'] / 1000.0,
                 tiltDeg: (float) $roofInput['tilt_deg'],
                 azimuthDeg: (float) $roofInput['azimuth_deg'],
-                latitude: (float) $image->center_lat,
-                longitude: (float) $image->center_lng,
+                extraTiltDeg: $extraTilt,
+                sunHour: $sunHour,
+                inverterType: $inverterType,
             );
 
             $breakdowns[] = FinanceModel::capex(
@@ -112,6 +132,8 @@ class SimulationRunner
                 'has_hvac' => $roofInput['has_hvac'] ?? null,
                 'has_skylight' => $roofInput['has_skylight'] ?? null,
                 'slot_overrides' => $roofInput['slot_overrides'] ?? null,
+                'obstacles' => $roofInput['obstacles'] ?? [],
+                'facet_rotation_deg' => (float) ($roofInput['facet_rotation_deg'] ?? 0.0),
                 'roof_width_m' => round($polygon->roofWidthM, 2),
                 'roof_length_m' => round($polygon->roofLengthM, 2),
                 'rotation_deg' => round($polygon->rotationDeg, 2),
@@ -163,9 +185,10 @@ class SimulationRunner
             tariff: $tariff,
         );
 
-        // Iradiasi dan performance ratio sama untuk seluruh bidang karena lokasinya
-        // satu. Yang berbeda hanyalah faktor sudut datang, dan itu dirata-ratakan
-        // dengan bobot kapasitas supaya bidang yang lebih besar lebih menentukan.
+        // Jam matahari puncak dan rugi sistem sama untuk seluruh bidang karena
+        // keduanya masukan global. Yang berbeda hanyalah faktor sudut datang, dan itu
+        // dirata-ratakan dengan bobot kapasitas supaya bidang yang lebih besar lebih
+        // menentukan.
         $first = $energies[0];
 
         $simulation = new Simulation([
@@ -175,6 +198,8 @@ class SimulationRunner
             'center_lng' => $image->center_lng,
             'address' => $input['address'] ?? null,
             'map_zoom' => $image->zoom,
+            'sun_hour' => $sunHour,
+            'extra_tilt_deg' => $extraTilt,
             'inverter_type' => $inverterType,
             'monthly_bill_idr' => (int) $input['monthly_bill_idr'],
             'tariff_key' => (string) $input['tariff_key'],
@@ -216,6 +241,26 @@ class SimulationRunner
         $simulation->setRelation('roofs', new Collection($roofs));
 
         return $simulation;
+    }
+
+    /**
+     * Putaran kisi modul terhadap atap, mengikuti aturan studio.
+     *
+     * Antarmuka memutar kisi sebesar `azimuth - 180 - rotasi pengguna`, lalu
+     * menormalkannya ke rentang -180..180 derajat. Aturan yang sama dipakai di sini
+     * supaya kedua sisi menyusun modul pada arah yang sama.
+     */
+    public static function gridRotation(float $azimuthDeg, float $facetRotationDeg): float
+    {
+        $rotation = fmod($azimuthDeg - 180.0 - $facetRotationDeg, 360.0);
+
+        if ($rotation > 180.0) {
+            $rotation -= 360.0;
+        } elseif ($rotation < -180.0) {
+            $rotation += 360.0;
+        }
+
+        return $rotation;
     }
 
     /**

@@ -5,124 +5,121 @@ namespace App\Services;
 use App\Services\Energy\EnergyResult;
 
 /**
- * Produksi tahunan dari kapasitas terpasang.
+ * Produksi tahunan dengan rumus yang dipakai studio.
  *
- * Tiga hal yang membedakannya dari perhitungan naif:
+ * Rumusnya sengaja dibuat identik dengan pratinjau antarmuka supaya angka yang
+ * dibaca pengguna sebelum menyimpan sama dengan angka yang tersimpan:
  *
- * 1. Iradiasi diambil dari sumber data nyata, bukan konstanta hardcoded.
- * 2. Performance ratio diterapkan, sehingga rugi karena suhu, kabel, inverter, dan
- *    kotoran ikut terhitung.
- * 3. Faktor sudut datang diintegrasikan per jam untuk dua belas bulan perwakilan,
- *    sehingga kemiringan **dan** azimuth benar-benar berpengaruh. Rata-rata tengah
- *    hari saja tidak dapat membedakan azimuth, karena pada tengah hari modul yang
- *    menghadap utara dan selatan sama-sama menerima sudut datang yang serupa.
+ *     produksi = kapasitas x jam matahari puncak x 365 x faktor sudut datang x rugi sistem
  *
- * Batasannya disadari dan ikut dilaporkan: yang dimodelkan hanya komponen langsung
- * dengan bobot kosinus zenith sebagai proksi. Difusi langit, awan, dan efek spektral
- * tidak dimodelkan.
+ * Faktor sudut datang menggabungkan tiga hal yang semuanya dapat dibaca kembali dari
+ * respons: kecocokan kemiringan terhadap puncak 22°, kecocokan azimuth terhadap 188°,
+ * dan bonus membersihkan diri dari hujan pada dudukan yang dimiringkan. Rugi sistem
+ * menggabungkan rugi suhu, kabel, kotoran, dan efisiensi inverter.
+ *
+ * Batasannya disadari: yang dimodelkan adalah produksi pada jam matahari puncak,
+ * bukan integrasi per jam terhadap iradiasi lokasi. Jam matahari puncak berasal dari
+ * penggeser studio, sehingga nilainya masukan pengguna, bukan pengukuran.
  */
 class EnergyModel
 {
-    /** Hari pertengahan tiap bulan, dipakai menghitung deklinasi matahari. */
-    private const MID_MONTH_DAYS = [17, 47, 75, 105, 135, 162, 198, 228, 258, 288, 318, 344];
+    /**
+     * Jam matahari puncak untuk posisi matahari pada penggeser studio.
+     */
+    public static function peakSunHours(float $sunHour): float
+    {
+        $peak = config('plts.energy.peak_sun_hours');
 
-    /** Jam yang dievaluasi, dari pagi sampai sore. */
-    private const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+        if ($sunHour >= ($peak['morning_hour'] ?? 9.0) - 0.5
+            && $sunHour <= ($peak['morning_hour'] ?? 9.0) + 0.5) {
+            return (float) $peak['morning'];
+        }
 
-    /** Matahari di bawah ambang ini dianggap tidak menyumbang. */
-    private const MIN_ELEVATION_DEG = 5.0;
+        if ($sunHour >= ($peak['afternoon_hour'] ?? 15.0) - 0.5
+            && $sunHour <= ($peak['afternoon_hour'] ?? 15.0) + 0.5) {
+            return (float) $peak['afternoon'];
+        }
 
-    public function __construct(
-        private readonly IrradianceProvider $irradiance,
-    ) {}
+        return (float) $peak['noon'];
+    }
+
+    /**
+     * Faktor kecocokan kemiringan, 1,0 pada kemiringan optimal.
+     */
+    public static function pitchFactor(float $tiltDeg): float
+    {
+        $optimal = (float) config('plts.energy.optimal_tilt_deg');
+        $factor = cos(deg2rad($tiltDeg - $optimal));
+
+        return max(0.85, min(1.0, 0.92 + $factor * 0.08));
+    }
+
+    /**
+     * Faktor kecocokan azimuth, 1,0 pada azimuth optimal.
+     */
+    public static function azimuthFactor(float $azimuthDeg): float
+    {
+        $optimal = (float) config('plts.energy.optimal_azimuth_deg');
+        $deviation = abs($azimuthDeg - $optimal);
+
+        return max(0.82, min(1.0, 1.0 - ($deviation / 180.0) * 0.15));
+    }
+
+    /**
+     * Bonus membersihkan diri dari hujan pada dudukan yang dimiringkan.
+     */
+    public static function rackingBonus(float $extraTiltDeg): float
+    {
+        $bonus = config('plts.energy.racking_bonus');
+        $maxDeg = (float) ($bonus['max_deg'] ?? 20.0);
+        $ratio = (float) ($bonus['ratio'] ?? 0.02);
+
+        if ($maxDeg <= 0.0) {
+            return 1.0;
+        }
+
+        return 1.0 + ($extraTiltDeg / $maxDeg) * $ratio;
+    }
 
     public function estimate(
         float $capacityKwp,
         float $tiltDeg,
         float $azimuthDeg,
-        float $latitude,
-        float $longitude,
+        float $extraTiltDeg,
+        float $sunHour,
+        string $inverterType,
     ): EnergyResult {
-        $irradiance = $this->irradiance->dailyGhi($latitude, $longitude);
+        $peakSunHours = self::peakSunHours($sunHour);
+        $incidenceFactor = round(
+            self::pitchFactor($tiltDeg)
+            * self::azimuthFactor($azimuthDeg)
+            * self::rackingBonus($extraTiltDeg),
+            4,
+        );
 
-        // Faktor dibulatkan sebelum dipakai menghitung, bukan sesudah, supaya angka
-        // yang dilaporkan benar-benar dapat diverifikasi ulang dari responsnya.
-        $incidenceFactor = round(self::incidenceFactor($tiltDeg, $azimuthDeg, $latitude), 4);
-        $performanceRatio = (float) config('plts.performance_ratio');
+        $inverterEfficiency = config('plts.energy.inverter_efficiency')[$inverterType]
+            ?? config('plts.energy.inverter_efficiency')['string'];
+        $performanceRatio = round(
+            (float) config('plts.energy.system_loss_ratio') * (float) $inverterEfficiency,
+            4,
+        );
 
         $annualKwh = $capacityKwp
-            * $irradiance->dailyGhiKwhPerSqm
-            * $incidenceFactor
+            * $peakSunHours
             * 365.0
+            * $incidenceFactor
             * $performanceRatio;
 
         return new EnergyResult(
             capacityKwp: round($capacityKwp, 3),
             annualProductionKwh: round($annualKwh, 2),
-            dailyIrradianceKwhPerSqm: round($irradiance->dailyGhiKwhPerSqm, 4),
+            // Jam matahari puncak setara dengan kWh/m2/hari pada 1 kW/m2, sehingga
+            // nilainya tetap dapat dibaca sebagai iradiasi harian.
+            dailyIrradianceKwhPerSqm: $peakSunHours,
             incidenceFactor: $incidenceFactor,
             performanceRatio: $performanceRatio,
-            irradianceSource: $irradiance->source,
-            irradiancePeriod: $irradiance->period,
+            irradianceSource: 'Jam matahari puncak studio',
+            irradiancePeriod: 'asumsi pengguna',
         );
-    }
-
-    /**
-     * Faktor sudut datang **relatif terhadap bidang horizontal**.
-     *
-     * Nilainya 1,0 bila bidang miring menerima iradiasi langsung sebanyak bidang
-     * datar pada lokasi yang sama, lebih dari 1,0 bila lebih baik, dan kurang dari
-     * 1,0 bila lebih buruk. Normalisasi ini yang membuatnya sah dikalikan dengan
-     * iradiasi horizontal dari NASA POWER; tanpa normalisasi, hasilnya terhitung
-     * sekitar seperempat terlalu rendah.
-     *
-     * Bobotnya adalah kosinus sudut zenith, sebagai proksi banyaknya iradiasi
-     * langsung yang tersedia pada jam itu. Penyebutnya adalah nilai yang sama untuk
-     * bidang datar, sehingga faktor bidang datar tepat 1,0.
-     */
-    public static function incidenceFactor(float $tiltDeg, float $azimuthDeg, float $latitude): float
-    {
-        $tilt = deg2rad($tiltDeg);
-        $moduleAzimuth = deg2rad($azimuthDeg);
-        $latRad = deg2rad($latitude);
-
-        $weighted = 0.0;
-        $reference = 0.0;
-
-        foreach (self::MID_MONTH_DAYS as $dayOfYear) {
-            $declination = deg2rad(23.45 * sin(deg2rad(360.0 / 365.0 * (284 + $dayOfYear))));
-
-            foreach (self::HOURS as $hour) {
-                $hourAngle = deg2rad(15.0 * ($hour - 12));
-
-                $sinElevation = sin($latRad) * sin($declination)
-                    + cos($latRad) * cos($declination) * cos($hourAngle);
-
-                $elevation = rad2deg(asin(max(-1.0, min(1.0, $sinElevation))));
-
-                if ($elevation < self::MIN_ELEVATION_DEG) {
-                    continue;
-                }
-
-                $zenith = deg2rad(90.0 - $elevation);
-
-                // Azimut matahari dari utara searah jarum jam.
-                $sunAzimuth = deg2rad(180.0) + atan2(
-                    sin($hourAngle),
-                    cos($hourAngle) * sin($latRad) - tan($declination) * cos($latRad),
-                );
-
-                $cosIncidence = cos($zenith) * cos($tilt)
-                    + sin($zenith) * sin($tilt) * cos($sunAzimuth - $moduleAzimuth);
-
-                // Bobot kosinus zenith: proksi iradiasi langsung yang tersedia.
-                $weight = cos($zenith);
-
-                $weighted += $weight * max(0.0, $cosIncidence);
-                $reference += $weight * $weight;
-            }
-        }
-
-        return $reference > 0.0 ? $weighted / $reference : 0.0;
     }
 }

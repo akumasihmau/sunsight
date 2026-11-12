@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, type FormEvent } from "react";
-
-import { api, getToken, setToken } from "@/lib/api";
+import { ApiRequestError, api, getToken, setToken } from "@/lib/api";
 import {
   saveStoredBiodata,
   useHasToken,
@@ -38,6 +37,11 @@ export default function ProfilePage() {
   );
   const [location, setLocation] = useState(biodata?.location || "Kota Bogor, Jawa Barat");
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   function showToast(msg: string) {
     setToastMessage(msg);
@@ -45,6 +49,47 @@ export default function ProfilePage() {
       setToastMessage(null);
     }, 2800);
   }
+
+  /**
+   * Profil dibaca dari server saat halaman dibuka.
+   *
+   * Data lokal hanya dipakai sebagai isi awal selama permintaan berjalan. Setelah
+   * server menjawab, formulir dan penyimpanan lokal disamakan dengan akun, sehingga
+   * nama yang tampil di header tidak lagi berbeda dari yang tersimpan di server.
+   */
+  useEffect(() => {
+    if (!getToken()) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const user = await api.currentUser();
+        if (cancelled) return;
+
+        const propertyType = (user.property_type as PropertyType | null) ?? "residential";
+
+        setName(user.name);
+        setEmail(user.email);
+        setPhone(user.phone ?? "");
+        setPropertyType(propertyType);
+        setLocation(user.location ?? "");
+        saveStoredBiodata({
+          name: user.name,
+          email: user.email,
+          phone: user.phone ?? "",
+          propertyType,
+          location: user.location ?? "",
+        });
+      } catch {
+        // Profil lokal tetap dipakai bila server tidak dapat dihubungi.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSignOut() {
     try {
@@ -56,20 +101,80 @@ export default function ProfilePage() {
     router.push("/landing");
   }
 
-  function handleSaveProfile(e: FormEvent) {
+  async function handleSaveProfile(e: FormEvent) {
     e.preventDefault();
-    saveStoredBiodata({
-      name: name.trim() || "Muhammad Raditya",
-      email: email.trim() || "raditya@sunsight.id",
-      phone: phone.trim() || "081234567890",
-      propertyType,
-      location: location.trim() || "Kota Bogor, Jawa Barat",
-    });
-    setIsSaved(true);
-    showToast("Profil berhasil disimpan");
-    setTimeout(() => setIsSaved(false), 2400);
+    setIsSaving(true);
+
+    try {
+      const user = await api.updateProfile({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim() === "" ? null : phone.trim(),
+        property_type: propertyType,
+        location: location.trim() === "" ? null : location.trim(),
+      });
+
+      setName(user.name);
+      setEmail(user.email);
+      setPhone(user.phone ?? "");
+      setLocation(user.location ?? "");
+      saveStoredBiodata({
+        name: user.name,
+        email: user.email,
+        phone: user.phone ?? "",
+        propertyType: (user.property_type as PropertyType | null) ?? "residential",
+        location: user.location ?? "",
+      });
+
+      setIsSaved(true);
+      showToast("Profil berhasil disimpan ke akun");
+      setTimeout(() => setIsSaved(false), 2400);
+    } catch (caught) {
+      showToast(
+        caught instanceof ApiRequestError
+          ? caught.message
+          : "Gagal menyimpan profil. Periksa koneksi backend."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
+  /**
+   * Mengganti kata sandi akun. Konfirmasi diperiksa di sini supaya pengguna tidak
+   * menunggu perjalanan ke server hanya untuk kesalahan ketik.
+   */
+  async function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+
+    if (newPassword !== confirmPassword) {
+      showToast("Konfirmasi kata sandi belum sama.");
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      await api.changePassword({
+        current_password: currentPassword,
+        password: newPassword,
+        password_confirmation: confirmPassword,
+      });
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      showToast("Kata sandi berhasil diperbarui");
+    } catch (caught) {
+      showToast(
+        caught instanceof ApiRequestError
+          ? caught.message
+          : "Gagal memperbarui kata sandi."
+      );
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }
   const initials = (name || "MR")
     .split(" ")
     .filter(Boolean)
@@ -380,6 +485,7 @@ export default function ProfilePage() {
               <button
                 type="submit"
                 form="profile-form"
+                disabled={isSaving}
                 className={`h-11 px-6 rounded-full font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer active:scale-[0.98] border ${
                   isSaved
                     ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-[0_2px_12px_rgba(16,185,129,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
@@ -389,11 +495,11 @@ export default function ProfilePage() {
                 <span className="material-symbols-outlined text-[17px]">
                   {isSaved ? "check_circle" : "save"}
                 </span>
-                <span>{isSaved ? "Tersimpan!" : "Simpan Perubahan"}</span>
+                <span>{isSaved ? "Tersimpan!" : isSaving ? "Menyimpan..." : "Simpan Perubahan"}</span>
               </button>
 
               <span className="text-[11px] text-slate-400">
-                Tersimpan di perangkat ini.
+                Tersimpan di akun Anda.
               </span>
             </div>
           </div>
@@ -487,7 +593,57 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Card 2: Sesi Akun & Keamanan */}
+
+            {/* Card 2: Ganti Kata Sandi */}
+            <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 tracking-tight">
+                  <span className="material-symbols-outlined text-[19px] text-amber-600">password</span>
+                  <span>Ganti Kata Sandi</span>
+                </h3>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-3">
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Kata sandi saat ini"
+                  className="w-full h-11 px-4 rounded-xl bg-slate-50/90 hover:bg-white border border-slate-200/70 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-300/25 transition shadow-2xs"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Kata sandi baru (min. 8 karakter)"
+                  className="w-full h-11 px-4 rounded-xl bg-slate-50/90 hover:bg-white border border-slate-200/70 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-300/25 transition shadow-2xs"
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Ulangi kata sandi baru"
+                  className="w-full h-11 px-4 rounded-xl bg-slate-50/90 hover:bg-white border border-slate-200/70 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-300/25 transition shadow-2xs"
+                />
+                <button
+                  type="submit"
+                  disabled={isChangingPassword}
+                  className="w-full h-11 px-4 rounded-full bg-slate-900 hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[17px]">lock_reset</span>
+                  <span>{isChangingPassword ? "Menyimpan..." : "Perbarui Kata Sandi"}</span>
+                </button>
+              </form>
+            </div>
+            {/* Card 3: Sesi Akun & Keamanan */}
             <div className="rounded-[28px] bg-white/85 backdrop-blur-xl p-6 relative overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.04),0_1px_3px_rgba(245,158,11,0.08)] border border-white/90 space-y-3.5">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 tracking-tight">

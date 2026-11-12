@@ -142,8 +142,44 @@ Field: `email`, `password`, `password_confirmation`, `token`.
 
 ```json
 // 200 OK
-{ "id": 1, "name": "Rafid", "email": "rafid@example.com" }
+{
+  "id": 1,
+  "name": "Rafid",
+  "email": "rafid@example.com",
+  "phone": "081200000000",
+  "property_type": "residential",
+  "location": "Kota Bogor, Jawa Barat"
+}
 ```
+
+### `PATCH /user`
+
+Memperbarui profil akun. Semua field yang diubah dikirim sekaligus; `email` harus unik.
+
+| Field | Tipe | Aturan |
+| :---- | :---- | :---- |
+| `name` | string | wajib, maks 80 |
+| `email` | string | wajib, email valid, belum dipakai akun lain |
+| `phone` | string \| null | opsional, maks 32 |
+| `property_type` | string \| null | opsional; `residential`, `commercial`, `industrial` |
+| `location` | string \| null | opsional, maks 120 |
+
+Respons `200` memakai bentuk `GET /user`. Email yang sudah dipakai menghasilkan `422` pada field `email`.
+
+### `POST /change-password`
+
+| Field | Tipe | Aturan |
+| :---- | :---- | :---- |
+| `current_password` | string | wajib, harus cocok dengan kata sandi akun |
+| `password` | string | wajib, minimal 8 karakter |
+| `password_confirmation` | string | wajib, harus sama dengan `password` |
+
+```json
+// 200 OK
+{ "message": "Password berhasil diperbarui." }
+```
+
+Kata sandi lama yang salah menghasilkan `422` pada field `current_password`.
 
 ## 4. Lokasi dan Citra (tidak dipakai studio)
 
@@ -243,7 +279,7 @@ Aturan yang mengikat:
 - `422` bila `bbox` tidak konsisten dengan `width`/`height` (selisih skala > 2%), berkas bukan gambar,
   atau dimensi di luar rentang.
 - `413` bila berkas melebihi 10 MB.
-- `503` bila layanan model tidak dapat dihubungi, `504` bila melewati batas waktu 15 detik.
+- `503` bila layanan model tidak dapat dihubungi, `504` bila melewati batas waktu 60 detik.
 
 ## 6. Simulasi
 
@@ -261,6 +297,7 @@ Dipakai oleh `POST /simulate` (tanpa `id`, tanpa `message`), `POST /analyses` (d
   "message": "Simulation saved",
   "center_point": { "lat": -6.611, "lng": 106.815 },
   "map_zoom": 19,
+  "input": { "inverter_type": "string", "monthly_bill_idr": 2800000, "tariff_key": "R2", "sun_hour": 12, "extra_tilt": 10 },
   "roofs": [
     {
       "label": "Bidang Atap Utama",
@@ -268,6 +305,10 @@ Dipakai oleh `POST /simulate` (tanpa `id`, tanpa `message`), `POST /analyses` (d
       "confidence": 0.94,
       "roof_polygon": { "type": "Polygon", "coordinates": [[[106.8139, -6.6107], [106.8145, -6.6107], [106.8144, -6.6112], [106.8139, -6.6112], [106.8139, -6.6107]]] },
       "roof_polygon_px": [[412.5, 338.1], [601.2, 341.7], [598.4, 502.9], [409.8, 499.2]],
+      "facet_rotation_deg": 0,
+      "obstacles": [
+        { "type": "hvac", "polygon_px": [[500.0, 400.0], [540.0, 400.0], [540.0, 440.0], [500.0, 440.0]] }
+      ],
       "input": {
         "setback_m": 0.5, "gutter_m": 0.6, "tilt_deg": 22.0, "azimuth_deg": 188.0,
         "module_key": "mono_perc_550", "orientation": "portrait",
@@ -282,7 +323,7 @@ Dipakai oleh `POST /simulate` (tanpa `id`, tanpa `message`), `POST /analyses` (d
       }
     }
   ],
-  "input": { "inverter_type": "string", "monthly_bill_idr": 2800000, "tariff_key": "R2" },
+  "input": { "inverter_type": "string", "monthly_bill_idr": 2800000, "tariff_key": "R2", "sun_hour": 12, "extra_tilt": 10 },
   "result": {
     "roof_count": 1,
     "total_area_sqm": 92.37, "effective_area_sqm": 66.62,
@@ -295,11 +336,11 @@ Dipakai oleh `POST /simulate` (tanpa `id`, tanpa `message`), `POST /analyses` (d
     "co2_reduction_kg_per_year": 11063.85, "trees_equivalent": 503
   },
   "assumptions": {
-    "daily_irradiance_kwh_per_sqm": 4.8324,
-    "irradiance_source": "NASA POWER",
-    "irradiance_period": "klimatologi tahunan",
-    "incidence_factor": 0.891,
-    "performance_ratio": 0.8,
+    "daily_irradiance_kwh_per_sqm": 4.85,
+    "irradiance_source": "Jam matahari puncak studio",
+    "irradiance_period": "asumsi pengguna",
+    "incidence_factor": 1.01,
+    "performance_ratio": 0.8069,
     "tariff_key": "R2",
     "tariff_label": "R-2 / 3.500-5.500 VA",
     "tariff_idr_per_kwh": 1700,
@@ -333,12 +374,18 @@ Dipakai oleh `POST /simulate` dan `POST /analyses` (identik).
       "module_key": "mono_perc_550",
       "orientation": "portrait",
       "clearance_m": 0.03,
-      "panel_count": null
+      "panel_count": null,
+      "facet_rotation_deg": 0,
+      "obstacles": [
+        { "type": "hvac", "polygon_px": [[500.0, 400.0], [540.0, 400.0], [540.0, 440.0], [500.0, 440.0]] }
+      ]
     }
   ],
   "inverter_type": "string",
   "monthly_bill_idr": 2800000,
-  "tariff_key": "R2"
+  "tariff_key": "R2",
+  "sun_hour": 12,
+  "extra_tilt": 10
 }
 ```
 
@@ -361,16 +408,21 @@ Dipakai oleh `POST /simulate` dan `POST /analyses` (identik).
 | `inverter_type` | string | wajib, `string` atau `micro` |
 | `monthly_bill_idr` | integer | wajib, ≥ 0 |
 | `tariff_key` | string | wajib, salah satu kunci dari `GET /options` |
+| `sun_hour` | number \| null | opsional, 6 s.d. 18; posisi matahari studio, menentukan jam matahari puncak (9 → 3,8; 15 → 3,9; selain itu → 4,85 kWh/m²/hari) |
+| `extra_tilt` | number \| null | opsional, 0 s.d. 20; sudut dudukan tambahan, menambah produksi hingga 2% |
 | `address` | string \| null | opsional, maks 160; label lokasi, tidak memengaruhi hitungan |
 | `roofs[].shape` | string \| null | opsional; `rectangle`, `l-shape`, `trapezoid`, `custom_polygon` |
-| `roofs[].align_to_azimuth` | boolean \| null | opsional; keadaan tampilan |
-| `roofs[].is_solar_populated` | boolean \| null | opsional; apakah tata letak sudah disusun |
-| `roofs[].has_hvac` | boolean \| null | opsional; penanda rintangan bidang |
-| `roofs[].has_skylight` | boolean \| null | opsional; penanda rintangan bidang |
-| `roofs[].slot_overrides` | object \| null | opsional; peta `<baris>_<kolom>` → `active`/`skylight`/`hvac`/`empty` |
+| `roofs[].align_to_azimuth` | boolean \| null | opsional; bila `true`, kisi modul diputar sebesar `azimuth - 180 - facet_rotation_deg` |
+| `roofs[].is_solar_populated` | boolean \| null | opsional; bila `false`, tidak ada modul yang dipasang, tetapi `max_slots` tetap dilaporkan |
+| `roofs[].has_hvac` | boolean \| null | opsional; penanda rintangan bidang (disimpan; rintangan yang memengaruhi hitungan dikirim lewat `obstacles`) |
+| `roofs[].has_skylight` | boolean \| null | opsional; idem |
+| `roofs[].slot_overrides` | object \| null | opsional; peta `<baris>_<kolom>` → `active`/`skylight`/`hvac`/`empty`, disimpan untuk membuka kembali tampilan |
+| `roofs[].facet_rotation_deg` | number \| null | opsional, -45 s.d. 45; rotasi poligon oleh pengguna, dipakai menyelaraskan kisi |
+| `roofs[].obstacles` | array \| null | opsional, maks 512; tiap entri `{ "type": "hvac"\|"skylight"\|"empty", "polygon_px": [[x,y], ...] }`. Modul yang bersinggungan dengan poligon ini tidak dipasang |
 
-Kunci keadaan tampilan di atas tidak memengaruhi perhitungan. Nilainya disimpan apa adanya
-supaya simulasi dapat dibuka kembali persis seperti saat disimpan.
+`align_to_azimuth`, `is_solar_populated`, `facet_rotation_deg`, dan `obstacles` **memengaruhi perhitungan**.
+`slot_overrides` dan penanda `has_hvac`/`has_skylight` disimpan sebagai keadaan tampilan agar simulasi dapat
+dibuka kembali persis seperti saat disimpan.
 
 ### `POST /simulate`
 
@@ -403,11 +455,18 @@ Diperlukan karena `PanelLayout` bekerja pada persegi. Untuk tiap bidang:
    mitre). Bila hasilnya runtuh, luas efektif `0`.
 3. `roof_length_m`, `roof_width_m`, `rotation_deg` = persegi pembatas **minimum** (rotated calipers) dari
    `effective_polygon`.
-4. Tata letak grid `baris × kolom` dihitung di dalam persegi itu, lalu **hanya modul yang
+4. Bila `align_to_azimuth` aktif, poligon efektif diputar sebesar `-(azimuth_deg - 180 - facet_rotation_deg)`,
+   lalu kisi disusun pada bingkai lurus dari kotak pembatas poligon yang sudah diputar. Hasilnya sama
+   dengan kisi yang dimiringkan terhadap atap.
+5. Tata letak grid `baris × kolom` dihitung di dalam bingkai itu, lalu **hanya modul yang
    seluruh badannya berada di dalam `effective_polygon` yang dihitung** — keempat sudutnya
    diuji, bukan hanya titik tengahnya, karena modul 2,3 x 1,1 m dapat berpusat di dalam
    bidang sementara separuh badannya menggantung di luar atap. Jadi `installed` tidak
    pernah melebih-lebihkan luas yang benar-benar tersedia.
+6. `obstacles` mengeluarkan modul yang bersinggungan dengan poligon rintangan. Uji singgungan memakai
+   keempat sudut modul dan sisi poligon, bukan hanya titik tengahnya.
+7. `is_solar_populated: false` membuat `installed` nol, sedangkan `max_slots` tetap melaporkan kisi
+   yang muat.
 
 `effective_area_sqm` = luas `effective_polygon`, bukan luas persegi pembatasnya.
 `effective_area_sqm` tidak pernah negatif dan tidak pernah melebihi `area_sqm`.
@@ -438,6 +497,21 @@ angka harus diperiksa ulang bersama.
 - `capacity_kwp = installed × power_w / 1000`.
 - Seluruh nilai di atas dihitung server. Kunci hasil pada payload kiriman diabaikan.
 
+### Produksi energi
+
+Produksi memakai rumus studio, bukan sumber iradiasi eksternal:
+
+```
+produksi = kapasitas_kWp x jam_matahari_puncak x 365 x faktor_sudut_datang x rugi_sistem
+```
+
+- `jam_matahari_puncak` = 3,8 pada `sun_hour` 9, 3,9 pada 15, dan 4,85 untuk nilai lain.
+- `faktor_sudut_datang` = faktor kemiringan (puncak 22°) × faktor azimuth (puncak 188°) × bonus dudukan
+  (`1 + extra_tilt/20 × 0,02`), dibulatkan 4 desimal.
+- `rugi_sistem` = 0,82 × efisiensi inverter (0,984 string, 0,975 mikro), dibulatkan 4 desimal.
+
+Seluruh faktor dilaporkan pada `assumptions` sehingga angkanya dapat dihitung ulang dari respons.
+
 ## 7. Riwayat Simulasi
 
 ### `POST /analyses`
@@ -449,6 +523,18 @@ Server menghitung ulang, lalu menyimpan hasil hitungannya sendiri.
 // 201 Created — bentuk bersama "detail simulasi" dengan `message` dan `id`
 { "message": "Simulation saved", "id": 12, "center_point": { "lat": -6.611, "lng": 106.815 }, "roofs": [ … ], "result": { … } }
 ```
+
+### `PATCH /analyses/{id}`
+
+Payload **identik dengan** `POST /analyses`. Server menghitung ulang seluruh angka dan mengganti
+masukan serta bidang simulasi itu; baris baru tidak dibuat dan `created_at` tidak berubah.
+
+```json
+// 200 OK — bentuk bersama "detail simulasi" dengan `message`
+{ "message": "Simulation updated", "id": 12, … }
+```
+
+`id` yang bukan milik pemanggil menghasilkan `404`.
 
 ### `GET /analyses`
 
@@ -465,6 +551,10 @@ Query: `page` (bawaan 1), `per_page` (bawaan 10, maks 100), `limit` (alias `per_
       "total_area_sqm": 92.37,
       "effective_area_sqm": 66.62,
       "installed": 20,
+      "module_key": "mono_perc_550",
+      "roof_length_m": 12.46,
+      "roof_width_m": 7.42,
+      "tilt_deg": 22.0,
       "co2_reduction_kg_per_year": 11063.85,
       "trees_equivalent": 503,
       "capacity_kwp": 11,
@@ -491,9 +581,10 @@ antarmuka untuk membuka kembali simulasi: bidang dibangun ulang dari `roof_polyg
 bersama `imagery`, sehingga bentuk atap dan posisinya kembali sama seperti saat disimpan.
 Karena itu `imagery` **wajib** ada pada simulasi yang dibuat lewat alur studio.
 
-Tiap bidang pada `roofs[]` juga memuat keadaan tampilan yang dikirim klien saat menyimpan:
-`shape`, `align_to_azimuth`, `is_solar_populated`, `has_hvac`, `has_skylight`, dan
-`slot_overrides`. Nilainya `null` bila klien tidak mengirimnya.
+Tiap bidang pada `roofs[]` juga memuat keadaan tampilan dan geometri rintangan yang dikirim klien saat
+menyimpan: `shape`, `align_to_azimuth`, `is_solar_populated`, `has_hvac`, `has_skylight`,
+`slot_overrides`, `facet_rotation_deg`, dan `obstacles`. Nilainya `null` bila klien tidak mengirimnya.
+`facet_rotation_deg` dan `obstacles` ikut menentukan hasil hitungan; sisanya dipakai membuka kembali tampilan.
 
 `id` yang bukan milik pemanggil menghasilkan `404` yang identik dengan `id` yang tidak ada.
 
@@ -551,6 +642,8 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
 | `/reset-password` | POST | — | `200` |
 | `/logout` | POST | Bearer | `200` |
 | `/user` | GET | Bearer | `200` |
+| `/user` | PATCH | Bearer | `200` |
+| `/change-password` | POST | Bearer | `200` |
 | `/location` | POST | Bearer | `200` |
 | `/options` | GET | Bearer | `200` |
 | `/roof-detections` | POST | Bearer | `200` |
@@ -559,6 +652,7 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
 | `/analyses` | GET | Bearer | `200` |
 | `/analyses` | POST | Bearer | `201` |
 | `/analyses/{id}` | GET | Bearer | `200` |
+| `/analyses/{id}` | PATCH | Bearer | `200` |
 | `/analyses/{id}` | DELETE | Bearer | `200` |
 
 Endpoint produk lama (`/cv/fetch-osm`, `/cv/refine-polygon`, `/cv/detect-shadow`, `/solar/calculate`)

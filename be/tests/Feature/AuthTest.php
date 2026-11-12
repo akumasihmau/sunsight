@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -119,6 +120,76 @@ class AuthTest extends TestCase
 
         $this->assertArrayNotHasKey('password', $profile);
         $this->assertArrayNotHasKey('remember_token', $profile);
+    }
+
+    public function test_profil_dapat_diperbarui_dan_email_bentrok_ditolak(): void
+    {
+        $user = User::factory()->create(['email' => 'lama@example.com']);
+        User::factory()->create(['email' => 'dipakai@example.com']);
+
+        $this->actingAs($user, 'sanctum')
+            ->patchJson('/api/user', [
+                'name' => 'Nama Baru',
+                'email' => 'baru@example.com',
+                'phone' => '081200000000',
+                'property_type' => 'commercial',
+                'location' => 'Bogor Tengah',
+            ])
+            ->assertOk()
+            ->assertJsonPath('name', 'Nama Baru')
+            ->assertJsonPath('phone', '081200000000')
+            ->assertJsonPath('property_type', 'commercial')
+            ->assertJsonPath('location', 'Bogor Tengah');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => 'Nama Baru',
+            'email' => 'baru@example.com',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->patchJson('/api/user', [
+                'name' => 'Nama Baru',
+                'email' => 'dipakai@example.com',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('email');
+    }
+
+    public function test_kata_sandi_dapat_diganti_dengan_kata_sandi_lama_yang_benar(): void
+    {
+        $user = User::factory()->create(['password' => 'rahasia123']);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/change-password', [
+                'current_password' => 'rahasia123',
+                'password' => 'rahasia456',
+                'password_confirmation' => 'rahasia456',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Password berhasil diperbarui.');
+
+        $this->assertTrue(
+            Hash::check('rahasia456', $user->refresh()->password),
+        );
+    }
+
+    public function test_ganti_kata_sandi_menolak_kata_sandi_lama_yang_salah(): void
+    {
+        $user = User::factory()->create(['password' => 'rahasia123']);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/change-password', [
+                'current_password' => 'salah123',
+                'password' => 'rahasia456',
+                'password_confirmation' => 'rahasia456',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('current_password');
+
+        $this->assertTrue(
+            Hash::check('rahasia123', $user->refresh()->password),
+        );
     }
 
     public function test_route_di_luar_lingkup_tidak_lagi_terdaftar(): void

@@ -100,11 +100,44 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Asumsi kinerja dan lingkungan
+    | Asumsi energi dan lingkungan
     |--------------------------------------------------------------------------
+    |
+    | Model produksi mengikuti perhitungan studio, bukan sumber iradiasi eksternal:
+    | produksi = kapasitas x jam matahari puncak x 365 x faktor sudut datang x
+    | faktor rugi sistem. Seluruh faktor dilaporkan di respons supaya angkanya dapat
+    | dihitung ulang dari asumsi yang dikembalikan.
     */
 
-    'performance_ratio' => (float) env('PLTS_PERFORMANCE_RATIO', 0.80),
+    'energy' => [
+        // Rugi suhu, kabel, kotoran, dan penuaan dalam satu angka.
+        'system_loss_ratio' => (float) env('PLTS_SYSTEM_LOSS_RATIO', 0.82),
+
+        // Efisiensi inverter menurut arsitekturnya.
+        'inverter_efficiency' => [
+            'string' => 0.984,
+            'micro' => 0.975,
+        ],
+
+        // Puncak kurva efisiensi terhadap kemiringan dan azimuth.
+        'optimal_tilt_deg' => 22.0,
+        'optimal_azimuth_deg' => 188.0,
+
+        // Jam matahari puncak pada penggeser posisi matahari studio.
+        'peak_sun_hours' => [
+            'morning' => 3.8,
+            'noon' => 4.85,
+            'afternoon' => 3.9,
+            'morning_hour' => 9.0,
+            'afternoon_hour' => 15.0,
+        ],
+
+        // Bonus membersihkan diri dari hujan pada dudukan yang dimiringkan.
+        'racking_bonus' => [
+            'max_deg' => 20.0,
+            'ratio' => 0.02,
+        ],
+    ],
 
     // Faktor emisi jaringan PLN. Prototipe pembanding menyebut "Standar ESDM".
     'co2_kg_per_kwh' => (float) env('PLTS_CO2_KG_PER_KWH', 0.80),

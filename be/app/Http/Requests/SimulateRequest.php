@@ -29,6 +29,14 @@ class SimulateRequest extends FormRequest
      */
     public const MAX_ROOFS = 12;
 
+    /**
+     * Rintangan terbanyak per bidang.
+     *
+     * Satu bidang dapat memiliki ratusan slot, tetapi hanya slot yang benar-benar
+     * ditandai rintangan yang dikirim. Batas ini menjaga badan permintaan tetap wajar.
+     */
+    public const MAX_OBSTACLES = 512;
+
     public function authorize(): bool
     {
         return true;
@@ -41,6 +49,11 @@ class SimulateRequest extends FormRequest
     {
         return [
             'image_id' => ['required', 'string', 'uuid'],
+
+            // Masukan global studio yang memengaruhi produksi seluruh bidang.
+            // Nilai bawaannya sama dengan posisi awal antarmuka.
+            'sun_hour' => ['sometimes', 'nullable', 'numeric', 'between:6,18'],
+            'extra_tilt' => ['sometimes', 'nullable', 'numeric', 'between:0,20'],
 
             'roofs' => ['required', 'array', 'min:1', 'max:'.self::MAX_ROOFS],
 
@@ -59,6 +72,19 @@ class SimulateRequest extends FormRequest
             'roofs.*.gutter_m' => ['required', 'numeric', 'between:0,5'],
             'roofs.*.tilt_deg' => ['required', 'numeric', 'between:0,60'],
             'roofs.*.azimuth_deg' => ['required', 'numeric', 'between:0,360'],
+
+            // Rotasi yang diterapkan pengguna pada poligon. Dipakai server untuk
+            // menyelaraskan kisi modul dengan azimuth; tidak mengubah luas.
+            'roofs.*.facet_rotation_deg' => ['sometimes', 'nullable', 'numeric', 'between:-45,45'],
+
+            // Rintangan dikirim sebagai geometri slot, bukan indeks baris/kolom,
+            // karena kisi server tidak identik dengan kisi antarmuka.
+            'roofs.*.obstacles' => ['sometimes', 'nullable', 'array', 'max:'.self::MAX_OBSTACLES],
+            'roofs.*.obstacles.*.type' => ['required', 'string', Rule::in(['hvac', 'skylight', 'empty'])],
+            'roofs.*.obstacles.*.polygon_px' => ['required', 'array', 'min:3'],
+            'roofs.*.obstacles.*.polygon_px.*' => ['required', 'array', 'size:2'],
+            'roofs.*.obstacles.*.polygon_px.*.0' => ['required', 'numeric'],
+            'roofs.*.obstacles.*.polygon_px.*.1' => ['required', 'numeric'],
 
             'roofs.*.module_key' => ['required', 'string', Rule::in(SimulationCatalog::moduleKeys())],
             'roofs.*.orientation' => ['required', 'string', Rule::in(['portrait', 'landscape'])],
@@ -116,6 +142,11 @@ class SimulateRequest extends FormRequest
 
         $validated['roofs'] = [];
 
+        // Nilai bawaan disamakan dengan posisi awal studio supaya klien yang belum
+        // mengirim masukan ini tetap menghasilkan angka seperti sebelumnya.
+        $validated['sun_hour'] = (float) ($validated['sun_hour'] ?? 12.0);
+        $validated['extra_tilt'] = (float) ($validated['extra_tilt'] ?? 10.0);
+
         foreach ($roofs as $index => $roof) {
             $ring = PolygonGeometry::makeSimple(array_map(
                 static fn (array $point): array => [(float) $point[0], (float) $point[1]],
@@ -133,6 +164,32 @@ class SimulateRequest extends FormRequest
             // Ring piksel disimpan dan dikirim terbuka; titik penutup hanya syarat
             // ring GeoJSON.
             $roof['roof_polygon_px'] = PolygonGeometry::openRing($ring);
+
+            // Rintangan dirapikan dengan aturan yang sama seperti bidang: ring yang
+            // menyilang tidak dapat dipakai menguji singgungan badan modul.
+            $obstacles = [];
+
+            foreach ((array) ($roof['obstacles'] ?? []) as $obstacle) {
+                $obstacleRing = PolygonGeometry::makeSimple(array_map(
+                    static fn (array $point): array => [(float) $point[0], (float) $point[1]],
+                    (array) ($obstacle['polygon_px'] ?? []),
+                ));
+
+                // Tiga titik sudut — ring tertutup berisi empat titik — adalah minimum
+                // bidang yang sah. Rintangan yang runtuh tidak mengecualikan apa pun.
+                if (count($obstacleRing) < 4) {
+                    continue;
+                }
+
+                $obstacles[] = [
+                    'type' => (string) $obstacle['type'],
+                    'polygon_px' => PolygonGeometry::openRing($obstacleRing),
+                ];
+            }
+
+            $roof['obstacles'] = $obstacles;
+            $roof['facet_rotation_deg'] = (float) ($roof['facet_rotation_deg'] ?? 0.0);
+
             $validated['roofs'][] = $roof;
         }
 

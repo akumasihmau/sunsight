@@ -13,9 +13,8 @@ import {
   api,
   getToken,
   type ModulePreset,
-  type SimulationAssumptions,
+  type SimulationDetail,
   type SimulationParameters,
-  type SimulationResult,
   type SimulationSummary,
 } from "@/lib/api";
 import { useHasToken, useStoredBiodata } from "@/lib/profile";
@@ -793,7 +792,10 @@ function HomePageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [modulePresets, setModulePresets] = useState<Record<string, ModulePreset>>({});
   const [proposalOpen, setProposalOpen] = useState(false);
+  const [proposalDetail, setProposalDetail] = useState<SimulationDetail | null>(null);
+  const [proposalLoading, setProposalLoading] = useState(false);
   const [activePillarModal, setActivePillarModal] = useState<"hemat" | "mandiri" | "bersih" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
@@ -803,40 +805,39 @@ function HomePageContent() {
    * server. Bentuk `SavedRoofProject` dipertahankan supaya panel tidak perlu diubah,
    * tetapi setiap angkanya berasal dari hasil hitungan server.
    *
+   * Seluruh halaman pertama diambil (batas server 100), bukan enam saja: pencarian
+   * dan penghitung "tersimpan" harus mencakup seluruh riwayat, bukan sebagian.
    * Tanpa token atau saat permintaan gagal, daftar dibiarkan kosong: dashboard
    * menampilkan ajakan membuat simulasi, bukan proyek contoh.
    */
-  useEffect(() => {
-    let cancelled = false;
+  const loadProjects = useCallback(async () => {
+    if (getToken() === null) {
+      setSavedProjects([]);
+      return;
+    }
 
-    const loadProjects = async () => {
-      if (getToken() === null) return;
+    try {
+      const [page, options] = await Promise.all([api.listSimulations(1, 100), api.fetchOptions()]);
 
-      try {
-        const [page, options] = await Promise.all([api.listSimulations(1, 6), api.fetchOptions()]);
+      const byKey: Record<string, ModulePreset> = Object.fromEntries(
+        options.modules.map((m) => [m.key, m])
+      );
+      const projects = page.data.map((item) => toSavedProject(item, byKey));
 
-        const byKey = new Map(options.modules.map((m) => [m.key, m]));
-        const projects = page.data.map((item) => toSavedProject(item, byKey));
-
-        if (cancelled) return;
-
-        setSavedProjects(projects);
-        setSelectedProjectId((current) =>
-          current !== "" && projects.some((p) => p.id === current) ? current : projects[0]?.id ?? ""
-        );
-      } catch {
-        if (!cancelled) setSavedProjects([]);
-      }
-    };
-
-    void loadProjects();
-
-    return () => {
-      cancelled = true;
-    };
+      setModulePresets(byKey);
+      setSavedProjects(projects);
+      setSelectedProjectId((current) =>
+        current !== "" && projects.some((p) => p.id === current) ? current : projects[0]?.id ?? ""
+      );
+    } catch {
+      setSavedProjects([]);
+    }
   }, []);
 
-  // Interactive Location & Geolocation States
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
   const [activeLocation, setActiveLocation] = useState({
     name: "Kota Bogor, Jawa Barat",
     district: "Bogor Timur",
@@ -918,41 +919,65 @@ function HomePageContent() {
 
   // Delete project from saved projects
   const handleDeleteProject = useCallback(
-    (id: string, name: string) => {
+    async (id: string, name: string) => {
       if (!window.confirm(`Hapus proyek "${name}" dari riwayat?`)) return;
 
-      setSavedProjects((prev) => {
-        const updated = prev.filter((p) => p.id !== id);
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem("sunsight.saved_projects", JSON.stringify(updated));
-          } catch {
-            // Ignore error
-          }
-        }
-        if (selectedProjectId === id) {
-          if (updated.length > 0) {
-            setSelectedProjectId(updated[0].id);
-          }
-        }
-        return updated;
-      });
-
       const numId = Number(id);
+
       if (!Number.isNaN(numId) && numId > 0) {
-        // If it's a backend saved simulation, trigger API delete
-        api.deleteSimulation(numId).catch(() => {});
+        try {
+          await api.deleteSimulation(numId);
+        } catch {
+          showToast(`Gagal menghapus "${name}". Coba lagi.`);
+          return;
+        }
       }
 
+      // Daftar dibaca ulang dari server supaya jumlah, urutan, dan pilihan aktif
+      // tidak menyimpang dari yang benar-benar tersimpan.
+      await loadProjects();
       showToast(`Proyek "${name}" berhasil dihapus dari riwayat.`);
     },
-    [selectedProjectId, showToast]
+    [loadProjects, showToast]
   );
 
   // Active Project for Bento display
   const activeProj = useMemo(() => {
     return savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || EMPTY_PROJECT;
   }, [savedProjects, selectedProjectId]);
+
+  /**
+   * Membuka proposal memakai angka simulasi yang tersimpan.
+   *
+   * Rincian diambil ulang lewat `GET /analyses/{id}`; modal tidak boleh disusun
+   * dari ringkasan kartu karena ringkasan tidak memuat asumsi, rincian CAPEX, dan
+   * luas efektif per bidang.
+   */
+  const openProposal = useCallback(
+    async (projectId?: string) => {
+      const numId = Number(projectId ?? activeProj.id);
+
+      if (Number.isNaN(numId) || numId <= 0) {
+        showToast("Simpan simulasi terlebih dahulu untuk membuat proposal.");
+        return;
+      }
+
+      setProposalOpen(true);
+      setProposalLoading(true);
+
+      try {
+        setProposalDetail(await api.getSimulation(numId));
+      } catch {
+        setProposalDetail(null);
+        setProposalOpen(false);
+        showToast("Gagal memuat rincian simulasi untuk proposal.");
+      } finally {
+        setProposalLoading(false);
+      }
+    },
+    [activeProj.id, showToast]
+  );
+
 
   // Filtered projects for history list (without category/shape filter)
   const filteredProjects = useMemo(() => {
@@ -992,61 +1017,30 @@ function HomePageContent() {
     };
   }, [calcMonthlyBill, calcTariff]);
 
-  // Mock Result & Params for Proposal Export Modal
-  const simulationResultForModal: SimulationResult = {
-    roof_count: 1,
-    total_area_sqm: activeProj.ridgeM * activeProj.slopeM,
-    effective_area_sqm: (activeProj.ridgeM - 1.0) * (activeProj.slopeM - 1.1),
-    max_slots: activeProj.moduleCount + 4,
-    installed: activeProj.moduleCount,
-    module_area_sqm: activeProj.moduleCount * 2.56,
-    density_ratio: 0.78,
-    capacity_kwp: activeProj.capacityKwp,
-    annual_production_kwh: activeProj.annualProdMwh * 1000,
-    capex_total_idr: activeProj.capacityKwp * 12_500_000,
-    monthly_saving_idr: activeProj.monthlySavingIdr,
-    annual_saving_idr: activeProj.monthlySavingIdr * 12,
-    payback_years: activeProj.paybackYears,
-    co2_reduction_kg_per_year: activeProj.co2ReductionTon * 1000,
-    trees_equivalent: activeProj.treesCount,
-  };
+  /**
+   * Parameter proposal diambil dari bidang pertama simulasi tersimpan. Seluruh
+   * angka hasil dan asumsinya datang dari `proposalDetail`, bukan disusun ulang di
+   * sini, supaya dokumen yang dicetak sama dengan yang tersimpan.
+   */
+  const proposalParameters = useMemo<SimulationParameters | null>(() => {
+    const roof = proposalDetail?.roofs[0];
 
-  const simulationAssumptionsForModal: SimulationAssumptions = {
-    daily_irradiance_kwh_per_sqm: 4.85,
-    irradiance_source: "NASA POWER Climatology (Kota Bogor)",
-    irradiance_period: "2024",
-    incidence_factor: 0.98,
-    performance_ratio: 0.8,
-    tariff_key: "R2",
-    tariff_label: "R-2 / 3.500-5.500 VA (PLN)",
-    tariff_idr_per_kwh: 1699.53,
-    capex_breakdown: {
-      modules_idr: activeProj.capacityKwp * 6_500_000,
-      inverter_idr: activeProj.capacityKwp * 2_500_000,
-      racking_idr: activeProj.capacityKwp * 1_500_000,
-      installation_idr: activeProj.capacityKwp * 2_000_000,
-    },
-  };
+    if (proposalDetail === null || roof === undefined) {
+      return null;
+    }
 
-  const simulationParamsForModal: SimulationParameters = {
-    setback_m: 0.5,
-    gutter_m: 0.6,
-    tilt_deg: activeProj.tiltDeg,
-    azimuth_deg: 188,
-    // Kontrak memakai kunci katalog `GET /options`, bukan daya modul.
-    module_key:
-      activeProj.modulePower === 450
-        ? "compact_450"
-        : activeProj.modulePower === 580
-          ? "bifacial_580"
-          : "mono_perc_550",
-    orientation: "portrait",
-    clearance_m: 0.02,
-    panel_count: activeProj.moduleCount,
-    inverter_type: "string",
-    monthly_bill_idr: calcMonthlyBill,
-    tariff_key: "R2",
-  };
+    return {
+      ...roof.input,
+      inverter_type: proposalDetail.input.inverter_type,
+      monthly_bill_idr: proposalDetail.input.monthly_bill_idr,
+      tariff_key: proposalDetail.input.tariff_key,
+    };
+  }, [proposalDetail]);
+
+  const proposalModulePower =
+    proposalDetail?.roofs[0] !== undefined
+      ? modulePresets[proposalDetail.roofs[0].input.module_key]?.power_w ?? 550
+      : 550;
 
   // Active Tree count for Eco-Forest diorama:
   // Dynamically maps treesCount (300..700+) to distinct active tree counts (9..18)
@@ -1641,10 +1635,9 @@ function HomePageContent() {
                 </svg>
               </div>
 
-              {/* Center Floating Gemini Star Button (Yellow Radiant Soft Glow, Borderless) */}
               <button
                 type="button"
-                onClick={() => setProposalOpen(true)}
+                onClick={() => void openProposal()}
                 title="Buka Proposal Detail Hasil Studio"
                 aria-label="Buka Proposal Detail Hasil Studio"
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[52px] h-[52px] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer z-20 group border-0 outline-none select-none"
@@ -1954,7 +1947,7 @@ function HomePageContent() {
                             type="button"
                             onClick={() => {
                               setSelectedProjectId(proj.id);
-                              setProposalOpen(true);
+                              void openProposal(proj.id);
                             }}
                             className="h-8 px-3 rounded-full hover:bg-slate-100 text-slate-600 text-xs font-medium transition cursor-pointer"
                           >
@@ -2196,10 +2189,9 @@ function HomePageContent() {
                         {calcMetrics.co2Ton} ton emisi CO₂ ditekan
                       </span>
                     </div>
-
                     <button
                       type="button"
-                      onClick={() => setProposalOpen(true)}
+                      onClick={() => void openProposal()}
                       className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 active:scale-95 text-amber-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
                     >
                       <span className="material-symbols-outlined text-[15px] text-amber-950">picture_as_pdf</span>
@@ -2634,17 +2626,30 @@ function HomePageContent() {
         onSwitchTab={handleTourSwitchTab}
       />
 
-      {/* Proposal PDF Modal */}
-      <ProposalModal
-        open={proposalOpen}
-        onClose={() => setProposalOpen(false)}
-        result={simulationResultForModal}
-        assumptions={simulationAssumptionsForModal}
-        parameters={simulationParamsForModal}
-        latitude="-6.5950"
-        longitude="106.7972"
-        biodata={biodata}
-      />
+      {/* Proposal PDF Modal — hanya dirender setelah rincian tersimpan termuat */}
+      {proposalLoading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 backdrop-blur-sm">
+          <div className="px-5 py-3 rounded-2xl bg-white/95 border border-amber-200 text-xs font-semibold text-slate-700 shadow-lg">
+            Memuat rincian simulasi…
+          </div>
+        </div>
+      )}
+
+      {!proposalLoading && proposalOpen && proposalDetail !== null && proposalParameters !== null && (
+        <ProposalModal
+          open
+          onClose={() => setProposalOpen(false)}
+          result={proposalDetail.result}
+          assumptions={proposalDetail.assumptions}
+          parameters={proposalParameters}
+          latitude={String(proposalDetail.center_point.lat)}
+          longitude={String(proposalDetail.center_point.lng)}
+          biodata={biodata}
+          modulePower={proposalModulePower}
+          totalFacetsCount={proposalDetail.result.roof_count}
+          activeFacetName={proposalDetail.roofs[0]?.label ?? "Bidang Atap Utama"}
+        />
+      )}
     </div>
   );
 }
@@ -2659,12 +2664,12 @@ function HomePageContent() {
  */
 function toSavedProject(
   summary: SimulationSummary,
-  modules: Map<string, ModulePreset>
+  modules: Record<string, ModulePreset>
 ): SavedRoofProject {
   const annualKwh = summary.annual_production_kwh;
   const annualMwh = Math.round((annualKwh / 1000) * 10) / 10;
-  const module = modules.get("mono_perc_550");
-  const modulePower = module?.power_w ?? 550;
+  const modulePower =
+    summary.module_key !== null ? modules[summary.module_key]?.power_w ?? 550 : 550;
 
   // Semua angka di bawah berasal dari hasil hitungan server; tidak ada yang
   // diturunkan ulang di sini kecuali satuan (kWh -> MWh, kg -> ton).
@@ -2683,12 +2688,12 @@ function toSavedProject(
     lng: summary.center_point.lng,
     roofShape: "rectangle",
     shapeLabel: summary.roof_count > 1 ? `${summary.roof_count} bidang` : "1 bidang",
-    // Dimensi per bidang tidak ada pada ringkasan; yang ditampilkan adalah luas
-    // total dan luas efektif dari server, bukan tebakan panjang x lebar.
+    // Dimensi dan kemiringan berasal dari bidang pertama simulasi; untuk
+    // simulasi banyak bidang, kartu menampilkan luas total di sampingnya.
     dimensions: `${summary.total_area_sqm.toFixed(1)} m² (${effectiveAreaPct}% efektif)`,
-    ridgeM: 0,
-    slopeM: 0,
-    tiltDeg: 0,
+    ridgeM: summary.roof_length_m ?? 0,
+    slopeM: summary.roof_width_m ?? 0,
+    tiltDeg: summary.tilt_deg ?? 0,
     rotationDeg: 0,
     capacityKwp: summary.capacity_kwp,
     moduleCount: summary.installed,
@@ -2696,8 +2701,9 @@ function toSavedProject(
     annualProdMwh: annualMwh,
     monthlySavingIdr: summary.monthly_saving_idr,
     paybackYears: summary.payback_years ?? 0,
-    treesCount: summary.trees_equivalent,
-    co2ReductionTon: Math.round((summary.co2_reduction_kg_per_year / 1000) * 100) / 100,
+    treesCount: summary.trees_equivalent ?? 0,
+    co2ReductionTon:
+      Math.round(((summary.co2_reduction_kg_per_year ?? 0) / 1000) * 100) / 100,
     statusBadge: "Tersimpan",
     date: summary.created_at.slice(0, 10),
     facetsSummary: `${summary.roof_count} bidang atap`,

@@ -10,6 +10,7 @@ import { SunnyMascot } from "@/components/mascot/SunnyMascot";
 import {
   ApiRequestError,
   api,
+  getToken,
   setToken,
   type BoundingBox,
   type CapturedImage,
@@ -22,6 +23,7 @@ import {
   type SimulationResult,
   type GeocodeResult,
   type SimulationDetail,
+  type RoofObstacleInput,
   type SimulationRoofInput,
 } from "@/lib/api";
 import { formatRp } from "@/lib/format";
@@ -177,6 +179,17 @@ const TARIFF_KEYS_BY_RATE: Record<number, string> = {
 function tariffKeyForRate(rate: number): string {
   return TARIFF_KEYS_BY_RATE[rate] ?? "R2";
 }
+
+/**
+ * Kebalikan peta di atas untuk membuka simulasi tersimpan: kunci tarif server
+ * dipetakan ke satu harga yang pasti menghasilkan kunci yang sama saat disimpan
+ * ulang.
+ */
+const TARIFF_RATES_BY_KEY: Record<string, number> = {
+  R1: 1444.7,
+  R2: 1700,
+  B2: 1444.71,
+};
 
 const ECO_TREE_CONFIGS = [
   // --- Back Hill Layer (9 trees) ---
@@ -862,15 +875,38 @@ function buildFacetFromSavedRoof(
 ): RoofFacet {
   const metersPerPixel = imagery.meters_per_pixel ?? 0.3;
   const [minLng, , , maxLat] = imagery.bbox;
-
-  // Titik tengah tangkapan menjadi acuan koordinat, sama seperti saat deteksi.
   const centerX = imagery.width / 2;
   const centerY = imagery.height / 2;
 
-  const vertices: Point2D[] = roof.roof_polygon_px.map(([x, y]) => ({
-    x: Math.round((x - centerX) * metersPerPixel * 1000) / 1000,
-    y: Math.round((y - centerY) * metersPerPixel * 1000) / 1000,
+  // Poligon mentah relatif titik tengah tangkapan, lalu dipusatkan pada titik
+  // tengah poligon itu sendiri. Titik acuan tidak lagi selalu titik tengah
+  // tangkapan, sehingga bidang di pinggir kembali ke tempat aslinya.
+  const captured: Point2D[] = roof.roof_polygon_px.map(([x, y]) => ({
+    x: (x - centerX) * metersPerPixel,
+    y: (y - centerY) * metersPerPixel,
   }));
+  const capturedBounds = polygonBounds(captured);
+  const localCenterX = capturedBounds.minX + capturedBounds.width / 2;
+  const localCenterY = capturedBounds.minY + capturedBounds.height / 2;
+  const anchorX = centerX + localCenterX / metersPerPixel;
+  const anchorY = centerY + localCenterY / metersPerPixel;
+
+  // Rotasi disimpan terpisah dan `vertices` dikembalikan tanpa rotasi: konverter
+  // menerapkan `rotation` lagi saat menyimpan, jadi poligon yang dikirim ulang
+  // sama persis dengan yang tersimpan.
+  const rotation = roof.facet_rotation_deg ?? 0;
+  const radians = (rotation * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const vertices: Point2D[] = captured.map((point) => {
+    const dx = point.x - localCenterX;
+    const dy = point.y - localCenterY;
+
+    return {
+      x: Math.round((dx * cos + dy * sin) * 1000) / 1000,
+      y: Math.round((-dx * sin + dy * cos) * 1000) / 1000,
+    };
+  });
 
   const bounds = polygonBounds(vertices);
   const modulePower = MODULE_POWERS_BY_KEY[roof.input.module_key] ?? 550;
@@ -885,9 +921,9 @@ function buildFacetFromSavedRoof(
     azimuth: roof.input.azimuth_deg,
     setback: roof.input.setback_m,
     gutter: roof.input.gutter_m,
-    rotation: 0,
-    lat: maxLat - (centerY / imagery.height) * (imagery.bbox[3] - imagery.bbox[1]),
-    lng: minLng + (centerX / imagery.width) * (imagery.bbox[2] - imagery.bbox[0]),
+    rotation,
+    lat: maxLat - (anchorY / imagery.height) * (imagery.bbox[3] - imagery.bbox[1]),
+    lng: minLng + (anchorX / imagery.width) * (imagery.bbox[2] - imagery.bbox[0]),
     offsetX: 0,
     offsetY: 0,
     hasHvac: roof.has_hvac ?? false,
@@ -904,24 +940,63 @@ function buildFacetFromSavedRoof(
 }
 
 /**
- * Kebalikan `buildFacetFromDetectedRoof`: poligon piksel tangkapan untuk payload
- * simulasi. Sudut `rotation` diterapkan lebih dulu karena tampilan memutar
- * poligon tampilan memakai nilai itu, sedangkan `vertices` disimpan apa adanya.
+ * Satu titik pada kerangka lokal facet (meter) menjadi piksel tangkapan.
+ *
+ * Rotasi facet diterapkan lebih dulu karena `vertices` disimpan tanpa rotasi,
+ * sedangkan tampilan dan payload memakai poligon yang sudah diputar.
  */
-function facetPolygonPx(facet: RoofFacet, image: CapturedImage): PixelPoint[] {
+function facetPointToPx(point: Point2D, facet: RoofFacet, image: CapturedImage): PixelPoint {
   const [minLng, minLat, maxLng, maxLat] = image.bbox;
-  const centerX = ((facet.lng - minLng) / (maxLng - minLng)) * image.width;
-  const centerY = ((maxLat - facet.lat) / (maxLat - minLat)) * image.height;
-
+  const anchorX = ((facet.lng - minLng) / (maxLng - minLng)) * image.width;
+  const anchorY = ((maxLat - facet.lat) / (maxLat - minLat)) * image.height;
   const radians = (facet.rotation * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const metersPerPixel = image.meters_per_pixel;
 
-  return getFacetVertices(facet).map((vertex) => [
-    Math.round((centerX + (vertex.x * cos - vertex.y * sin) / metersPerPixel) * 10) / 10,
-    Math.round((centerY + (vertex.x * sin + vertex.y * cos) / metersPerPixel) * 10) / 10,
-  ]);
+  return [
+    Math.round((anchorX + (point.x * cos - point.y * sin) / metersPerPixel) * 1000) / 1000,
+    Math.round((anchorY + (point.x * sin + point.y * cos) / metersPerPixel) * 1000) / 1000,
+  ];
+}
+
+/**
+ * Kebalikan `buildFacetFromDetectedRoof`: poligon piksel tangkapan untuk payload
+ * simulasi.
+ */
+function facetPolygonPx(facet: RoofFacet, image: CapturedImage): PixelPoint[] {
+  return getFacetVertices(facet).map((vertex) => facetPointToPx(vertex, facet, image));
+}
+
+/**
+ * Poligon satu slot rintangan dalam piksel tangkapan.
+ *
+ * Slot disimpan di kerangka lokal facet tanpa rotasi kisi, sedangkan sudut
+ * modulnya membawa rotasi itu. Keduanya diterapkan di sini supaya geometri yang
+ * dikirim server benar-benar menutupi tempat modul digambar.
+ */
+function slotPolygonPx(slot: PanelSlotItem, facet: RoofFacet, image: CapturedImage): PixelPoint[] {
+  const radians = ((slot.rotationDeg ?? 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const halfWidth = slot.w / 2;
+  const halfLength = slot.l / 2;
+
+  return [
+    [-halfWidth, -halfLength],
+    [halfWidth, -halfLength],
+    [halfWidth, halfLength],
+    [-halfWidth, halfLength],
+  ].map(([dx, dy]) =>
+    facetPointToPx(
+      {
+        x: slot.x + dx * cos - dy * sin,
+        y: slot.y + dx * sin + dy * cos,
+      },
+      facet,
+      image
+    )
+  );
 }
 
 /** Kontrak menolak poligon yang keluar dari batas berkas tangkapan. */
@@ -1156,6 +1231,16 @@ function StudioPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  /**
+   * Studio memanggil endpoint terlindungi (geocode, deteksi, simpan). Tanpa token,
+   * arahkan ke halaman masuk sebelum peta dan permintaan dimulai.
+   */
+  useEffect(() => {
+    if (getToken() === null) {
+      router.replace("/login");
+    }
+  }, [router]);
+
   // Floating Capsule Navigation State (X-like bubble)
   const [capsuleExpanded, setCapsuleExpanded] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -1223,6 +1308,25 @@ function StudioPageContent() {
    * mengosongkannya kembali menjadi pratinjau.
    */
   const [serverMetrics, setServerMetrics] = useState<SimulationDetail["result"] | null>(null);
+
+  /**
+   * Rincian lengkap simulasi yang dibuka. Dipakai proposal supaya angka yang
+   * dicetak adalah angka tersimpan, termasuk asumsi dan rincian CAPEX.
+   */
+  const [serverDetail, setServerDetail] = useState<SimulationDetail | null>(null);
+
+  /**
+   * Id simulasi yang sedang diedit. Selama terisi, tombol simpan memperbarui baris
+   * itu, bukan membuat salinan baru setiap kali.
+   */
+  const [openedSimulationId, setOpenedSimulationId] = useState<number | null>(null);
+
+  /**
+   * Tanda masukan global terakhir yang sudah diterapkan. Dipakai efek di bawah
+   * untuk membedakan perubahan pengguna dari nilai yang baru dipulihkan, supaya
+   * membuka simulasi tidak langsung mengosongkan angka servernya.
+   */
+  const lastGlobalInputSignature = useRef<string | null>(null);
 
   /** Hasil pencarian alamat yang menunggu dipilih pengguna (lebih dari satu). */
   const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
@@ -1293,6 +1397,7 @@ function StudioPageContent() {
   const updateActiveFacet = useCallback((patch: Partial<RoofFacet>) => {
     // Parameter berubah berarti angka tersimpan tidak lagi mewakili rancangan.
     setServerMetrics(null);
+    setServerDetail(null);
     setFacets((prev) =>
       prev.map((f) => (f.id === activeFacetId ? { ...f, ...patch } : f))
     );
@@ -1420,8 +1525,29 @@ function StudioPageContent() {
           return;
         }
 
+        // Masukan global ikut dipulihkan: tanpa ini simulasi lama tampil dengan
+        // tagihan, tarif, dan inverter bawaan, lalu tersimpan ulang dengan nilai
+        // yang berbeda dari aslinya.
+        const restoredSunHour = detail.input.sun_hour ?? 12;
+        const restoredExtraTilt = detail.input.extra_tilt ?? 10;
+        const restoredRate = TARIFF_RATES_BY_KEY[detail.input.tariff_key] ?? 1700;
+
+        setInverterType(detail.input.inverter_type);
+        setMonthlyBill(detail.input.monthly_bill_idr);
+        setPlnTariff(restoredRate);
+        setSunHour(restoredSunHour);
+        setExtraTilt(restoredExtraTilt);
+
+        // Tandai nilai ini sudah dipulihkan supaya efek pengosong metrik tidak
+        // menganggapnya perubahan pengguna.
+        lastGlobalInputSignature.current =
+          `${detail.input.monthly_bill_idr}|${restoredRate}|` +
+          `${detail.input.inverter_type}|${restoredSunHour}|${restoredExtraTilt}`;
+
         setFacets(restored);
         setServerMetrics(detail.result);
+        setServerDetail(detail);
+        setOpenedSimulationId(detail.id);
         setSelectedFacetIds(restored.map((facet) => facet.id));
         setActiveFacetId(restored[restored.length - 1].id);
         setSelectionDone(true);
@@ -1521,6 +1647,7 @@ function StudioPageContent() {
 
   const populateAllFacetsWithSolar = useCallback(() => {
     setServerMetrics(null);
+    setServerDetail(null);
     setFacets((prev) => prev.map((f) => ({ ...f, isSolarPopulated: true })));
     showToast("⚡ Modul surya dipasang pada semua bidang atap!");
   }, [showToast]);
@@ -1720,6 +1847,10 @@ function StudioPageContent() {
     );
     const totalArea = chosen.reduce((sum, roof) => sum + roof.area_sqm, 0);
 
+    // Bidang yang ditambahkan mengubah rancangan, jadi angka tersimpan tidak
+    // lagi mewakili apa yang tampil.
+    setServerMetrics(null);
+    setServerDetail(null);
     setFacets((prev) => [...prev, ...added]);
     setSelectedFacetIds(added.map((facet) => facet.id));
     setActiveFacetId(added[added.length - 1].id);
@@ -1748,6 +1879,8 @@ function StudioPageContent() {
       setAddressInput("Lokasi GPS Terkini");
       setFacets([]);
       setSelectedFacetIds([]);
+      setServerMetrics(null);
+      setServerDetail(null);
       setDetection(null);
       setDetectedRoofs([]);
       setSelectedDetectedIds([]);
@@ -2231,6 +2364,30 @@ function StudioPageContent() {
   const [inverterType, setInverterType] = useState<InverterType>("string");
   const [plnTariff, setPlnTariff] = useState(1700);
   const [monthlyBill, setMonthlyBill] = useState(2_800_000);
+
+  /**
+   * Angka tersimpan tidak lagi mewakili rancangan begitu masukan global berubah.
+   * Efek ini menyamakan perlakuan tagihan, tarif, inverter, posisi matahari, dan
+   * sudut dudukan dengan perubahan parameter bidang: ringkasan kembali ke
+   * pratinjau lokal, bukan mencampur angka server lama dengan masukan baru.
+   */
+  useEffect(() => {
+    const signature = `${monthlyBill}|${plnTariff}|${inverterType}|${sunHour}|${extraTilt}`;
+
+    if (lastGlobalInputSignature.current === null) {
+      lastGlobalInputSignature.current = signature;
+      return;
+    }
+
+    if (lastGlobalInputSignature.current === signature) {
+      return;
+    }
+
+    lastGlobalInputSignature.current = signature;
+    setServerMetrics(null);
+    setServerDetail(null);
+  }, [monthlyBill, plnTariff, inverterType, sunHour, extraTilt]);
+
   const [manualBillInput, setManualBillInput] = useState<string>("");
   const [isTypingBill, setIsTypingBill] = useState(false);
 
@@ -2641,7 +2798,6 @@ function StudioPageContent() {
         mapInstanceRef.current.flyTo([result.lat, result.lng], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
       }
 
-      updateActiveFacet({ lat: result.lat, lng: result.lng });
       setAddressInput(result.label);
       setGeocodeResults([]);
       setSearchOpen(false);
@@ -2649,7 +2805,7 @@ function StudioPageContent() {
       const firstPart = result.label.split(",")[0];
       showToast(`Peta digeser ke ${firstPart}. Tekan pindai untuk memilih bidang atap.`);
     },
-    [showToast, updateActiveFacet]
+    [showToast]
   );
 
   /**
@@ -2902,6 +3058,32 @@ function StudioPageContent() {
 
       const detected = detectedRoofs.find((roof) => roof.id === facet.id);
 
+      // Rintangan dikirim sebagai geometri slot. Slot yang kosong karena batas
+      // jumlah panel bukan rintangan; hanya slot yang ditandai pengguna atau
+      // berasal dari penanda HVAC/skylight yang mengecualikan modul di server.
+      const facetMetrics = computeFacetMetrics(
+        facet,
+        sunHour,
+        obstacleFilterActive,
+        extraTilt,
+        inverterType
+      );
+      const obstacles: RoofObstacleInput[] = [];
+
+      for (const slot of facetMetrics.validSlots) {
+        const isObstacle =
+          slot.state === "hvac" ||
+          slot.state === "skylight" ||
+          (slot.state === "empty" && facet.slotOverrides[slot.key] === "empty");
+
+        if (!isObstacle) continue;
+
+        obstacles.push({
+          type: slot.state as RoofObstacleInput["type"],
+          polygon_px: slotPolygonPx(slot, facet, image),
+        });
+      }
+
       roofs.push({
         label: facet.name,
         detection_id: detected?.id ?? null,
@@ -2914,6 +3096,8 @@ function StudioPageContent() {
         has_hvac: facet.hasHvac,
         has_skylight: facet.hasSkylight,
         slot_overrides: facet.slotOverrides,
+        facet_rotation_deg: facet.rotation,
+        obstacles,
         setback_m: facet.setback,
         gutter_m: facet.gutter,
         tilt_deg: facet.pitch,
@@ -2937,49 +3121,38 @@ function StudioPageContent() {
       inverter_type: inverterType,
       monthly_bill_idr: monthlyBill,
       tariff_key: tariffKeyForRate(plnTariff),
+      sun_hour: sunHour,
+      extra_tilt: extraTilt,
     };
 
     setIsSaving(true);
 
     try {
-      // Seluruh angka pada konfirmasi berasal dari respons server, bukan dari
-      // perhitungan lokal `calc`.
-      const res = await api.saveSimulation(payload);
+      // Simulasi yang dibuka lewat `?analysis=` diperbarui di tempat; tanpa ini
+      // setiap penyimpanan membuat salinan baru dan riwayat penuh duplikat.
+      const res =
+        openedSimulationId !== null
+          ? await api.updateSimulation(openedSimulationId, payload)
+          : await api.saveSimulation(payload);
 
       setSaveSuccess(true);
+      setOpenedSimulationId(res.id);
+      setServerMetrics(res.result);
+      setServerDetail(res);
 
-      // Sinkronkan proyek lokal memakai `center_point` dan `map_zoom` dari
-      // server supaya peta bisa dibuka kembali pada tampilan yang sama.
+      // Penanda tur aplikasi; tidak ada data proyek yang ditulis ke peramban.
       if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("sunsight_tour_pending", "true");
-          const stored = localStorage.getItem("sunsight_saved_projects");
-          const arr = stored ? JSON.parse(stored) : [];
-          arr.unshift({
-            id: res.id,
-            name: roofs.length === 1 ? roofs[0].label : `${roofs.length} Bidang Atap`,
-            address: addressInput,
-            date: res.created_at.split("T")[0],
-            lat: res.center_point.lat,
-            lon: res.center_point.lng,
-            zoom: res.map_zoom,
-            capacityKwp: res.result.capacity_kwp,
-            annualOutputKwh: Math.round(res.result.annual_production_kwh),
-            monthlySavingsRp: res.result.monthly_saving_idr,
-            bepYears: res.result.payback_years,
-            roofCount: res.result.roof_count,
-          });
-          localStorage.setItem("sunsight_saved_projects", JSON.stringify(arr));
-        } catch {}
+        localStorage.setItem("sunsight_tour_pending", "true");
       }
 
       const skippedNote =
         skipped.length > 0
           ? ` ${skipped.length} bidang di luar area tangkapan tidak disertakan.`
           : "";
+      const verb = openedSimulationId !== null ? "diperbarui" : "tersimpan";
 
       showToast(
-        `Simulasi #${res.id} tersimpan — ${res.result.capacity_kwp.toLocaleString("id-ID")} kWp, ${
+        `Simulasi #${res.id} ${verb} — ${res.result.capacity_kwp.toLocaleString("id-ID")} kWp, ${
           Math.round(res.result.annual_production_kwh).toLocaleString("id-ID")
         } kWh/tahun.${skippedNote}`
       );
@@ -3443,11 +3616,14 @@ function StudioPageContent() {
   };
 
   const simulationAssumptionsForModal: SimulationAssumptions = {
-    daily_irradiance_kwh_per_sqm: 4.85,
-    irradiance_source: "Model Radiasi Surya Tropis",
-    irradiance_period: "Rata-rata Tahunan",
-    incidence_factor: 0.984,
-    performance_ratio: 0.8,
+    daily_irradiance_kwh_per_sqm: sunHour === 9 ? 3.8 : sunHour === 15 ? 3.9 : 4.85,
+    irradiance_source: "Jam matahari puncak studio",
+    irradiance_period: "asumsi pengguna",
+    incidence_factor:
+      (calc.pitchEffPct / 100) *
+      (Number(calc.azimuthEffPct) / 100) *
+      (1 + (extraTilt / 20) * 0.02),
+    performance_ratio: 0.82 * (inverterType === "string" ? 0.984 : 0.975),
     tariff_key: tariffKeyForRate(plnTariff),
     tariff_label: selectedTariffLabel,
     tariff_idr_per_kwh: plnTariff,
@@ -3472,6 +3648,21 @@ function StudioPageContent() {
     monthly_bill_idr: monthlyBill,
     tariff_key: tariffKeyForRate(plnTariff),
   };
+  /*
+   * Saat simulasi tersimpan dibuka, proposal memakai hasil dan asumsi dari server.
+   * Pratinjau lokal hanya dipakai untuk rancangan yang belum pernah disimpan.
+   */
+  const modalResult = serverDetail?.result ?? simulationResultForModal;
+  const modalAssumptions = serverDetail?.assumptions ?? simulationAssumptionsForModal;
+  const modalParameters =
+    serverDetail?.roofs[0] !== undefined
+      ? {
+          ...serverDetail.roofs[0].input,
+          inverter_type: serverDetail.input.inverter_type,
+          monthly_bill_idr: serverDetail.input.monthly_bill_idr,
+          tariff_key: serverDetail.input.tariff_key,
+        }
+      : simulationParamsForModal;
 
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-[#FAF9F5] font-body-md text-slate-800 antialiased select-none flex flex-col print:h-auto print:w-auto print:overflow-visible print:bg-[#FAF9F5] print:p-0">
@@ -3898,7 +4089,13 @@ function StudioPageContent() {
               {isSaving ? "sync" : saveSuccess ? "check_circle" : "save"}
             </span>
             <span className="hidden sm:inline">
-              {isSaving ? "Menyimpan..." : saveSuccess ? "Tersimpan" : "Simpan Desain"}
+              {isSaving
+                ? "Menyimpan..."
+                : saveSuccess
+                  ? "Tersimpan"
+                  : openedSimulationId !== null
+                    ? "Perbarui"
+                    : "Simpan Desain"}
             </span>
             <span className="sm:hidden">
               {isSaving ? "..." : saveSuccess ? "OK" : "Simpan"}
@@ -4461,6 +4658,15 @@ function StudioPageContent() {
 
           {/* Real Earth Satellite & OpenStreetMap (OSM) Live Map Container */}
           <div id="studio-leaflet-map" className="absolute inset-0 w-full h-full z-0 pointer-events-auto" />
+
+          {/*
+           * Atribusi penyedia ubin. Kontrol bawaan Leaflet sengaja dimatikan agar
+           * tidak menutupi tombol studio, jadi kewajibannya dipenuhi elemen ini.
+           * `pointer-events-none` menjaga area peta tetap dapat dipindai/diklik.
+           */}
+          <div className="absolute bottom-1 right-1 z-20 px-1.5 py-0.5 rounded bg-slate-900/45 text-[9px] leading-tight text-white/85 pointer-events-none select-none">
+            © Esri, Maxar, Earthstar Geographics · © OpenStreetMap contributors
+          </div>
 
           {/* Instant Satellite Image Fallback */}
           {!mapLoaded && (
@@ -7569,7 +7775,13 @@ function StudioPageContent() {
                         {isSaving ? "sync" : saveSuccess ? "check_circle" : "cloud_upload"}
                       </span>
                       <span>
-                        {isSaving ? "Menyimpan ke Server..." : saveSuccess ? "Simulasi Berhasil Disimpan!" : "Simpan Simulasi ke Akun"}
+                        {isSaving
+                          ? "Menyimpan ke Server..."
+                          : saveSuccess
+                            ? "Berhasil Disimpan!"
+                            : openedSimulationId !== null
+                              ? "Perbarui Simulasi Tersimpan"
+                              : "Simpan Simulasi ke Akun"}
                       </span>
                     </button>
                     <button
@@ -7733,9 +7945,7 @@ function StudioPageContent() {
                 />
               </div>
             </div>
-
-            <div className="pt-2 space-y-2">
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -7773,16 +7983,15 @@ function StudioPageContent() {
               </button>
             </div>
           </div>
-        </div>
       )}
 
       {/* Proposal PDF Modal */}
       <ProposalModal
         open={proposalOpen}
         onClose={() => setProposalOpen(false)}
-        result={simulationResultForModal}
-        assumptions={simulationAssumptionsForModal}
-        parameters={simulationParamsForModal}
+        result={modalResult}
+        assumptions={modalAssumptions}
+        parameters={modalParameters}
         latitude={activeFacet.lat ? activeFacet.lat.toFixed(6) : "-6.595500"}
         longitude={activeFacet.lng ? activeFacet.lng.toFixed(6) : "106.799500"}
         biodata={biodata}

@@ -7,12 +7,10 @@ use App\Models\SimulationRoof;
 use App\Models\User;
 use App\Services\Geometry\PolygonGeometry;
 use App\Services\Imagery\ImageryAssetStore;
-use App\Services\IrradianceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Tests\Support\FakeIrradianceProvider;
 use Tests\TestCase;
 
 class SimulationTest extends TestCase
@@ -35,9 +33,6 @@ class SimulationTest extends TestCase
         parent::setUp();
 
         Storage::fake('public');
-
-        // Simulasi tidak boleh menyentuh jaringan saat diuji.
-        $this->app->bind(IrradianceProvider::class, fn () => new FakeIrradianceProvider);
     }
 
     public function test_seluruh_endpoint_menolak_permintaan_tanpa_token(): void
@@ -586,7 +581,7 @@ class SimulationTest extends TestCase
         $this->assertEqualsWithDelta(22.0, (float) $response->json('roofs.0.input.tilt_deg'), 0.01);
         $this->assertSame('mono_perc_550', $response->json('roofs.0.input.module_key'));
         $this->assertEqualsWithDelta(600.0, (float) $response->json('roofs.0.result.area_sqm'), 0.01);
-        $this->assertSame('NASA POWER', $response->json('assumptions.irradiance_source'));
+        $this->assertSame('Jam matahari puncak studio', $response->json('assumptions.irradiance_source'));
         $this->assertNotNull($response->json('created_at'));
     }
 
@@ -640,6 +635,198 @@ class SimulationTest extends TestCase
 
         $this->assertDatabaseHas('simulations', ['id' => $id]);
         $this->assertDatabaseHas('simulation_roofs', ['simulation_id' => $id]);
+    }
+
+    public function test_simulasi_tersimpan_dapat_diperbarui_tanpa_menambah_baris(): void
+    {
+        $user = User::factory()->create();
+
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/analyses', $this->payload($user))
+            ->assertCreated();
+
+        $id = (int) $created->json('id');
+
+        $updated = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/analyses/{$id}", $this->payload($user, [
+                'address' => 'Alamat Baru',
+                'roofs' => [self::roof(['panel_count' => 12])],
+            ]))
+            ->assertOk()
+            ->assertJsonPath('message', 'Simulation updated')
+            ->assertJsonPath('id', $id)
+            ->assertJsonPath('address', 'Alamat Baru');
+
+        $this->assertSame(12, (int) $updated->json('result.installed'));
+        $this->assertDatabaseCount('simulations', 1);
+        $this->assertDatabaseCount('simulation_roofs', 1);
+        $this->assertDatabaseHas('simulation_roofs', [
+            'simulation_id' => $id,
+            'installed' => 12,
+        ]);
+    }
+
+    public function test_memperbarui_simulasi_milik_orang_lain_menghasilkan_404(): void
+    {
+        $pemilik = User::factory()->create();
+        $penyusup = User::factory()->create();
+
+        $id = $this->actingAs($pemilik, 'sanctum')
+            ->postJson('/api/analyses', $this->payload($pemilik))
+            ->json('id');
+
+        $this->actingAs($penyusup, 'sanctum')
+            ->patchJson("/api/analyses/{$id}", $this->payload($penyusup))
+            ->assertStatus(404);
+
+        $this->assertDatabaseHas('simulations', ['id' => $id, 'address' => null]);
+    }
+
+    public function test_rintangan_mengecualikan_modul_yang_bersinggungan(): void
+    {
+        $user = User::factory()->create();
+
+        $tanpaRintangan = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => [self::roof(['panel_count' => null])],
+            ]))
+            ->assertOk();
+
+        // Setengah kiri bidang ditandai HVAC: modul di sana tidak boleh dipasang.
+        $denganRintangan = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => [self::roof([
+                    'panel_count' => null,
+                    'obstacles' => [[
+                        'type' => 'hvac',
+                        'polygon_px' => [[150, 150], [180, 150], [180, 190], [150, 190]],
+                    ]],
+                ])],
+            ]))
+            ->assertOk();
+
+        $this->assertGreaterThan(
+            0,
+            (int) $denganRintangan->json('result.installed'),
+            'Sisa bidang kanan masih dapat menampung modul.',
+        );
+        $this->assertLessThan(
+            (int) $tanpaRintangan->json('result.installed'),
+            (int) $denganRintangan->json('result.installed'),
+        );
+        $this->assertSame(
+            (int) $tanpaRintangan->json('result.max_slots'),
+            (int) $denganRintangan->json('result.max_slots'),
+            'Slot maksimum tetap menggambarkan kisi sebelum rintangan.',
+        );
+    }
+
+    public function test_bidang_tanpa_modul_tetap_menyimpan_slot_maksimum(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => [self::roof([
+                    'panel_count' => null,
+                    'is_solar_populated' => false,
+                ])],
+            ]))
+            ->assertOk();
+
+        $this->assertSame(0, (int) $response->json('result.installed'));
+        $this->assertSame(0.0, (float) $response->json('result.capacity_kwp'));
+        $this->assertSame(0.0, (float) $response->json('result.annual_production_kwh'));
+        $this->assertGreaterThan(0, (int) $response->json('result.max_slots'));
+    }
+
+    public function test_jam_matahari_dan_sudut_dudukan_memengaruhi_produksi(): void
+    {
+        $user = User::factory()->create();
+        $roofs = [self::roof(['panel_count' => 24])];
+
+        $siang = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => $roofs,
+                'sun_hour' => 12,
+                'extra_tilt' => 0,
+            ]))
+            ->assertOk();
+
+        $pagi = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => $roofs,
+                'sun_hour' => 9,
+                'extra_tilt' => 0,
+            ]))
+            ->assertOk();
+
+        $miring = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/simulate', $this->payload($user, [
+                'roofs' => $roofs,
+                'sun_hour' => 12,
+                'extra_tilt' => 20,
+            ]))
+            ->assertOk();
+
+        $this->assertLessThan(
+            (float) $siang->json('result.annual_production_kwh'),
+            (float) $pagi->json('result.annual_production_kwh'),
+        );
+        $this->assertGreaterThan(
+            (float) $siang->json('result.annual_production_kwh'),
+            (float) $miring->json('result.annual_production_kwh'),
+        );
+        $this->assertSame(4.85, (float) $siang->json('assumptions.daily_irradiance_kwh_per_sqm'));
+        $this->assertSame(3.8, (float) $pagi->json('assumptions.daily_irradiance_kwh_per_sqm'));
+    }
+
+    public function test_masukan_studio_terbaca_kembali_dari_simulasi_tersimpan(): void
+    {
+        $user = User::factory()->create();
+
+        $id = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/analyses', $this->payload($user, [
+                'sun_hour' => 15,
+                'extra_tilt' => 20,
+                'roofs' => [self::roof([
+                    'facet_rotation_deg' => 12.5,
+                    'obstacles' => [[
+                        'type' => 'skylight',
+                        'polygon_px' => [[160, 150], [180, 150], [180, 170], [160, 170]],
+                    ]],
+                ])],
+            ]))
+            ->assertCreated()
+            ->json('id');
+
+        $detail = $this->actingAs($user, 'sanctum')->getJson("/api/analyses/{$id}")->assertOk();
+
+        $this->assertSame(15.0, (float) $detail->json('input.sun_hour'));
+        $this->assertSame(20.0, (float) $detail->json('input.extra_tilt'));
+        $this->assertEqualsWithDelta(12.5, (float) $detail->json('roofs.0.facet_rotation_deg'), 1e-9);
+        $this->assertSame('skylight', $detail->json('roofs.0.obstacles.0.type'));
+        $this->assertCount(4, $detail->json('roofs.0.obstacles.0.polygon_px'));
+        $this->assertSame('Jam matahari puncak studio', $detail->json('assumptions.irradiance_source'));
+    }
+
+    public function test_ringkasan_membawa_modul_dan_dimensi_bidang_pertama(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/analyses', $this->payload($user))->assertCreated();
+
+        $summary = $this->actingAs($user, 'sanctum')->getJson('/api/analyses')->assertOk();
+
+        $this->assertSame('mono_perc_550', $summary->json('data.0.module_key'));
+        $this->assertEqualsWithDelta(29.0, (float) $summary->json('data.0.roof_length_m'), 0.01);
+        $this->assertEqualsWithDelta(19.0, (float) $summary->json('data.0.roof_width_m'), 0.01);
+        $this->assertEqualsWithDelta(22.0, (float) $summary->json('data.0.tilt_deg'), 0.01);
+
+        // Kartu dampak ekologis membaca kedua nilai ini; hilangnya salah satunya
+        // membuat dashboard gagal memformat angka, bukan sekadar tampil kosong.
+        $this->assertIsNumeric($summary->json('data.0.co2_reduction_kg_per_year'));
+        $this->assertIsInt($summary->json('data.0.trees_equivalent'));
     }
 
     /**

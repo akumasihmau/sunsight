@@ -11,13 +11,27 @@ import { mockApi } from "./mock";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
-export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
+/**
+ * Mode mock hanya aktif bila diminta secara eksplisit.
+ *
+ * Sebelumnya nilai ini dianggap aktif saat variabelnya tidak ada, sehingga build
+ * produksi tanpa `.env` diam-diam berjalan dengan data contoh dan seluruh
+ * integrasi backend tidak pernah dipakai.
+ */
+export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
 const TOKEN_STORAGE_KEY = "sunsight.token";
 
 export type FieldErrors = Record<string, string[]>;
 
-export type User = { id: number; name: string; email: string };
+export type User = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  property_type: string | null;
+  location: string | null;
+};
 
 export type AuthResponse = { token: string; user: User };
 
@@ -161,12 +175,26 @@ export type SimulationRoofViewState = {
   slot_overrides?: Record<string, SlotStateKey> | null;
 };
 
+/**
+ * Rintangan satu slot dalam koordinat piksel tangkapan.
+ *
+ * Dikirim sebagai geometri, bukan indeks baris/kolom, karena kisi server tidak
+ * identik dengan kisi antarmuka: indeks yang sama dapat menunjuk slot yang berbeda.
+ */
+export type RoofObstacleInput = {
+  type: Exclude<SlotStateKey, "active">;
+  polygon_px: PixelPoint[];
+};
+
 export type SimulationRoofInput = SimulationRoofParameters &
   SimulationRoofViewState & {
     label?: string | null;
     detection_id?: string | null;
     confidence?: number | null;
     roof_polygon_px: PixelPoint[];
+    /** Rotasi poligon yang diterapkan pengguna; dipakai menyelaraskan kisi server. */
+    facet_rotation_deg?: number | null;
+    obstacles?: RoofObstacleInput[] | null;
   };
 
 /** Payload `POST /simulate` dan `POST /analyses`; hanya berisi masukan. */
@@ -179,6 +207,10 @@ export type SimulationRequest = {
   inverter_type: InverterType;
   monthly_bill_idr: number;
   tariff_key: string;
+  /** Posisi matahari pada penggeser studio; menentukan jam matahari puncak. */
+  sun_hour?: number;
+  /** Sudut dudukan tambahan, derajat; menambah produksi lewat bonus self-cleaning. */
+  extra_tilt?: number;
 };
 
 /** Hasil per bidang; seluruh angka dihitung server. */
@@ -232,6 +264,10 @@ export type SimulationSummary = {
   total_area_sqm: number;
   effective_area_sqm: number;
   installed: number;
+  module_key: string | null;
+  roof_length_m: number | null;
+  roof_width_m: number | null;
+  tilt_deg: number | null;
   co2_reduction_kg_per_year: number;
   trees_equivalent: number;
   capacity_kwp: number;
@@ -246,6 +282,8 @@ export type SimulationInputSummary = {
   inverter_type: InverterType;
   monthly_bill_idr: number;
   tariff_key: string;
+  sun_hour: number | null;
+  extra_tilt: number | null;
 };
 
 export type SimulationAssumptions = {
@@ -273,6 +311,8 @@ export type SimulationRoofDetail = {
   has_hvac: boolean | null;
   has_skylight: boolean | null;
   slot_overrides: Record<string, SlotStateKey> | null;
+  obstacles: RoofObstacleInput[] | null;
+  facet_rotation_deg: number | null;
   input: SimulationRoofParameters;
   result: SimulationRoofResult;
 };
@@ -375,7 +415,7 @@ export function setToken(token: string | null): void {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
 };
 
@@ -580,13 +620,44 @@ export const api = {
     return apiUpload<RoofDetectionResponse>("/roof-detections", form);
   },
 
+  /**
+   * Pencarian alamat. Mode mock memakai daftar contoh supaya alur studio dapat
+   * dicoba tanpa backend, sama seperti endpoint lain.
+   */
   geocode: (query: string) =>
-    apiRequest<GeocodeResponse>(`/geocode?q=${encodeURIComponent(query)}`),
+    USE_MOCK
+      ? mockApi.geocode(query)
+      : apiRequest<GeocodeResponse>(`/geocode?q=${encodeURIComponent(query)}`),
 
   saveSimulation: (body: SimulationRequest) =>
     USE_MOCK
       ? mockApi.saveSimulation(body)
       : apiRequest<SimulationDetail>("/analyses", { method: "POST", body }),
+
+  updateSimulation: (id: number, body: SimulationRequest) =>
+    USE_MOCK
+      ? mockApi.updateSimulation(id, body)
+      : apiRequest<SimulationDetail>(`/analyses/${id}`, { method: "PATCH", body }),
+
+  updateProfile: (body: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    property_type?: string | null;
+    location?: string | null;
+  }) =>
+    USE_MOCK
+      ? mockApi.updateProfile(body)
+      : apiRequest<User>("/user", { method: "PATCH", body }),
+
+  changePassword: (body: {
+    current_password: string;
+    password: string;
+    password_confirmation: string;
+  }) =>
+    USE_MOCK
+      ? mockApi.changePassword()
+      : apiRequest<{ message: string }>("/change-password", { method: "POST", body }),
 
   listSimulations: (page = 1, perPage = 10) =>
     USE_MOCK

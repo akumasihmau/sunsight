@@ -16,7 +16,9 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 Route::middleware('auth:sanctum')->group(function () {
     // Profil & Logout
     Route::get('/user', [AuthController::class, 'user']);
+    Route::patch('/user', [AuthController::class, 'updateProfile']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 
     // Lokasi, katalog, deteksi, dan simulasi
     Route::post('/location', [SimulationController::class, 'location']);
@@ -31,5 +33,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/analyses', [SimulationController::class, 'index']);
     Route::post('/analyses', [SimulationController::class, 'store']);
     Route::get('/analyses/{id}', [SimulationController::class, 'show'])->whereNumber('id');
+    Route::patch('/analyses/{id}', [SimulationController::class, 'update'])->whereNumber('id');
     Route::delete('/analyses/{id}', [SimulationController::class, 'destroy'])->whereNumber('id');
 });

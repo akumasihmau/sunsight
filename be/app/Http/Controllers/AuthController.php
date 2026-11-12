@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Models\User;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-
 use Illuminate\Support\Facades\Password;
-use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -51,7 +52,7 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out']);
     }
 
-    public function forgotPassword(Request $request) 
+    public function forgotPassword(Request $request)
     {
         // 1. Validasi email
         $request->validate(['email' => 'required|email|exists:users,email']);
@@ -66,7 +67,7 @@ class AuthController extends Controller
             : response()->json(['message' => 'Gagal mengirim email reset password.'], 400);
     }
 
-    public function resetPassword(Request $request) 
+    public function resetPassword(Request $request)
     {
         // 1. Validasi kelengkapan data dari Next.js
         $request->validate([
@@ -79,10 +80,10 @@ class AuthController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
-                // Karena di model User teman Anda sudah ada cast 'hashed', 
+                // Karena di model User teman Anda sudah ada cast 'hashed',
                 // kita cukup masukkan password mentahnya, Laravel akan nge-hash otomatis.
                 $user->forceFill([
-                    'password' => $password
+                    'password' => $password,
                 ])->setRememberToken(Str::random(60));
 
                 $user->save();
@@ -101,6 +102,60 @@ class AuthController extends Controller
     }
 
     /**
+     * Menyimpan profil yang dapat diubah pengguna.
+     *
+     * Email boleh berubah tetapi tidak boleh bentrok dengan akun lain; token yang
+     * sedang dipakai tetap berlaku karena identitasnya adalah id user, bukan email.
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:80'],
+            'email' => [
+                'required',
+                'email',
+                'max:120',
+                Rule::unique('users', 'email')->ignore($user->getKey()),
+            ],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'property_type' => ['sometimes', 'nullable', 'string', Rule::in(['residential', 'commercial', 'industrial'])],
+            'location' => ['sometimes', 'nullable', 'string', 'max:120'],
+        ]);
+
+        $user->fill($validated)->save();
+
+        return response()->json($this->profile($user->refresh()));
+    }
+
+    /**
+     * Mengganti kata sandi setelah kata sandi lama diperiksa.
+     *
+     * Kata sandi tidak pernah dikembalikan di respons; klien hanya menerima pesan
+     * berhasil dan tetap memakai token yang sama.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = $request->user();
+
+        if (! Hash::check($validated['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['Kata sandi saat ini tidak cocok.'],
+            ]);
+        }
+
+        $user->forceFill(['password' => $validated['password']])->save();
+
+        return response()->json(['message' => 'Password berhasil diperbarui.']);
+    }
+
+    /**
      * Profil publik user. Tidak pernah memuat password atau token.
      *
      * @return array<string, mixed>
@@ -111,6 +166,9 @@ class AuthController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'phone' => $user->phone,
+            'property_type' => $user->property_type,
+            'location' => $user->location,
         ];
     }
 }

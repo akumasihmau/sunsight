@@ -89,6 +89,10 @@ class SimulationResource extends JsonResource
             'has_hvac' => $roof->has_hvac,
             'has_skylight' => $roof->has_skylight,
             'slot_overrides' => $roof->slot_overrides,
+            'obstacles' => $roof->obstacles,
+            'facet_rotation_deg' => $roof->facet_rotation_deg === null
+                ? null
+                : round((float) $roof->facet_rotation_deg, 2),
             'input' => [
                 'setback_m' => round((float) $roof->setback_m, 2),
                 'gutter_m' => round((float) $roof->gutter_m, 2),
@@ -126,6 +130,8 @@ class SimulationResource extends JsonResource
             'inverter_type' => $simulation->inverter_type,
             'monthly_bill_idr' => (int) $simulation->monthly_bill_idr,
             'tariff_key' => $simulation->tariff_key,
+            'sun_hour' => $simulation->sun_hour === null ? null : round((float) $simulation->sun_hour, 1),
+            'extra_tilt' => $simulation->extra_tilt_deg === null ? null : round((float) $simulation->extra_tilt_deg, 1),
         ];
     }
 

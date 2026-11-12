@@ -105,11 +105,70 @@ class SimulationController extends Controller
         $simulations = Simulation::query()
             ->where('user_id', $request->user()->getKey())
             ->withCount('roofs')
+            // Ringkasan memakai dimensi, kemiringan, dan modul bidang pertama.
+            // Kolom yang dipilih sengaja sedikit: daftar hanya perlu angka itu.
+            ->with(['roofs' => static fn ($query) => $query->select(
+                'id',
+                'simulation_id',
+                'module_key',
+                'roof_length_m',
+                'roof_width_m',
+                'tilt_deg',
+            )])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate($this->perPage($request));
 
         return SimulationSummaryResource::collection($simulations);
+    }
+
+    /**
+     * Menghitung ulang lalu memperbarui simulasi yang sudah tersimpan.
+     *
+     * Baris lama tidak diganti dengan baris baru: identitas, waktu simpan, dan
+     * tautan ke riwayat tetap, sedangkan masukan serta hasilnya dihitung ulang
+     * dengan aturan yang sama seperti `POST /analyses`. Seluruh bidang ditulis ulang
+     * di dalam satu transaksi supaya tidak pernah ada simulasi dengan sebagian
+     * bidang lama dan sebagian bidang baru.
+     */
+    public function update(StoreSimulationRequest $request, int $id): JsonResponse
+    {
+        $existing = $this->findOwned($request, $id);
+
+        if ($existing === null) {
+            return $this->notFound();
+        }
+
+        $simulation = $this->calculate($request);
+
+        if ($simulation instanceof JsonResponse) {
+            return $simulation;
+        }
+
+        DB::transaction(function () use ($simulation, $existing): void {
+            // Waktu simpan dan identitas tidak ikut berubah: yang diperbarui adalah
+            // masukan dan hasilnya, bukan kapan simulasi itu pertama dibuat.
+            $attributes = array_diff_key(
+                $simulation->getAttributes(),
+                array_flip(['id', 'created_at', 'updated_at']),
+            );
+
+            $existing->fill($attributes);
+            $existing->save();
+
+            $existing->roofs()->delete();
+
+            foreach ($simulation->roofs as $roof) {
+                $roof->simulation_id = $existing->getKey();
+                $roof->save();
+            }
+        });
+
+        $existing->load(['roofs', 'imageryAsset']);
+
+        $body = (new SimulationResource($existing))->resolve($request);
+
+        return response()->json(array_merge(['message' => 'Simulation updated'], $body));
     }
 
     public function show(Request $request, int $id): SimulationResource|JsonResponse

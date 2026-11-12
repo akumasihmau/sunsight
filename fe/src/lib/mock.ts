@@ -4,8 +4,9 @@ import {
   type CapturedImage,
   type DetectedRoof,
   type Imagery,
-  type Paginated,
+  type GeocodeResponse,
   type PixelPoint,
+  type Paginated,
   type RoofDetectionResponse,
   type SimulationAssumptions,
   type SimulationDetail,
@@ -433,6 +434,8 @@ function buildDetail(
       has_hvac: roof.has_hvac ?? null,
       has_skylight: roof.has_skylight ?? null,
       slot_overrides: roof.slot_overrides ?? null,
+      obstacles: roof.obstacles ?? null,
+      facet_rotation_deg: roof.facet_rotation_deg ?? null,
       input: {
         setback_m: roof.setback_m,
         gutter_m: roof.gutter_m,
@@ -541,6 +544,8 @@ function buildDetail(
       inverter_type: payload.inverter_type,
       monthly_bill_idr: payload.monthly_bill_idr,
       tariff_key: payload.tariff_key,
+      sun_hour: payload.sun_hour ?? 12,
+      extra_tilt: payload.extra_tilt ?? 10,
     },
     result,
     assumptions,
@@ -682,6 +687,9 @@ export const mockApi = {
         id: 1,
         name: capitalName,
         email: body.email,
+        phone: null,
+        property_type: null,
+        location: null,
       },
     };
   },
@@ -698,6 +706,9 @@ export const mockApi = {
         id: 1,
         name: body.name,
         email: body.email,
+        phone: null,
+        property_type: null,
+        location: null,
       },
     };
   },
@@ -724,11 +735,10 @@ export const mockApi = {
       id: 1,
       name: "Pengguna SunSight",
       email: "user@sunsight.id",
+      phone: null,
+      property_type: null,
+      location: null,
     };
-  },
-
-  fetchOptions: async (): Promise<SimulationOptions> => {
-    return MOCK_OPTIONS;
   },
 
   fetchLocation: async (body: { lat: number; lng: number; zoom: number }): Promise<Imagery> => {
@@ -742,6 +752,8 @@ export const mockApi = {
       attribution: "© Mapbox Satellite Imagery (Mode FE Standalone)",
     };
   },
+
+  fetchOptions: async (): Promise<SimulationOptions> => MOCK_OPTIONS,
 
   /**
    * Menirukan `POST /roof-detections`: dua sampai tiga bidang contoh di dalam
@@ -791,6 +803,14 @@ export const mockApi = {
     return detail;
   },
 
+  updateSimulation: async (id: number, body: SimulationRequest): Promise<SimulationDetail> => {
+    const detail = buildDetail(body, id, "Simulation updated");
+    const list = getStoredSimulations().map((item) => (item.id === id ? detail : item));
+    saveSimulations(list);
+
+    return detail;
+  },
+
   listSimulations: async (page = 1, perPage = 10): Promise<Paginated<SimulationSummary>> => {
     const list = getStoredSimulations();
     const start = (page - 1) * perPage;
@@ -804,6 +824,10 @@ export const mockApi = {
       total_area_sqm: item.result.total_area_sqm,
       effective_area_sqm: item.result.effective_area_sqm,
       installed: item.result.installed,
+      module_key: item.roofs[0]?.input.module_key ?? null,
+      roof_length_m: item.roofs[0]?.result.roof_length_m ?? null,
+      roof_width_m: item.roofs[0]?.result.roof_width_m ?? null,
+      tilt_deg: item.roofs[0]?.input.tilt_deg ?? null,
       co2_reduction_kg_per_year: item.result.co2_reduction_kg_per_year,
       trees_equivalent: item.result.trees_equivalent,
       capacity_kwp: item.result.capacity_kwp,
@@ -846,4 +870,40 @@ export const mockApi = {
 
     return { message: "Simulation deleted" };
   },
+
+  /**
+   * Pencarian alamat contoh. Hasilnya memakai satu titik tetap di Kota Bogor
+   * supaya alur pemilihan alamat dapat dicoba tanpa backend.
+   */
+  geocode: async (query: string): Promise<GeocodeResponse> => ({
+    query,
+    results: [
+      {
+        label: `${query} (contoh, Kota Bogor)`,
+        lat: -6.611,
+        lng: 106.815,
+        bbox: [106.809, -6.615, 106.821, -6.607],
+        source: "mock",
+      },
+    ],
+  }),
+
+  updateProfile: async (body: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    property_type?: string | null;
+    location?: string | null;
+  }): Promise<User> => ({
+    id: 1,
+    name: body.name,
+    email: body.email,
+    phone: body.phone ?? null,
+    property_type: body.property_type ?? null,
+    location: body.location ?? null,
+  }),
+
+  changePassword: async (): Promise<{ message: string }> => ({
+    message: "Password berhasil diperbarui (mock).",
+  }),
 };

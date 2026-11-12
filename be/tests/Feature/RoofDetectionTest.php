@@ -6,13 +6,11 @@ use App\Models\ImageryAsset;
 use App\Models\User;
 use App\Services\Geometry\PolygonGeometry;
 use App\Services\Imagery\ImageryBoundingBox;
-use App\Services\IrradianceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Tests\Support\FakeIrradianceProvider;
 use Tests\TestCase;
 
 class RoofDetectionTest extends TestCase
@@ -29,9 +27,6 @@ class RoofDetectionTest extends TestCase
         parent::setUp();
 
         Storage::fake('public');
-
-        // Simulasi lanjutan pada uji alur juga tidak boleh menyentuh jaringan.
-        $this->app->bind(IrradianceProvider::class, fn () => new FakeIrradianceProvider);
     }
 
     public function test_menolak_permintaan_tanpa_token(): void
