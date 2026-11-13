@@ -20,6 +20,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/user', [AuthController::class, 'updateProfile']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
+    // Penanda onboarding selesai; idempoten sehingga aman dikirim berulang.
+    Route::post('/onboarding/complete', [AuthController::class, 'completeOnboarding']);
 
     // Lokasi, katalog, deteksi, dan simulasi
     Route::post('/location', [SimulationController::class, 'location']);

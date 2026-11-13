@@ -130,6 +130,23 @@ class AuthController extends Controller
     }
 
     /**
+     * Menandai onboarding selesai untuk user yang sedang login.
+     *
+     * Idempoten: pemanggilan berikutnya tidak menggeser waktu yang sudah tercatat,
+     * sehingga frontend boleh mengirim ulang tanpa mengubah riwayat pengguna.
+     */
+    public function completeOnboarding(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->onboarding_completed_at === null) {
+            $user->forceFill(['onboarding_completed_at' => now()])->save();
+        }
+
+        return response()->json($this->profile($user->refresh()));
+    }
+
+    /**
      * Mengganti kata sandi setelah kata sandi lama diperiksa.
      *
      * Kata sandi tidak pernah dikembalikan di respons; klien hanya menerima pesan
@@ -169,6 +186,9 @@ class AuthController extends Controller
             'phone' => $user->phone,
             'property_type' => $user->property_type,
             'location' => $user->location,
+            // Waktu onboarding menentukan apakah frontend perlu menampilkan alurnya lagi.
+            'onboarding_completed_at' => $user->onboarding_completed_at?->toIso8601String(),
+            'avatar_url' => $user->avatar_url,
         ];
     }
 }
