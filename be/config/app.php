@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Alamat Frontend
+    |--------------------------------------------------------------------------
+    |
+    | Dipakai untuk mengalihkan pengguna kembali ke aplikasi Next.js setelah login
+    | Google. Dipisahkan dari `url` karena API dan frontend berjalan di origin
+    | berbeda, dan token dikirim ke origin frontend, bukan ke origin API.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

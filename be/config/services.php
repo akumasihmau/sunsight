@@ -81,4 +81,21 @@ return [
         'viewbox' => [106.7200, -6.6800, 106.8800, -6.5100],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Login Google (OAuth 2.0)
+    |--------------------------------------------------------------------------
+    |
+    | Kredensial aplikasi OAuth dari Google Cloud Console. `redirect` harus sama
+    | persis dengan URI yang didaftarkan di console, karena Google menolak
+    | pengalihan ke alamat lain. Nilai bawaannya diturunkan dari `APP_URL` supaya
+    | pengembangan lokal tidak perlu mengisi variabel tambahan.
+    |
+    */
+
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/api/auth/google-callback'),
+    ],
 ];
