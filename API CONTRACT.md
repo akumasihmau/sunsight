@@ -290,6 +290,42 @@ sehingga layanan model yang dipanggil harus berjalan tanpa kunci — hanya untuk
 Rute `GET /health` dan `GET /ready` milik layanan model tidak memeriksa kunci karena dipakai
 healthcheck container dan polling deploy.
 
+### `POST /captures`
+
+Mencatat acuan tangkapan **tanpa menjalankan model**. Dipakai ketika pengguna menggambar bidang sendiri:
+simpan simulasi tetap membutuhkan `image_id` untuk mengubah poligon layar menjadi meter, dan sebelumnya
+satu-satunya sumber `image_id` adalah deteksi — sehingga proyek tidak bisa disimpan tanpa memindai atap.
+
+Payload sama dengan bagian georeferensi `POST /roof-detections`, hanya tanpa `file`:
+
+| Field | Tipe | Aturan |
+| :---- | :---- | :---- |
+| `bbox` | string JSON | wajib; `"[minLng, minLat, maxLng, maxLat]"`; aturan sama dengan deteksi |
+| `width` | integer | wajib; 64 s.d. 4096 |
+| `height` | integer | wajib; 64 s.d. 4096 |
+| `zoom` | integer | opsional; 15 s.d. 22 |
+
+```json
+// 201 Created
+{
+  "image_id": "c1a9e7d2-4f3b-4a2e-9b1c-8d7e6f5a4b3c",
+  "image": {
+    "width": 1280,
+    "height": 720,
+    "bbox": [106.8130, -6.6120, 106.8174, -6.6091],
+    "meters_per_pixel": 0.2966,
+    "zoom": 19
+  }
+}
+```
+
+Aturan yang mengikat:
+
+- Tidak ada berkas citra yang disimpan; yang tercatat hanya batas, ukuran, zoom, dan skala.
+- `meters_per_pixel` dihitung server dari `bbox` dan ukuran, tidak diterima dari klien.
+- `422` bila `bbox` tidak konsisten dengan `width`/`height`, urutannya salah, atau rentang lintang > 0.05°.
+- `image_id` dari endpoint ini sah dipakai `POST /simulate` dan `POST /analyses` seperti hasil deteksi.
+
 ## 6. Simulasi
 
 Satu simulasi memuat **satu atau lebih bidang atap**. Setiap bidang punya geometri, masukan, dan hasilnya
@@ -656,6 +692,7 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
 | `/location` | POST | Bearer | `200` |
 | `/options` | GET | Bearer | `200` |
 | `/roof-detections` | POST | Bearer | `200` |
+| `/captures` | POST | Bearer | `201` |
 | `/geocode` | GET | Bearer | `200` |
 | `/simulate` | POST | Bearer | `200` |
 | `/analyses` | GET | Bearer | `200` |
