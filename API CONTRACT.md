@@ -148,9 +148,15 @@ Field: `email`, `password`, `password_confirmation`, `token`.
   "email": "rafid@example.com",
   "phone": "081200000000",
   "property_type": "residential",
-  "location": "Kota Bogor, Jawa Barat"
+  "location": "Kota Bogor, Jawa Barat",
+  "onboarding_completed_at": "2026-11-13T15:43:15+00:00",
+  "avatar_url": null
 }
 ```
+
+`onboarding_completed_at` bernilai `null` selama pengguna belum menyelesaikan onboarding, dan
+`avatar_url` hanya terisi untuk akun yang masuk lewat Google. Nilai `google_id` tidak pernah
+dikirim ke klien.
 
 ### `PATCH /user`
 
@@ -180,6 +186,35 @@ Respons `200` memakai bentuk `GET /user`. Email yang sudah dipakai menghasilkan 
 ```
 
 Kata sandi lama yang salah menghasilkan `422` pada field `current_password`.
+
+### `POST /onboarding/complete`
+
+Menandai onboarding akun selesai. Idempoten: pemanggilan berikutnya tidak mengubah timestamp
+yang sudah tercatat.
+
+```json
+// 200 OK — bentuk sama dengan GET /user
+{ "id": 1, "name": "Rafid", "email": "rafid@example.com", "onboarding_completed_at": "2026-11-13T15:43:15+00:00" }
+```
+
+### Login Google (OAuth 2.0)
+
+Alur ini memakai pengalihan peramban, bukan JSON, karena Google harus menampilkan layar
+persetujuan.
+
+| Langkah | Endpoint | Perilaku |
+| :---- | :---- | :---- |
+| 1 | `GET /auth/google/redirect` | `302` ke `accounts.google.com` beserta `state` yang disimpan di sesi |
+| 2 | `GET /api/auth/google-callback` | Dipanggil Google; menautkan atau membuat akun, lalu `302` ke `${FRONTEND_URL}/auth/callback#token=<token>&onboarded=<0|1>` |
+
+Jalur callback tidak bebas dipilih: Google hanya menerima `redirect_uri` yang terdaftar persis,
+yaitu `http://localhost:8000/api/auth/google-callback` untuk pengembangan. Kredensial dan URI
+diatur lewat `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, dan `FRONTEND_URL`.
+
+Token dikirim sebagai fragment URL, bukan query maupun badan JSON, supaya tidak tercatat di log
+server atau header `Referer`. Akun dengan email yang sudah terdaftar ditautkan, bukan
+diduplikasi. Kegagalan pengalihan menghasilkan `302` ke `${FRONTEND_URL}/login?error=<alasan>`
+dengan alasan `google_failed` atau `google_email_missing`.
 
 ## 4. Lokasi dan Citra (tidak dipakai studio)
 
