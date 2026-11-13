@@ -4,40 +4,58 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
+import { isOnboardedFor, markOnboardingComplete, syncOnboardingToServer } from "@/lib/onboarding";
 import { getStoredBiodata } from "@/lib/profile";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [userName, setUserName] = useState("Kawan Surya");
   const [isMounted, setIsMounted] = useState(false);
+  // Selama status belum terbaca, kartu pilihan tidak dirender supaya pengguna
+  // yang sudah pernah onboarding tidak sempat melihatnya sekilas.
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
     const biodata = getStoredBiodata();
+
+    if (isOnboardedFor(biodata?.email ?? null)) {
+      router.replace("/");
+      return;
+    }
+
+    setIsMounted(true);
+    setIsReady(true);
+
     if (biodata?.name && biodata.name.trim()) {
       setUserName(biodata.name.trim().split(" ")[0]);
     }
-  }, []);
+  }, [router]);
 
   // Belum pernah: Simpan status & arahkan ke Beranda dengan tur panduan aktif
   const handleChooseNewUser = () => {
+    markOnboardingComplete(getStoredBiodata()?.email ?? null);
     if (typeof window !== "undefined") {
-      localStorage.setItem("sunsight_onboarding_completed", "true");
       localStorage.setItem("sunsight_tour_pending", "true");
       localStorage.removeItem("sunsight_tour_completed");
     }
+    void syncOnboardingToServer();
     router.push("/?tour=dashboard");
   };
 
   // Sudah pernah: Simpan status & langsung masuk ke Beranda tanpa panduan
   const handleChooseExperiencedUser = () => {
+    markOnboardingComplete(getStoredBiodata()?.email ?? null);
     if (typeof window !== "undefined") {
-      localStorage.setItem("sunsight_onboarding_completed", "true");
       localStorage.setItem("sunsight_tour_completed", "true");
       localStorage.removeItem("sunsight_tour_pending");
     }
+    void syncOnboardingToServer();
     router.push("/");
   };
+
+  if (!isReady) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F5] relative flex flex-col justify-between overflow-hidden text-slate-800">

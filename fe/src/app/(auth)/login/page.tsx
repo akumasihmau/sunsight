@@ -6,12 +6,13 @@ import { useRef, useState, type FormEvent } from "react";
 
 import { AuthAlert } from "@/components/auth/AuthAlert";
 import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
-import { api, setToken } from "@/lib/api";
+import { api, googleAuthUrl, setToken } from "@/lib/api";
 import {
   parseAuthError,
   validateEmail,
   type AuthAlertData,
 } from "@/lib/auth-errors";
+import { isOnboardedFor, markOnboardingComplete } from "@/lib/onboarding";
 import { getStoredBiodata, saveStoredBiodata, useHasToken, useStoredBiodata } from "@/lib/profile";
 
 export default function LoginPage() {
@@ -106,7 +107,18 @@ export default function LoginPage() {
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("redirect") || "/"
           : "/";
-      router.push(redirectTarget);
+
+      // Status onboarding milik akun, bukan milik peramban: server menyimpan
+      // `onboarding_completed_at`, jadi akun lama tidak di-onboard ulang di perangkat
+      // baru. Penanda lokal hanya dipakai bila server belum punya catatannya.
+      const alreadyOnboarded =
+        result.user.onboarding_completed_at !== null || isOnboardedFor(result.user.email);
+
+      if (result.user.onboarding_completed_at !== null) {
+        markOnboardingComplete(result.user.email);
+      }
+
+      router.push(alreadyOnboarded ? redirectTarget : "/onboarding");
     } catch (caught) {
       const parsed = parseAuthError(caught, "login");
       setAlert(parsed.alert);
@@ -303,36 +315,10 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setAlert(null);
-              try {
-                const result = await api.login({ email: "demo.user@sunsight.id", password: "demo" });
-                setToken(result.token);
-                const existingBio = getStoredBiodata();
-                saveStoredBiodata({
-                  name: "Pengguna Google Demo",
-                  email: "demo.user@sunsight.id",
-                  phone: existingBio?.phone || "08123456789",
-                  propertyType: existingBio?.propertyType || "residential",
-                  location: existingBio?.location || "Menteng, Jakarta Pusat",
-                });
-                const redirectTarget =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("redirect") || "/"
-          : "/";
-      router.push(redirectTarget);
-              } catch (caught) {
-                const parsed = parseAuthError(caught, "login");
-                setAlert(parsed.alert);
-              } finally {
-                setBusy(false);
-              }
-            }}
-            className="w-full py-2.5 px-4 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-[0.99] text-slate-700 font-title font-semibold text-xs transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60 shadow-2xs"
+          {/* Navigasi penuh ke backend: alur OAuth tidak boleh lewat router klien. */}
+          <a
+            href={googleAuthUrl()}
+            className="w-full py-2.5 px-4 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-[0.99] text-slate-700 font-title font-semibold text-xs transition flex items-center justify-center gap-2.5 cursor-pointer shadow-2xs"
           >
             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
               <path
@@ -352,8 +338,8 @@ export default function LoginPage() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Masuk Cepat dengan Akun Google (Demo)</span>
-          </button>
+            <span>Masuk dengan Google</span>
+          </a>
         </div>
       </form>
     </AuthSplitShell>

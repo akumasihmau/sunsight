@@ -20,6 +20,17 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/a
  */
 export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
+/**
+ * URL awal alur OAuth Google.
+ *
+ * Rute ini berada di origin backend, bukan di bawah prefiks `/api`, jadi akhiran
+ * `/api` dibuang lebih dulu. Backend yang mengarahkan balik ke halaman
+ * `/auth/callback` dengan token di fragment URL.
+ */
+export function googleAuthUrl(): string {
+  return `${API_BASE_URL.replace(/\/api\/?$/, "")}/auth/google/redirect`;
+}
+
 const TOKEN_STORAGE_KEY = "sunsight.token";
 
 export type FieldErrors = Record<string, string[]>;
@@ -31,6 +42,9 @@ export type User = {
   phone: string | null;
   property_type: string | null;
   location: string | null;
+  /** Waktu server mencatat onboarding selesai; `null` berarti belum pernah. */
+  onboarding_completed_at: string | null;
+  avatar_url: string | null;
 };
 
 export type AuthResponse = { token: string; user: User };
@@ -589,6 +603,13 @@ export const api = {
       : apiRequest<{ message: string }>("/reset-password", { method: "POST", body }),
 
   currentUser: () => (USE_MOCK ? mockApi.currentUser() : apiRequest<User>("/user")),
+
+  /**
+   * Menandai onboarding selesai di server. Tanpa `USE_MOCK`, responsnya adalah
+   * profil terbaru sehingga pemanggil dapat memakai `onboarding_completed_at`.
+   */
+  completeOnboarding: () =>
+    USE_MOCK ? mockApi.completeOnboarding() : apiRequest<User>("/onboarding/complete", { method: "POST" }),
 
   fetchLocation: (body: { lat: number; lng: number; zoom: number }) =>
     USE_MOCK

@@ -675,6 +675,21 @@ function saveSimulations(list: SimulationDetail[]): void {
   window.localStorage.setItem(STORAGE_SIMULATIONS_KEY, JSON.stringify(list));
 }
 
+/**
+ * Profil contoh untuk mode mock. Dipakai `currentUser` dan `completeOnboarding`
+ * supaya bentuk objeknya tidak ditulis ulang di dua tempat.
+ */
+const MOCK_USER: User = {
+  id: 1,
+  name: "Pengguna SunSight",
+  email: "user@sunsight.id",
+  phone: null,
+  property_type: null,
+  location: null,
+  onboarding_completed_at: null,
+  avatar_url: null,
+};
+
 export const mockApi = {
   login: async (body: { email: string; password: string }): Promise<AuthResponse> => {
     if (body.password === "salah" || body.password === "wrong") {
@@ -691,6 +706,8 @@ export const mockApi = {
         phone: null,
         property_type: null,
         location: null,
+        onboarding_completed_at: null,
+        avatar_url: null,
       },
     };
   },
@@ -710,6 +727,8 @@ export const mockApi = {
         phone: null,
         property_type: null,
         location: null,
+        onboarding_completed_at: null,
+        avatar_url: null,
       },
     };
   },
@@ -731,16 +750,17 @@ export const mockApi = {
     return { message: "Password berhasil diperbarui (mock)." };
   },
 
-  currentUser: async (): Promise<User> => {
-    return {
-      id: 1,
-      name: "Pengguna SunSight",
-      email: "user@sunsight.id",
-      phone: null,
-      property_type: null,
-      location: null,
-    };
-  },
+  currentUser: async (): Promise<User> => ({ ...MOCK_USER }),
+
+  /**
+   * Menirukan `POST /onboarding/complete`: profil yang sama dengan
+   * `onboarding_completed_at` terisi. Nilainya tidak disimpan karena mode mock
+   * tidak punya penyimpanan server.
+   */
+  completeOnboarding: async (): Promise<User> => ({
+    ...MOCK_USER,
+    onboarding_completed_at: new Date().toISOString(),
+  }),
 
   fetchLocation: async (body: { lat: number; lng: number; zoom: number }): Promise<Imagery> => {
     return {
@@ -925,6 +945,8 @@ export const mockApi = {
     phone: body.phone ?? null,
     property_type: body.property_type ?? null,
     location: body.location ?? null,
+    onboarding_completed_at: MOCK_USER.onboarding_completed_at,
+    avatar_url: MOCK_USER.avatar_url,
   }),
 
   changePassword: async (): Promise<{ message: string }> => ({
