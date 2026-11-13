@@ -31,6 +31,7 @@ import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/pro
 import {
   RECOMMENDED_MAX_FOOTPRINT_M,
   RECOMMENDED_MIN_FOOTPRINT_M,
+  captureGeometry,
   captureMapForDetection,
 } from "@/lib/roofCapture";
 
@@ -110,6 +111,8 @@ interface VertexDragState {
   initOy: number;
   initLat?: number;
   initLng?: number;
+  /** Rotasi bidang yang sedang diedit, dibekukan agar tidak bergantung pada facet aktif. */
+  rotation: number;
 }
 
 const MODULE_SPECS: Record<
@@ -1404,6 +1407,19 @@ function StudioPageContent() {
   }, [activeFacetId]);
 
   /**
+   * Sama seperti `updateActiveFacet`, tetapi menunjuk bidang lewat id.
+   *
+   * Dipakai saat menggeser simpul: bidang yang diseret belum tentu bidang aktif pada
+   * render pertama sesudah mousedown, jadi menulis ke "yang aktif" dapat mengubah
+   * bentuk bidang lain.
+   */
+  const updateFacetById = useCallback((facetId: string, patch: Partial<RoofFacet>) => {
+    setServerMetrics(null);
+    setServerDetail(null);
+    setFacets((prev) => prev.map((f) => (f.id === facetId ? { ...f, ...patch } : f)));
+  }, []);
+
+  /**
    * Normalizes raw polygon vertices (meters, facet-local frame) so they are centered on the facet
    * anchor, and shifts the anchor (lat/lng + offsets) by the same amount so the polygon never jumps.
    * ridge/slope always equal the true bounding box of the vertices.
@@ -1909,6 +1925,7 @@ function StudioPageContent() {
         initOy: facet.offsetY,
         initLat: facet.lat,
         initLng: facet.lng,
+        rotation: facet.rotation,
       });
     },
     [facets, activeFacet]
@@ -1938,17 +1955,34 @@ function StudioPageContent() {
   );
 
   const deleteVertex = useCallback(
-    (vertexIdx: number) => {
-      const currentVertices = getFacetVertices(activeFacet);
+    (vertexIdx: number, facetId?: string) => {
+      // Handle simpul dapat berada di bidang yang dipilih tetapi bukan bidang aktif,
+      // jadi penghapusan menunjuk bidang lewat id bila pemanggilnya tahu.
+      const target =
+        facetId === undefined
+          ? activeFacet
+          : facets.find((facet) => facet.id === facetId) ?? activeFacet;
+      const currentVertices = getFacetVertices(target);
+
       if (currentVertices.length <= 3) {
         showToast("Minimal poligon harus memiliki 3 simpul!");
         return;
       }
-      const newVertices = currentVertices.filter((_, i) => i !== vertexIdx);
-      updateActiveFacet({ ...buildPolygonPatch(newVertices, activeFacet), slotOverrides: {} });
-      showToast(`🗑️ Simpul #${vertexIdx + 1} dihapus (${newVertices.length} titik tersisa)`);
+
+      const patch = {
+        ...buildPolygonPatch(currentVertices.filter((_, i) => i !== vertexIdx), target),
+        slotOverrides: {},
+      };
+
+      if (facetId === undefined) {
+        updateActiveFacet(patch);
+      } else {
+        updateFacetById(facetId, patch);
+      }
+
+      showToast(`🗑️ Simpul #${vertexIdx + 1} dihapus (${currentVertices.length - 1} titik tersisa)`);
     },
-    [activeFacet, updateActiveFacet, showToast, buildPolygonPatch]
+    [activeFacet, facets, updateActiveFacet, updateFacetById, showToast, buildPolygonPatch]
   );
 
   const deleteLastVertex = useCallback(() => {
@@ -3024,12 +3058,44 @@ function StudioPageContent() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const handleSaveSimulation = async () => {
-    if (detection === null) {
-      showToast("Pindai bidang atap terlebih dahulu supaya bidang punya acuan tangkapan.");
-      return;
+    // Bidang boleh digambar sendiri tanpa memindai atap. Simpan tetap membutuhkan
+    // acuan tangkapan untuk mengubah poligon layar menjadi meter, jadi acuan itu
+    // dicatat dari tampilan peta saat ini lewat `POST /captures` — tanpa model dan
+    // tanpa menunggu ubin satelit selesai dimuat.
+    let activeDetection = detection;
+
+    if (activeDetection === null) {
+      const map = mapInstanceRef.current;
+
+      if (!map) {
+        showToast("Peta belum siap. Tunggu peta selesai dimuat, lalu simpan lagi.");
+        return;
+      }
+
+      try {
+        const geometry = captureGeometry(map);
+        const registration = await api.registerCapture(geometry);
+
+        activeDetection = {
+          image_id: registration.image_id,
+          detection_id: `capture-${registration.image_id}`,
+          model: { name: "manual", version: "" },
+          image: registration.image,
+          roofs: [],
+        };
+
+        setDetection(activeDetection);
+      } catch (caught) {
+        showToast(
+          caught instanceof Error
+            ? caught.message
+            : "Acuan tangkapan gagal dibuat. Geser peta sedikit, lalu simpan lagi."
+        );
+        return;
+      }
     }
 
-    const image = detection.image;
+    const image = activeDetection.image;
 
     // Bidang yang tersimpan adalah yang dicentang; bila tidak ada yang dicentang,
     // bidang yang sedang aktif saja.
@@ -3110,12 +3176,12 @@ function StudioPageContent() {
     }
 
     if (roofs.length === 0) {
-      showToast("Tidak ada bidang di dalam area tangkapan terakhir. Pindai ulang area ini.");
+      showToast("Tidak ada bidang di dalam area tangkapan. Geser peta ke atas atap, lalu simpan lagi.");
       return;
     }
 
     const payload: SimulationRequest = {
-      image_id: detection.image_id,
+      image_id: activeDetection.image_id,
       address: addressInput.trim() === "" ? null : addressInput.trim(),
       roofs,
       inverter_type: inverterType,
@@ -3478,7 +3544,7 @@ function StudioPageContent() {
         rafRef.current = null;
         const dx = clientX - vertexDragState.startX;
         const dy = clientY - vertexDragState.startY;
-        const rotRad = (-activeFacet.rotation * Math.PI) / 180;
+        const rotRad = (-vertexDragState.rotation * Math.PI) / 180;
         const localDx = (dx * Math.cos(rotRad) - dy * Math.sin(rotRad)) / pixelsPerMeter;
         const localDy = (dx * Math.sin(rotRad) + dy * Math.cos(rotRad)) / pixelsPerMeter;
 
@@ -3497,10 +3563,10 @@ function StudioPageContent() {
           lng: vertexDragState.initLng,
           offsetX: vertexDragState.initOx,
           offsetY: vertexDragState.initOy,
-          rotation: activeFacet.rotation,
+          rotation: vertexDragState.rotation,
         });
 
-        updateActiveFacet(patch);
+        updateFacetById(vertexDragState.facetId, patch);
       });
       return;
     }
@@ -5153,6 +5219,49 @@ function StudioPageContent() {
                           />
                         );
                       })()}
+
+                      {/*
+                        Simpul poligon yang dapat digeser. Handle hanya muncul pada
+                        mode Edit Simpul dan bidang yang dipilih, supaya tidak
+                        menghalangi klik-geser seluruh bidang di mode lain.
+                        Drag memakai `startVertexDrag`, yang mengubah satu titik di
+                        ruang lokal bidang sehingga rotasi bidang tetap dihormati.
+                      */}
+                      {cadTool === "edit_polygon" && (isSelected || isActive) && (
+                        <g className="pointer-events-auto">
+                          {facetVerts.map((vertex, vertexIdx) => {
+                            const cx = polyWidth / 2 + vertex.x * pixelsPerMeter;
+                            const cy = polyHeight / 2 + vertex.y * pixelsPerMeter;
+
+                            return (
+                              <g key={`vertex-${facet.id}-${vertexIdx}`}>
+                                <circle
+                                  cx={cx}
+                                  cy={cy}
+                                  r={9}
+                                  fill="transparent"
+                                  style={{ cursor: "grab" }}
+                                  onMouseDown={(e) => startVertexDrag(e, facet.id, vertexIdx)}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteVertex(vertexIdx, facet.id);
+                                  }}
+                                />
+                                <circle
+                                  cx={cx}
+                                  cy={cy}
+                                  r={5}
+                                  fill="#ffffff"
+                                  stroke={isActive ? "#0284c7" : "#f59e0b"}
+                                  strokeWidth={2.5}
+                                  style={{ cursor: "grab" }}
+                                  className="pointer-events-none"
+                                />
+                              </g>
+                            );
+                          })}
+                        </g>
+                      )}
                     </svg>
 
                     {/* Top Ridge Tag (Scaled cleanly without clutter - rectangular roofs only) */}

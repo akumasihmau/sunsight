@@ -1,6 +1,7 @@
 import {
   ApiRequestError,
   type AuthResponse,
+  type CaptureRegistration,
   type CapturedImage,
   type DetectedRoof,
   type Imagery,
@@ -791,6 +792,29 @@ export const mockApi = {
       image,
       roofs,
     };
+  },
+
+  /**
+   * Menirukan `POST /captures`: hanya mendaftarkan acuan tangkapan, tanpa bidang.
+   * Bidang yang digambar pengguna disimpan berdasarkan acuan ini.
+   */
+  registerCapture: async (body: {
+    bbox: [number, number, number, number];
+    width: number;
+    height: number;
+    zoom?: number;
+  }): Promise<CaptureRegistration> => {
+    const image: CapturedImage = {
+      width: body.width,
+      height: body.height,
+      bbox: body.bbox,
+      meters_per_pixel: ((body.bbox[3] - body.bbox[1]) * 110574) / body.height,
+      zoom: body.zoom ?? null,
+    };
+    const imageId = createImageId();
+    detectionImages.set(imageId, image);
+
+    return { image_id: imageId, image };
   },
 
   saveSimulation: async (body: SimulationRequest): Promise<SimulationDetail> => {

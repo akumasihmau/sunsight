@@ -94,6 +94,17 @@ export type RoofDetectionResponse = {
   roofs: DetectedRoof[];
 };
 
+/**
+ * Respons `POST /captures`: acuan tangkapan tanpa hasil model.
+ *
+ * Dipakai saat pengguna menggambar bidang sendiri: simpan simulasi tetap butuh
+ * `image_id` untuk mengubah poligon layar menjadi meter.
+ */
+export type CaptureRegistration = {
+  image_id: string;
+  image: CapturedImage;
+};
+
 export type ModulePreset = {
   key: string;
   label: string;
@@ -619,6 +630,31 @@ export const api = {
 
     return apiUpload<RoofDetectionResponse>("/roof-detections", form);
   },
+
+  /**
+   * Mencatat batas tampilan peta tanpa berkas citra dan tanpa memanggil model.
+   *
+   * Bidang yang digambar sendiri tidak punya hasil deteksi, tetapi simpan tetap
+   * membutuhkan acuan tangkapan. Endpoint ini menulis acuan itu; bentuk payload-nya
+   * sama dengan bagian georeferensi `POST /roof-detections`.
+   */
+  registerCapture: (body: {
+    bbox: BoundingBox;
+    width: number;
+    height: number;
+    zoom?: number;
+  }) =>
+    USE_MOCK
+      ? mockApi.registerCapture(body)
+      : apiRequest<CaptureRegistration>("/captures", {
+          method: "POST",
+          body: {
+            bbox: JSON.stringify(body.bbox),
+            width: body.width,
+            height: body.height,
+            ...(body.zoom === undefined ? {} : { zoom: body.zoom }),
+          },
+        }),
 
   /**
    * Pencarian alamat. Mode mock memakai daftar contoh supaya alur studio dapat

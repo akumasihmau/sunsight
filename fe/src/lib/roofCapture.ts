@@ -428,3 +428,50 @@ export async function captureMapForDetection(
 
   return { blob, width, height, bbox, zoom, footprintM };
 }
+
+/** Geometri tampilan peta, tanpa berkas citra dan tanpa menunggu ubin. */
+export type CaptureGeometry = {
+  /** Urutan selalu `[minLng, minLat, maxLng, maxLat]`. */
+  bbox: BoundingBox;
+  width: number;
+  height: number;
+  zoom: number;
+};
+
+/**
+ * Angka georeferensi yang sama dengan `captureMapForDetection`, tanpa menggambar ubin.
+ *
+ * Dipakai saat pengguna menyimpan proyek yang bidangnya digambar sendiri: server tetap
+ * butuh batas tangkapan untuk mengubah poligon layar menjadi meter, tetapi tidak ada
+ * model yang dijalankan sehingga menunggu ubin selesai dimuat hanya memperlambat tanpa
+ * mengubah hasil. Skala dan pemotongan ukuran sengaja identik dengan alur deteksi agar
+ * luas kedua alur sebanding.
+ */
+export function captureGeometry(map: MapLike): CaptureGeometry {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    throw new Error(CAPTURE_NOT_READY_ERROR);
+  }
+
+  if (typeof map?.getContainer !== "function") {
+    throw new Error(CAPTURE_NOT_READY_ERROR);
+  }
+
+  const size = map.getSize();
+  const availW = Math.round(size.x);
+  const availH = Math.round(size.y);
+
+  if (Math.min(availW, availH) < MIN_CAPTURE_SIDE_PX) {
+    throw new Error(CAPTURE_TOO_SMALL_ERROR);
+  }
+
+  const scale = Math.min(1, MAX_CAPTURE_SIDE_PX / Math.max(availW, availH));
+  const topLeft = map.containerPointToLatLng({ x: 0, y: 0 });
+  const bottomRight = map.containerPointToLatLng({ x: availW, y: availH });
+
+  return {
+    width: Math.max(1, Math.round(availW * scale)),
+    height: Math.max(1, Math.round(availH * scale)),
+    bbox: [topLeft.lng, bottomRight.lat, bottomRight.lng, topLeft.lat],
+    zoom: Math.round(map.getZoom()),
+  };
+}
