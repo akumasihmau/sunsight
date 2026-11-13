@@ -827,6 +827,13 @@ input:focus, textarea:focus, select:focus, button:focus {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
+  /* Overlay dev server Next.js (portal/toast) bukan bagian dokumen, jangan ikut tercetak */
+  body > nextjs-portal,
+  [data-nextjs-toast],
+  [data-nextjs-dev-tools-button] {
+    display: none !important;
+  }
 }
 
 

@@ -1127,13 +1127,13 @@ function HomePageContent() {
   return (
     <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-900 font-sans antialiased relative overflow-hidden">
       {/* Ambient soft glow radiant kuning & aksen biru */}
-      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" data-print-hide="true">
         <div className="absolute -top-36 left-1/4 w-[560px] h-[560px] rounded-full bg-gradient-to-br from-amber-300/35 via-yellow-200/25 to-transparent blur-[130px]" />
         <div className="absolute top-1/4 -right-24 w-[520px] h-[520px] rounded-full bg-gradient-to-bl from-sky-300/30 via-cyan-100/20 to-transparent blur-[140px]" />
         <div className="absolute bottom-12 left-10 w-[480px] h-[480px] rounded-full bg-gradient-to-tr from-amber-200/30 via-sky-200/20 to-transparent blur-[130px]" />
       </div>
 
-      <div className="relative z-10 max-w-[1400px] mx-auto px-3 sm:px-5 pb-8">
+      <div className="relative z-10 max-w-[1400px] mx-auto px-3 sm:px-5 pb-8" data-print-hide="true">
         {/* =======================================================
             TOP NAVIGATION (logo, search, pill tabs, profile)
             ======================================================= */}
@@ -2210,7 +2210,7 @@ function HomePageContent() {
           5. INTERACTIVE MAP PICKER MODAL (Pilih Titik di Peta)
           ======================================================= */}
       {mapPickerOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4" data-print-hide="true">
           <div
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-fadeIn"
             onClick={() => setMapPickerOpen(false)}
@@ -2335,7 +2335,7 @@ function HomePageContent() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-white/95 backdrop-blur-xl text-slate-900 text-xs font-bold shadow-[0_12px_36px_rgba(245,158,11,0.2)] flex items-center gap-2.5 border border-amber-300 animate-fadeIn">
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-white/95 backdrop-blur-xl text-slate-900 text-xs font-bold shadow-[0_12px_36px_rgba(245,158,11,0.2)] flex items-center gap-2.5 border border-amber-300 animate-fadeIn" data-print-hide="true">
           <span className="material-symbols-outlined text-[19px] text-amber-600">check_circle</span>
           <span>{toastMessage}</span>
         </div>
@@ -2346,6 +2346,7 @@ function HomePageContent() {
         <div
           className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
           onClick={() => setActivePillarModal(null)}
+          data-print-hide="true"
         >
           <div
             className="bg-white rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh] animate-scaleUp"
@@ -2620,11 +2621,13 @@ function HomePageContent() {
       )}
 
       {/* Interactive Mascot Dashboard Tour (Sunny) */}
-      <MascotDashboardTour
-        forceOpen={tourOpen}
-        onClose={() => setTourOpen(false)}
-        onSwitchTab={handleTourSwitchTab}
-      />
+      <div data-print-hide="true">
+        <MascotDashboardTour
+          forceOpen={tourOpen}
+          onClose={() => setTourOpen(false)}
+          onSwitchTab={handleTourSwitchTab}
+        />
+      </div>
 
       {/* Proposal PDF Modal — hanya dirender setelah rincian tersimpan termuat */}
       {proposalLoading && (
