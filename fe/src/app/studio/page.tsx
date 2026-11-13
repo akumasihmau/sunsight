@@ -1435,6 +1435,37 @@ function StudioPageContent() {
   }, []);
 
   /**
+   * Membuat strip daftar bidang dapat digulir mendatar dengan roda tetikus.
+   *
+   * Strip-nya memang `overflow-x-auto`, tetapi roda tetikus hanya mengirim `deltaY`,
+   * sehingga daftar tidak bergerak sama sekali ketika bidangnya melebihi lebar panel
+   * dan satu-satunya cara adalah menarik scrollbar setinggi enam piksel. Pendengar
+   * dipasang native karena React mendaftarkan `wheel` sebagai passive, dan
+   * `preventDefault` dari `onWheel` diabaikan.
+   */
+  const bindFacetStripScroll = useCallback((node: HTMLDivElement | null) => {
+    if (node === null) return;
+
+    node.addEventListener(
+      "wheel",
+      (event: WheelEvent) => {
+        if (node.scrollWidth <= node.clientWidth) return;
+
+        // Geseran mendatar dari trackpad dibiarkan apa adanya; roda tetikus yang
+        // hanya punya `deltaY` diterjemahkan menjadi gulir mendatar.
+        const delta =
+          Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+
+        if (delta === 0) return;
+
+        event.preventDefault();
+        node.scrollLeft += delta;
+      },
+      { passive: false }
+    );
+  }, []);
+
+  /**
    * Normalizes raw polygon vertices (meters, facet-local frame) so they are centered on the facet
    * anchor, and shifts the anchor (lat/lng + offsets) by the same amount so the polygon never jumps.
    * ridge/slope always equal the true bounding box of the vertices.
@@ -5304,7 +5335,11 @@ function StudioPageContent() {
                             const to = facetPoints[(edgeIdx + 1) % facetPoints.length];
                             const canDeleteEdge =
                               cadTool === "delete_vertex" && facetVerts.length > 3;
-                            const canAddVertex = cadTool === "edit_polygon";
+                            // Pen tool ikut menampilkan sisi dan simpul: pengguna sering
+                            // menggambar bidang baru tepat di sebelah bidang lama, dan
+                            // tanpa simpul yang terlihat ia tidak tahu batas bidang itu.
+                            const canAddVertex =
+                              cadTool === "edit_polygon" || cadTool === "pen";
                             const hoveredEdge =
                               edgeHover !== null &&
                               edgeHover.facetId === facet.id &&
@@ -5472,13 +5507,17 @@ function StudioPageContent() {
                       )}
 
                       {/*
-                        Simpul poligon. Pada mode Edit Simpul simpul diseret untuk
-                        mengubah bentuk; pada mode Hapus Simpul simpul tampil merah
-                        dan sekali klik menghapusnya. Drag memakai `startVertexDrag`,
-                        yang mengubah satu titik di ruang lokal bidang sehingga rotasi
-                        bidang tetap dihormati.
+                        Simpul poligon. Pada mode Edit Simpul dan Pen tool simpul
+                        diseret untuk mengubah bentuk — pengguna sering menggambar
+                        bidang baru di sebelah bidang lama, dan simpul yang terlihat
+                        memperjelas batas keduanya. Pada mode Hapus Simpul simpul
+                        tampil merah dan sekali klik menghapusnya. Drag memakai
+                        `startVertexDrag`, yang mengubah satu titik di ruang lokal
+                        bidang sehingga rotasi bidang tetap dihormati.
                       */}
-                      {(cadTool === "edit_polygon" || cadTool === "delete_vertex") &&
+                      {(cadTool === "edit_polygon" ||
+                        cadTool === "pen" ||
+                        cadTool === "delete_vertex") &&
                         (isSelected || isActive) && (
                         <g className="pointer-events-auto">
                           {facetPoints.map((point, vertexIdx) => {
@@ -6339,7 +6378,11 @@ function StudioPageContent() {
                     </div>
 
                     {/* Horizontal Pill Strip for Facets */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-0.5 scrollbar-none">
+                    <div
+                      ref={bindFacetStripScroll}
+                      tabIndex={0}
+                      className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 px-0.5 focus:outline-none"
+                    >
                       {facets.map((facet, idx) => {
                         const isSelected = selectedFacetIds.includes(facet.id);
                         const isActive = facet.id === activeFacetId;
