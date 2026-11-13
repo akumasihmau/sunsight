@@ -5112,17 +5112,18 @@ function StudioPageContent() {
               const styleLeft = screenPos ? `${screenPos.x}px` : `calc(50% + ${facet.offsetX}px)`;
               const styleTop = screenPos ? `${screenPos.y}px` : `calc(50% + ${facet.offsetY}px)`;
               const facetVerts = getFacetVertices(facet);
-              // Titik poligon dalam koordinat layar SVG, dipakai bersama oleh
-              // perimeter, sisi, dan handle simpul.
-              const facetPoints = facetVerts.map((vertex) => ({
-                x: polyWidth / 2 + vertex.x * pixelsPerMeter,
-                y: polyHeight / 2 + vertex.y * pixelsPerMeter,
-              }));
               const bounds = polygonBounds(facetVerts);
               const realRidge = Math.max(facet.ridge, bounds.width);
               const realSlope = Math.max(facet.slope, bounds.height);
               const polyWidth = Math.max(16, Math.round(realRidge * pixelsPerMeter));
               const polyHeight = Math.max(16, Math.round(realSlope * pixelsPerMeter));
+              // Titik poligon dalam koordinat layar SVG, dipakai bersama oleh
+              // perimeter, sisi, dan handle simpul. Harus setelah `polyWidth` dan
+              // `polyHeight` karena keduanya menjadi titik tengah bidang.
+              const facetPoints = facetVerts.map((vertex) => ({
+                x: polyWidth / 2 + vertex.x * pixelsPerMeter,
+                y: polyHeight / 2 + vertex.y * pixelsPerMeter,
+              }));
               const polyClipPath = `polygon(${facetVerts
                 .map(
                   (v) =>
