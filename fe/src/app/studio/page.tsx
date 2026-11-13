@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
+import { ConfirmDialog } from "@/components/studio/ConfirmDialog";
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { StudioMascotGuide } from "@/components/studio/StudioMascotGuide";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
@@ -33,11 +34,12 @@ import {
   RECOMMENDED_MIN_FOOTPRINT_M,
   captureGeometry,
   captureMapForDetection,
+  type CapturedMap,
 } from "@/lib/roofCapture";
 
 type CvLayer = "satellite" | "cv" | "heatmap";
 type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
-type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "add_polygon" | "add_obstacle" | "measure";
+type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "resize_edge" | "add_polygon" | "add_obstacle" | "measure";
 type Orientation = "portrait" | "landscape";
 type InverterType = "string" | "micro";
 type SlotState = "active" | "skylight" | "hvac" | "empty";
@@ -133,12 +135,14 @@ interface EdgeHoverState {
  * Tarikan pada satu sisi poligon.
  *
  * Satu sisi tidak punya titik sendiri, jadi menyeretnya menggeser kedua simpul ujungnya
- * dengan vektor yang sama. `insertAt` disimpan supaya tarikan yang berakhir tanpa
- * perpindahan (yaitu klik) tetap dapat menambah simpul di titik yang ditunjuk.
+ * dengan vektor yang sama. Dua mode berbagi gesture yang sama: `insert` menambah simpul
+ * bila tarikan berakhir tanpa perpindahan (yaitu klik), sedangkan `resize` hanya
+ * mengubah ukuran dan tidak menyisipkan apa pun.
  */
 interface EdgeDragState {
   facetId: string;
   edgeIdx: number;
+  mode: "insert" | "resize";
   startX: number;
   startY: number;
   initVertices: Point2D[];
@@ -228,6 +232,59 @@ const TARIFF_RATES_BY_KEY: Record<string, number> = {
   R2: 1700,
   B2: 1444.71,
 };
+
+/**
+ * Penanda "panduan studio sudah ditutup". Nilainya sengaja dibaca setelah hidrasi,
+ * bukan saat inisialisasi state: pra-render server tidak punya `localStorage`, dan
+ * membuka panduan hanya di klien membuat HTML hasil hidrasi berbeda dari kiriman server.
+ */
+const STUDIO_GUIDE_STORAGE_KEY = "sunsight_studio_tour_completed";
+
+/**
+ * Tanda tangan isi studio, dipakai mendeteksi perubahan yang belum tersimpan.
+ *
+ * Hanya field yang memengaruhi hasil simulasi yang ikut dihitung: memilih bidang atau
+ * membuka panel tidak mengubah apa pun yang akan dikirim ke server, jadi keduanya
+ * tidak boleh memicu peringatan keluar.
+ */
+function designSignatureOf(input: {
+  facets: RoofFacet[];
+  addressInput: string;
+  monthlyBill: number;
+  plnTariff: number;
+  inverterType: InverterType;
+  sunHour: number;
+  extraTilt: number;
+}): string {
+  return JSON.stringify({
+    facets: input.facets.map((facet) => ({
+      id: facet.id,
+      vertices: getFacetVertices(facet),
+      shape: facet.shape,
+      ridge: facet.ridge,
+      slope: facet.slope,
+      pitch: facet.pitch,
+      azimuth: facet.azimuth,
+      setback: facet.setback,
+      gutter: facet.gutter,
+      rotation: facet.rotation,
+      lat: facet.lat,
+      lng: facet.lng,
+      modulePower: facet.modulePower,
+      orientation: facet.orientation,
+      panelGap: facet.panelGap,
+      customModuleCount: facet.customModuleCount,
+      isSolarPopulated: facet.isSolarPopulated,
+      slotOverrides: facet.slotOverrides,
+    })),
+    addressInput: input.addressInput,
+    monthlyBill: input.monthlyBill,
+    plnTariff: input.plnTariff,
+    inverterType: input.inverterType,
+    sunHour: input.sunHour,
+    extraTilt: input.extraTilt,
+  });
+}
 
 const ECO_TREE_CONFIGS = [
   // --- Back Hill Layer (9 trees) ---
@@ -1284,7 +1341,6 @@ function StudioPageContent() {
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-
   // Layers & CAD Tools State
   const [activeLayer, setActiveLayer] = useState<CvLayer>("satellite");
   const [layerDrawerOpen, setLayerDrawerOpen] = useState(false);
@@ -1298,7 +1354,8 @@ function StudioPageContent() {
   const [activeTab, setActiveTab] = useState<"geometry" | "pvarray" | "financials">("geometry");
   const [capexCollapsed, setCapexCollapsed] = useState(true);
   const [proposalOpen, setProposalOpen] = useState(false);
-  const [mascotGuideOpen, setMascotGuideOpen] = useState(true);
+  // Panduan dibuka setelah hidrasi bila pengguna belum pernah menutupnya.
+  const [mascotGuideOpen, setMascotGuideOpen] = useState(false);
 
   // Address search input (Defaulted to Kota Bogor)
   const [addressInput, setAddressInput] = useState("Komp. Baranangsiang Indah Blok C, Bogor Timur, Kota Bogor");
@@ -1379,6 +1436,8 @@ function StudioPageContent() {
   const [showDetectedRoofs, setShowDetectedRoofs] = useState(false);
   const [isAiScanning, setIsAiScanning] = useState(false);
   const [selectionDone, setSelectionDone] = useState(false);
+  /** Tangkapan di luar cakupan terbaik yang menunggu persetujuan pengguna. */
+  const [scanConfirm, setScanConfirm] = useState<{ capture: CapturedMap } | null>(null);
 
   // Pratinjau tangkapan sebagai object URL; ditampilkan sebagai image overlay
   // pada bbox yang sama dengan yang dikirim ke model.
@@ -1819,89 +1878,84 @@ function StudioPageContent() {
    * Menjalankan deteksi sungguhan: menangkap area peta yang tampil, mengirimnya
    * ke `POST /roof-detections` sebagai multipart, lalu menyimpan bidang hasinya
    * untuk dipilih pengguna. Tidak ada kandidat karangan di jalur ini.
+   *
+   * Tangkapan yang cakupannya di luar rentang terbaik tidak langsung dikirim: hasil
+   * model menurun tajam di luar 180–230 m (`RECOMMENDED_MIN_FOOTPRINT_M`), jadi
+   * pengguna diberi pilihan lewat dialog. Tangkapan yang sudah dibuat disimpan di
+   * `scanConfirm` agar konfirmasi tidak mengulang pengambilan ubin.
    */
-  const runRoofDetection = useCallback(async () => {
-    const map = mapInstanceRef.current;
+  const runRoofDetection = useCallback(
+    async (confirmedCapture?: CapturedMap) => {
+      const map = mapInstanceRef.current;
 
-    if (!map) {
-      showToast("Peta belum siap. Tunggu sebentar, lalu pindai ulang.");
-      return;
-    }
+      if (!map && confirmedCapture === undefined) {
+        showToast("Peta belum siap. Tunggu sebentar, lalu pindai ulang.");
+        return;
+      }
 
-    setIsAiScanning(true);
-    setShowDetectedRoofs(false);
-    setSelectionDone(false);
-    setSelectedDetectedIds([]);
+      setIsAiScanning(true);
+      setShowDetectedRoofs(false);
+      setSelectionDone(false);
+      setSelectedDetectedIds([]);
 
-    try {
-      const capture = await captureMapForDetection(map, {
-        layer: esriSatelliteLayerRef.current,
-      });
+      try {
+        const capture = confirmedCapture ?? (await captureMapForDetection(map, {
+          layer: esriSatelliteLayerRef.current,
+        }));
 
-      // Cakupan yang tampil diperiksa, bukan dipaksakan: zoom tidak diubah, jadi
-      // pengguna yang memutuskan apakah area seluas ini masih layak dipindai.
-      if (
-        capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ||
-        capture.footprintM > RECOMMENDED_MAX_FOOTPRINT_M
-      ) {
-        // Cakupan di luar rentang bukan alasan menolak, tetapi hasilnya memang
-        // menurun tajam: pada 90 m model hanya menemukan satu bidang (confidence
-        // 0,45) sedangkan pada 150-300 m ditemukan 8-12 bidang (0,72-0,78).
-        // Karena itu pengguna diberi pilihan, bukan dipaksa.
-        const zoomHint =
-          capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
-            ? "Perkecil zoom peta (zoom keluar) agar atap lebih banyak terbaca."
-            : "Perbesar zoom peta agar atap terbaca lebih jelas.";
+        // Cakupan yang tampil diperiksa, bukan dipaksakan: zoom tidak diubah, jadi
+        // pengguna yang memutuskan apakah area seluas ini masih layak dipindai.
+        const footprintOutOfRange =
+          capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ||
+          capture.footprintM > RECOMMENDED_MAX_FOOTPRINT_M;
 
-        const proceed = window.confirm(
-          `Cakupan peta ${capture.footprintM} m. Hasil terbaik ada di sekitar ` +
-            `${RECOMMENDED_MIN_FOOTPRINT_M}-${RECOMMENDED_MAX_FOOTPRINT_M} m. ${zoomHint}\n\n` +
-            `Pindai tetap?`
-        );
-
-        if (!proceed) {
-          setIsAiScanning(false);
+        if (confirmedCapture === undefined && footprintOutOfRange) {
+          // Cakupan di luar rentang bukan alasan menolak, tetapi hasilnya memang
+          // menurun tajam: pada 90 m model hanya menemukan satu bidang (confidence
+          // 0,45) sedangkan pada 150-300 m ditemukan 8-12 bidang (0,72-0,78).
+          setScanConfirm({ capture });
           return;
         }
+
+        const response = await api.detectRoofs({
+          blob: capture.blob,
+          bbox: capture.bbox,
+          width: capture.width,
+          height: capture.height,
+          zoom: capture.zoom,
+        });
+
+        setDetection(response);
+        setDetectedRoofs(response.roofs);
+        setSelectedDetectedIds([]);
+        setShowDetectedRoofs(response.roofs.length > 0);
+
+        // Pratinjau di peta memakai bbox yang sama dengan yang dikirim ke model,
+        // supaya area yang dilihat pengguna identik dengan area yang dipindai.
+        revealCaptureArea(response.image.bbox);
+        setCapturePreviewUrl(URL.createObjectURL(capture.blob));
+
+        if (response.roofs.length === 0) {
+          showToast(
+            "Model tidak menemukan bidang atap di area ini. Geser peta ke atap lain, lalu pindai ulang."
+          );
+        } else {
+          showToast(
+            `${response.roofs.length} bidang atap terdeteksi. Klik bidang pada peta untuk memilih.`
+          );
+        }
+      } catch (caught) {
+        setDetection(null);
+        setDetectedRoofs([]);
+        setShowDetectedRoofs(false);
+        setCapturePreviewUrl(null);
+        showToast(detectionErrorMessage(caught));
+      } finally {
+        setIsAiScanning(false);
       }
-
-      const response = await api.detectRoofs({
-        blob: capture.blob,
-        bbox: capture.bbox,
-        width: capture.width,
-        height: capture.height,
-        zoom: capture.zoom,
-      });
-
-      setDetection(response);
-      setDetectedRoofs(response.roofs);
-      setSelectedDetectedIds([]);
-      setShowDetectedRoofs(response.roofs.length > 0);
-
-      // Pratinjau di peta memakai bbox yang sama dengan yang dikirim ke model,
-      // supaya area yang dilihat pengguna identik dengan area yang dipindai.
-      revealCaptureArea(response.image.bbox);
-      setCapturePreviewUrl(URL.createObjectURL(capture.blob));
-
-      if (response.roofs.length === 0) {
-        showToast(
-          "Model tidak menemukan bidang atap di area ini. Geser peta ke atap lain, lalu pindai ulang."
-        );
-      } else {
-        showToast(
-          `${response.roofs.length} bidang atap terdeteksi. Klik bidang pada peta untuk memilih.`
-        );
-      }
-    } catch (caught) {
-      setDetection(null);
-      setDetectedRoofs([]);
-      setShowDetectedRoofs(false);
-      setCapturePreviewUrl(null);
-      showToast(detectionErrorMessage(caught));
-    } finally {
-      setIsAiScanning(false);
-    }
-  }, [detectionErrorMessage, revealCaptureArea, showToast]);
+    },
+    [detectionErrorMessage, revealCaptureArea, showToast]
+  );
 
   const handleRunAiDetection = useCallback(() => {
     showToast("Menjalankan model AI untuk memindai kontur atap...");
@@ -2006,12 +2060,19 @@ function StudioPageContent() {
    * Memulai tarikan pada satu sisi poligon.
    *
    * Sisi tidak punya titik sendiri, jadi menyeretnya menggeser kedua simpul ujungnya
-   * dengan vektor yang sama: bentuk tetap, hanya bergeser. `insertAt` menyimpan titik
-   * di sisi yang ditunjuk saat mousedown, sehingga tarikan yang berakhir tanpa
-   * perpindahan (klik) tetap bisa dipakai menambah simpul.
+   * dengan vektor yang sama: panjang sisi tetap, tetapi karena simpul lain diam, luas
+   * bidang justru membesar atau mengecil ke arah tarikan. `insertAt` menyimpan titik di
+   * sisi yang ditunjuk saat mousedown, sehingga mode `insert` masih bisa menambah simpul
+   * ketika tarikan berakhir tanpa perpindahan (yaitu klik).
    */
   const startEdgeDrag = useCallback(
-    (e: ReactMouseEvent, facetId: string, edgeIdx: number, insertAt: Point2D) => {
+    (
+      e: ReactMouseEvent,
+      facetId: string,
+      edgeIdx: number,
+      insertAt: Point2D,
+      mode: EdgeDragState["mode"]
+    ) => {
       e.stopPropagation();
       e.preventDefault();
       setActiveFacetId(facetId);
@@ -2022,6 +2083,7 @@ function StudioPageContent() {
       setEdgeDragState({
         facetId,
         edgeIdx,
+        mode,
         startX: e.clientX,
         startY: e.clientY,
         initVertices: getFacetVertices(facet).map((v) => ({ ...v })),
@@ -2610,6 +2672,7 @@ function StudioPageContent() {
   useEffect(() => {
     setMounted(true);
     setBiodata(getStoredBiodata());
+    setMascotGuideOpen(window.localStorage.getItem(STUDIO_GUIDE_STORAGE_KEY) !== "true");
   }, []);
 
   const initials = useMemo(() => {
@@ -3372,6 +3435,17 @@ function StudioPageContent() {
           Math.round(res.result.annual_production_kwh).toLocaleString("id-ID")
         } kWh/tahun.${skippedNote}`
       );
+      // Rancangan yang baru saja dikirim ke server menjadi pembanding baru, sehingga
+      // perubahan berikutnya tetap terdeteksi sebagai belum tersimpan.
+      savedDesignSignatureRef.current = designSignatureOf({
+        facets,
+        addressInput,
+        monthlyBill,
+        plnTariff,
+        inverterType,
+        sunHour,
+        extraTilt,
+      });
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (caught) {
       showToast(
@@ -3385,6 +3459,77 @@ function StudioPageContent() {
       setIsSaving(false);
     }
   };
+
+
+  /*
+   * Rancangan dianggap berubah bila tanda tangannya berbeda dari tanda tangan saat
+   * terakhir dimuat atau disimpan. Membandingkan state secara dangkal tidak cukup:
+   * perubahan bisa terjadi pada salah satu dari puluhan bidang, dan membandingkan
+   * angka satu per satu akan menyalin seluruh logika penyimpanan.
+   *
+   * Tanda tangan dihitung saat dibutuhkan, bukan di-memo: nilainya hanya dipakai pada
+   * klik keluar dan saat tab ditutup, sementara satu memo lagi per render tidak
+   * sepadan dengan manfaatnya.
+   */
+  const readDesignSignature = () =>
+    designSignatureOf({
+      facets,
+      addressInput,
+      monthlyBill,
+      plnTariff,
+      inverterType,
+      sunHour,
+      extraTilt,
+    });
+
+  /*
+   * Pembanding disimpan di `ref`, bukan state: nilainya hanya dibaca saat pengguna
+   * menekan tombol keluar atau menutup tab, dan menyimpannya sebagai state akan
+   * memicu render tambahan pada setiap penyimpanan tanpa mengubah tampilan.
+   *
+   * `null` berarti pembanding belum pernah ditetapkan; ditetapkan sekali saat mount
+   * dari rancangan kosong, lalu oleh simpan dan pemulihan.
+   */
+  const savedDesignSignatureRef = useRef<string | null>(null);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+
+  const hasUnsavedChanges = () => {
+    const saved = savedDesignSignatureRef.current;
+    return saved !== null && saved !== readDesignSignature();
+  };
+
+  // Tanda tangan pertama diambil setelah mount: bidang awal dan masukan bawaan memang
+  // belum berisi pekerjaan yang bisa hilang.
+  useEffect(() => {
+    if (savedDesignSignatureRef.current !== null) return;
+
+    savedDesignSignatureRef.current = readDesignSignature();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facets, addressInput, monthlyBill, plnTariff, inverterType, sunHour, extraTilt]);
+
+  // Menutup tab atau memuat ulang juga membuang perubahan, jadi peramban diberi tahu.
+  // Pemeriksaannya di dalam handler, bukan saat efek dipasang, karena perubahan bisa
+  // terjadi kapan pun setelah listener terpasang.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const saved = savedDesignSignatureRef.current;
+      if (saved === null || saved === readDesignSignature()) return;
+
+      event.preventDefault();
+      // Peramban modern mengabaikan teks kustom, tetapi mengisinya tetap diperlukan
+      // agar dialog bawaan muncul pada peramban yang masih memeriksanya.
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facets, addressInput, monthlyBill, plnTariff, inverterType, sunHour, extraTilt]);
+
+  const leaveStudio = useCallback(() => {
+    router.push("/");
+  }, [router]);
+
 
   const handleSlotClick = (key: string) => {
     if (obstacleBrush) {
@@ -3834,12 +3979,17 @@ function StudioPageContent() {
       rafRef.current = null;
     }
     if (edgeDragState) {
-      if (!edgeDragMovedRef.current) {
+      if (!edgeDragMovedRef.current && edgeDragState.mode === "insert") {
         // Tanpa perpindahan, maksud pengguna adalah menambah simpul di titik sisi
-        // yang barusan ia tunjuk.
+        // yang barusan ia tunjuk. Mode `resize` tidak menyisipkan apa pun: klik
+        // biasa di sana memang bukan permintaan menambah simpul.
         insertVertexOnEdge(edgeDragState.facetId, edgeDragState.edgeIdx, edgeDragState.insertAt);
-      } else {
-        showToast("Sisi poligon digeser");
+      } else if (edgeDragMovedRef.current) {
+        showToast(
+          edgeDragState.mode === "resize"
+            ? "Ukuran sisi poligon diperbarui"
+            : "Sisi poligon digeser"
+        );
       }
 
       edgeDragMovedRef.current = false;
@@ -3950,8 +4100,17 @@ function StudioPageContent() {
         {/* Tombol Navigasi:
             - Pas Ketutup: Cukup Logo SunSight + Tanda '>'
             - Pas Kebuka: Logo berubah jadi Tanda Balik ke Beranda (← Beranda) */}
-        <Link
-          href="/"
+        <button
+          type="button"
+          onClick={() => {
+            // Rancangan yang belum tersimpan tidak boleh hilang karena satu klik.
+            if (hasUnsavedChanges()) {
+              setExitConfirmOpen(true);
+              return;
+            }
+
+            leaveStudio();
+          }}
           className={`h-11 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-800 flex items-center px-3.5 transition-all duration-300 ease-out shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80 hover:border-amber-300/70 shrink-0 select-none cursor-pointer group/back ${
             studioNavOpen ? "shadow-[0_8px_32px_rgba(245,158,11,0.12)] border-amber-300/80 bg-white/90" : ""
           }`}
@@ -3978,7 +4137,7 @@ function StudioPageContent() {
               </span>
             </div>
           )}
-        </Link>
+        </button>
 
         {/* Action Pills Container (Mengembang mulus saat di-hover, menciut saat mouse menjauh) */}
         <div
@@ -5142,6 +5301,26 @@ function StudioPageContent() {
             </div>
           )}
 
+          {/* Floating Tool Banner: Resize Edge Mode */}
+          {cadTool === "resize_edge" && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                <span className="material-symbols-outlined text-[13px]">open_with</span>
+              </div>
+              <span className="font-medium text-slate-700">
+                Ubah Ukuran • seret sisi untuk menggeser{" "}
+                <strong className="text-amber-900 font-bold">2 simpul sekaligus</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setCadTool("select")}
+                className="px-2.5 py-0.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition cursor-pointer"
+              >
+                Selesai
+              </button>
+            </div>
+          )}
+
           {/* Floating Tool Banner: Measure / CAD Overview Mode */}
           {cadTool === "measure" && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
@@ -5455,6 +5634,9 @@ function StudioPageContent() {
                             // tanpa simpul yang terlihat ia tidak tahu batas bidang itu.
                             const canAddVertex =
                               cadTool === "edit_polygon" || cadTool === "pen";
+                            // Mode Ubah Ukuran memakai sisi yang sama, tetapi tarikannya
+                            // tidak pernah menyisipkan simpul.
+                            const canResizeEdge = cadTool === "resize_edge";
                             const hoveredEdge =
                               edgeHover !== null &&
                               edgeHover.facetId === facet.id &&
@@ -5494,13 +5676,14 @@ function StudioPageContent() {
                                   />
                                 )}
                                 {/*
-                                  Menambah simpul: kursor yang mendekat ke sisi
-                                  memunculkan penanda `+` pada titik terdekat sisi
-                                  itu, dan klik menyisipkan simpul tepat di titik
-                                  tersebut. `onMouseDown` dihentikan supaya klik ini
-                                  tidak sekaligus memulai geser seluruh bidang.
+                                  Satu area sentuh untuk dua maksud. Di mode Edit Simpul
+                                  kursor yang mendekat ke sisi memunculkan penanda `+` pada
+                                  titik terdekat sisi itu, dan klik menyisipkan simpul di
+                                  titik tersebut. Di mode Ubah Ukuran sisi itu cukup
+                                  ditarik. `onMouseDown` dihentikan supaya klik ini tidak
+                                  sekaligus memulai geser seluruh bidang.
                                 */}
-                                {canAddVertex && (
+                                {(canAddVertex || canResizeEdge) && (
                                   <line
                                     x1={from.x}
                                     y1={from.y}
@@ -5509,9 +5692,12 @@ function StudioPageContent() {
                                     stroke="transparent"
                                     strokeWidth={12}
                                     strokeLinecap="round"
-                                    style={{ cursor: "grab" }}
+                                    style={{ cursor: canResizeEdge ? "move" : "grab" }}
                                     className="pointer-events-auto"
                                     onMouseMove={(e: ReactMouseEvent<SVGLineElement>) => {
+                                      // Penanda sisip tidak diperlukan saat mengubah ukuran.
+                                      if (!canAddVertex) return;
+
                                       const svg = e.currentTarget.ownerSVGElement;
                                       const ctm = svg?.getScreenCTM();
 
@@ -5584,7 +5770,13 @@ function StudioPageContent() {
                                             pixelsPerMeter,
                                         };
 
-                                      startEdgeDrag(e, facet.id, edgeIdx, insertAt);
+                                      startEdgeDrag(
+                                        e,
+                                        facet.id,
+                                        edgeIdx,
+                                        insertAt,
+                                        canResizeEdge ? "resize" : "insert"
+                                      );
                                     }}
                                   />
                                 )}
@@ -6059,7 +6251,32 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">polyline</span>
             </button>
 
-            {/* 3. Pen Tool (Custom Polygon Point-by-Point) */}
+            {/* 3. Resize Edge Tool (Ubah Ukuran dengan Menarik Sisi) */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextTool = cadTool === "resize_edge" ? "select" : "resize_edge";
+                setCadTool(nextTool);
+                if (nextTool === "resize_edge") {
+                  setActiveTab("geometry");
+                }
+                showToast(
+                  nextTool === "resize_edge"
+                    ? "Mode Ubah Ukuran aktif — seret sisi untuk menggeser dua simpulnya sekaligus"
+                    : "Mode Ubah Ukuran dinonaktifkan"
+                );
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+                cadTool === "resize_edge"
+                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
+              }`}
+              title="Ubah Ukuran: Geser Sisi (2 Simpul Sekaligus)"
+            >
+              <span className="material-symbols-outlined text-[19px]">open_with</span>
+            </button>
+
+            {/* 4. Pen Tool (Custom Polygon Point-by-Point) */}
             <button
               type="button"
               onClick={() => {
@@ -6077,7 +6294,7 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">edit</span>
             </button>
 
-            {/* 4. Delete Vertex Tool (Hapus Titik Poligon) */}
+            {/* 5. Delete Vertex Tool (Hapus Titik Poligon) */}
             <button
               type="button"
               onClick={() => {
@@ -6099,7 +6316,7 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">remove_circle_outline</span>
             </button>
 
-            {/* 5. Measure & CAD Overview Tool */}
+            {/* 6. Measure & CAD Overview Tool */}
             <button
               type="button"
               onClick={() => {
@@ -6125,7 +6342,7 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">straighten</span>
             </button>
 
-            {/* 6. AI Rooftop Detection Tool (Under Ruler) */}
+            {/* 7. AI Rooftop Detection Tool (Under Ruler) */}
             <button
               type="button"
               onClick={handleRunAiDetection}
@@ -6147,7 +6364,7 @@ function StudioPageContent() {
             {/* Divider */}
             <div className="w-5 h-px bg-slate-200 my-0.5" />
 
-            {/* 7. Panduan Studio bersama Sunny (Ikon '?') */}
+            {/* 8. Panduan Studio bersama Sunny (Ikon '?') */}
             <button
               type="button"
               onClick={() => setMascotGuideOpen((prev) => !prev)}
@@ -8551,6 +8768,49 @@ function StudioPageContent() {
         modulePower={modulePower}
         activeFacetName={activeFacet.name}
         monthlyGenKwh={calc.monthlyGenKwh}
+      />
+
+      {/* Konfirmasi pindai di luar cakupan terbaik */}
+      <ConfirmDialog
+        open={scanConfirm !== null}
+        title="Cakupan peta di luar rentang terbaik"
+        description={
+          scanConfirm === null
+            ? ""
+            : `Cakupan area ${scanConfirm.capture.footprintM} m. Hasil terbaik ada di sekitar ${RECOMMENDED_MIN_FOOTPRINT_M}-${RECOMMENDED_MAX_FOOTPRINT_M} m. ${
+                scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
+                  ? "Perkecil zoom peta (zoom keluar) agar atap lebih banyak terbaca."
+                  : "Perbesar zoom peta agar atap terbaca lebih jelas."
+              } Pindai tetap?`
+        }
+        confirmLabel="Pindai tetap"
+        cancelLabel="Atur zoom dulu"
+        onCancel={() => setScanConfirm(null)}
+        onConfirm={() => {
+          const pending = scanConfirm;
+          setScanConfirm(null);
+
+          if (pending !== null) {
+            // Tangkapan yang sama dikirim ulang: mengambil ubin lagi hanya menambah
+            // waktu tunggu dan berisiko menangkap area yang sudah bergeser.
+            void runRoofDetection(pending.capture);
+          }
+        }}
+      />
+
+      {/* Konfirmasi keluar dengan rancangan yang belum tersimpan */}
+      <ConfirmDialog
+        open={exitConfirmOpen}
+        title="Keluar tanpa menyimpan?"
+        description="Perubahan pada bidang atap, parameter, dan rintangan belum tersimpan. Keluar sekarang akan membuang perubahan itu."
+        confirmLabel="Buang & keluar"
+        cancelLabel="Lanjut mengatur"
+        tone="danger"
+        onCancel={() => setExitConfirmOpen(false)}
+        onConfirm={() => {
+          setExitConfirmOpen(false);
+          leaveStudio();
+        }}
       />
     </div>
   );
