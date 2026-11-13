@@ -129,6 +129,27 @@ interface EdgeHoverState {
   localPoint: Point2D;
 }
 
+/**
+ * Tarikan pada satu sisi poligon.
+ *
+ * Satu sisi tidak punya titik sendiri, jadi menyeretnya menggeser kedua simpul ujungnya
+ * dengan vektor yang sama. `insertAt` disimpan supaya tarikan yang berakhir tanpa
+ * perpindahan (yaitu klik) tetap dapat menambah simpul di titik yang ditunjuk.
+ */
+interface EdgeDragState {
+  facetId: string;
+  edgeIdx: number;
+  startX: number;
+  startY: number;
+  initVertices: Point2D[];
+  initOx: number;
+  initOy: number;
+  initLat?: number;
+  initLng?: number;
+  rotation: number;
+  insertAt: Point2D;
+}
+
 const MODULE_SPECS: Record<
   number,
   { name: string; w: number; l: number; eff: string; tech: string; price: number; desc: string }
@@ -1310,6 +1331,10 @@ function StudioPageContent() {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [vertexDragState, setVertexDragState] = useState<VertexDragState | null>(null);
   const [edgeHover, setEdgeHover] = useState<EdgeHoverState | null>(null);
+  const [edgeDragState, setEdgeDragState] = useState<EdgeDragState | null>(null);
+  // Menandai tarikan sisi yang benar-benar berpindah; tanpa ini klik biasa pada sisi
+  // akan dianggap tarikan dan simpul baru tidak pernah disisipkan.
+  const edgeDragMovedRef = useRef(false);
   const [penPoints, setPenPoints] = useState<Point2D[]>([]);
   const [penMousePos, setPenMousePos] = useState<Point2D | null>(null);
   const [measurePoints, setMeasurePoints] = useState<Point2D[]>([]);
@@ -1975,6 +2000,40 @@ function StudioPageContent() {
       });
     },
     [facets, activeFacet]
+  );
+
+  /**
+   * Memulai tarikan pada satu sisi poligon.
+   *
+   * Sisi tidak punya titik sendiri, jadi menyeretnya menggeser kedua simpul ujungnya
+   * dengan vektor yang sama: bentuk tetap, hanya bergeser. `insertAt` menyimpan titik
+   * di sisi yang ditunjuk saat mousedown, sehingga tarikan yang berakhir tanpa
+   * perpindahan (klik) tetap bisa dipakai menambah simpul.
+   */
+  const startEdgeDrag = useCallback(
+    (e: ReactMouseEvent, facetId: string, edgeIdx: number, insertAt: Point2D) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setActiveFacetId(facetId);
+
+      const facet = facets.find((f) => f.id === facetId) ?? activeFacet;
+
+      edgeDragMovedRef.current = false;
+      setEdgeDragState({
+        facetId,
+        edgeIdx,
+        startX: e.clientX,
+        startY: e.clientY,
+        initVertices: getFacetVertices(facet).map((v) => ({ ...v })),
+        initOx: facet.offsetX,
+        initOy: facet.offsetY,
+        initLat: facet.lat,
+        initLng: facet.lng,
+        rotation: facet.rotation,
+        insertAt,
+      });
+    },
+    [facets, activeFacet, setActiveFacetId]
   );
 
   /**
@@ -3629,6 +3688,50 @@ function StudioPageContent() {
       setProbePos({ x: clientX - rect.left, y: clientY - rect.top });
     }
 
+    if (edgeDragState) {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const dx = clientX - edgeDragState.startX;
+        const dy = clientY - edgeDragState.startY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          edgeDragMovedRef.current = true;
+        }
+
+        const rotRad = (-edgeDragState.rotation * Math.PI) / 180;
+        const localDx = (dx * Math.cos(rotRad) - dy * Math.sin(rotRad)) / pixelsPerMeter;
+        const localDy = (dx * Math.sin(rotRad) + dy * Math.cos(rotRad)) / pixelsPerMeter;
+
+        const count = edgeDragState.initVertices.length;
+        const startIdx = edgeDragState.edgeIdx;
+        const endIdx = (edgeDragState.edgeIdx + 1) % count;
+
+        // Hanya dua simpul ujung sisi yang bergerak; sisanya diam sehingga panjang
+        // sisi dan bentuk poligon tidak berubah, hanya posisinya.
+        const newVertices = edgeDragState.initVertices.map((vertex, idx) => {
+          if (idx !== startIdx && idx !== endIdx) return vertex;
+
+          return {
+            x: Math.round((vertex.x + localDx) * 1000) / 1000,
+            y: Math.round((vertex.y + localDy) * 1000) / 1000,
+          };
+        });
+
+        updateFacetById(edgeDragState.facetId, {
+          ...buildPolygonPatch(newVertices, {
+            lat: edgeDragState.initLat,
+            lng: edgeDragState.initLng,
+            offsetX: edgeDragState.initOx,
+            offsetY: edgeDragState.initOy,
+            rotation: edgeDragState.rotation,
+          }),
+          slotOverrides: {},
+        });
+      });
+      return;
+    }
+
     if (vertexDragState) {
       if (rafRef.current !== null) return;
       rafRef.current = requestAnimationFrame(() => {
@@ -3729,6 +3832,18 @@ function StudioPageContent() {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
+    }
+    if (edgeDragState) {
+      if (!edgeDragMovedRef.current) {
+        // Tanpa perpindahan, maksud pengguna adalah menambah simpul di titik sisi
+        // yang barusan ia tunjuk.
+        insertVertexOnEdge(edgeDragState.facetId, edgeDragState.edgeIdx, edgeDragState.insertAt);
+      } else {
+        showToast("Sisi poligon digeser");
+      }
+
+      edgeDragMovedRef.current = false;
+      setEdgeDragState(null);
     }
     if (vertexDragState) {
       setVertexDragState(null);
@@ -5394,9 +5509,8 @@ function StudioPageContent() {
                                     stroke="transparent"
                                     strokeWidth={12}
                                     strokeLinecap="round"
-                                    style={{ cursor: "copy" }}
+                                    style={{ cursor: "grab" }}
                                     className="pointer-events-auto"
-                                    onMouseDown={(e) => e.stopPropagation()}
                                     onMouseMove={(e: ReactMouseEvent<SVGLineElement>) => {
                                       const svg = e.currentTarget.ownerSVGElement;
                                       const ctm = svg?.getScreenCTM();
@@ -5455,16 +5569,22 @@ function StudioPageContent() {
                                           : prev
                                       )
                                     }
-                                    onClick={(e) => {
-                                      e.stopPropagation();
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => {
+                                      // Titik sisip diambil dari penanda `+` yang sedang
+                                      // tampil; bila kursor berada di ujung sisi, jatuh ke
+                                      // titik tengah supaya simpul tetap tersisip di sisi.
+                                      const insertAt =
+                                        hoveredEdge?.localPoint ?? {
+                                          x:
+                                            ((from.x + to.x) / 2 - polyWidth / 2) /
+                                            pixelsPerMeter,
+                                          y:
+                                            ((from.y + to.y) / 2 - polyHeight / 2) /
+                                            pixelsPerMeter,
+                                        };
 
-                                      if (hoveredEdge !== null) {
-                                        insertVertexOnEdge(
-                                          facet.id,
-                                          edgeIdx,
-                                          hoveredEdge.localPoint
-                                        );
-                                      }
+                                      startEdgeDrag(e, facet.id, edgeIdx, insertAt);
                                     }}
                                   />
                                 )}
@@ -5507,19 +5627,22 @@ function StudioPageContent() {
                       )}
 
                       {/*
-                        Simpul poligon. Pada mode Edit Simpul dan Pen tool simpul
-                        diseret untuk mengubah bentuk — pengguna sering menggambar
-                        bidang baru di sebelah bidang lama, dan simpul yang terlihat
-                        memperjelas batas keduanya. Pada mode Hapus Simpul simpul
-                        tampil merah dan sekali klik menghapusnya. Drag memakai
-                        `startVertexDrag`, yang mengubah satu titik di ruang lokal
-                        bidang sehingga rotasi bidang tetap dihormati.
+                        Simpul poligon tampil pada SEMUA mode untuk bidang yang dipilih,
+                        supaya batas bentuk selalu terbaca. Hanya pada mode yang mengubah
+                        bentuk (Edit Simpul, Pen, Hapus Simpul) simpul itu interaktif;
+                        di mode lain grup ini `pointer-events-none` agar tidak menghalangi
+                        geser bidang atau klik peta.
                       */}
-                      {(cadTool === "edit_polygon" ||
-                        cadTool === "pen" ||
-                        cadTool === "delete_vertex") &&
-                        (isSelected || isActive) && (
-                        <g className="pointer-events-auto">
+                      {(isSelected || isActive) && (
+                        <g
+                          className={
+                            cadTool === "edit_polygon" ||
+                            cadTool === "pen" ||
+                            cadTool === "delete_vertex"
+                              ? "pointer-events-auto"
+                              : "pointer-events-none"
+                          }
+                        >
                           {facetPoints.map((point, vertexIdx) => {
                             const isDeleteMode = cadTool === "delete_vertex";
                             const canDeleteVertex = isDeleteMode && facetVerts.length > 3;
