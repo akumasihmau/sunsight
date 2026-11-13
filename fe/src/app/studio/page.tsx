@@ -1994,6 +1994,43 @@ function StudioPageContent() {
     deleteVertex(currentVertices.length - 1);
   }, [activeFacet, deleteVertex, showToast]);
 
+  /**
+   * Menghapus satu sisi poligon.
+   *
+   * Sisi tidak punya identitas sendiri pada ring, jadi menghapus sisi berarti
+   * meruntuhkan salah satu sudutnya: simpul ujung sisi itu dibuang dan kedua sisi
+   * tetangganya menyatu menjadi satu garis. Itu yang dimaksud pengguna ketika ia
+   * menunjuk sisi yang tidak diinginkan — bentuknya menjadi lebih sederhana, bukan
+   * berlubang di tengah.
+   */
+  const deleteEdge = useCallback(
+    (facetId: string, edgeIdx: number) => {
+      const target =
+        facets.find((facet) => facet.id === facetId) ?? activeFacet;
+      const currentVertices = getFacetVertices(target);
+
+      if (currentVertices.length <= 3) {
+        showToast("Minimal poligon harus memiliki 3 simpul!");
+        return;
+      }
+
+      // Simpul ujung sisi yang diklik ikut dibuang, sehingga sisi itu benar-benar
+      // hilang dan bukan hanya bergeser.
+      const removeIdx = (edgeIdx + 1) % currentVertices.length;
+      const patch = {
+        ...buildPolygonPatch(
+          currentVertices.filter((_, i) => i !== removeIdx),
+          target
+        ),
+        slotOverrides: {},
+      };
+
+      updateFacetById(facetId, patch);
+      showToast(`🗑️ Sisi #${edgeIdx + 1} dihapus (${currentVertices.length - 1} simpul tersisa)`);
+    },
+    [facets, activeFacet, updateFacetById, showToast, buildPolygonPatch]
+  );
+
   const finishPenPolygon = useCallback(
     (points: Point2D[]) => {
       if (points.length < 3) {
@@ -4910,7 +4947,7 @@ function StudioPageContent() {
                 <span className="material-symbols-outlined text-[13px]">remove_circle</span>
               </div>
               <span className="font-medium text-slate-700">
-                Hapus Simpul • <strong className="text-rose-900 font-bold">{getFacetVertices(activeFacet).length} titik</strong> (klik simpul merah)
+                Hapus Simpul • <strong className="text-rose-900 font-bold">{getFacetVertices(activeFacet).length} titik</strong> (klik sisi atau simpul merah)
               </span>
               <button
                 type="button"
@@ -5075,6 +5112,12 @@ function StudioPageContent() {
               const styleLeft = screenPos ? `${screenPos.x}px` : `calc(50% + ${facet.offsetX}px)`;
               const styleTop = screenPos ? `${screenPos.y}px` : `calc(50% + ${facet.offsetY}px)`;
               const facetVerts = getFacetVertices(facet);
+              // Titik poligon dalam koordinat layar SVG, dipakai bersama oleh
+              // perimeter, sisi, dan handle simpul.
+              const facetPoints = facetVerts.map((vertex) => ({
+                x: polyWidth / 2 + vertex.x * pixelsPerMeter,
+                y: polyHeight / 2 + vertex.y * pixelsPerMeter,
+              }));
               const bounds = polygonBounds(facetVerts);
               const realRidge = Math.max(facet.ridge, bounds.width);
               const realSlope = Math.max(facet.slope, bounds.height);
@@ -5221,40 +5264,116 @@ function StudioPageContent() {
                       })()}
 
                       {/*
-                        Simpul poligon yang dapat digeser. Handle hanya muncul pada
-                        mode Edit Simpul dan bidang yang dipilih, supaya tidak
-                        menghalangi klik-geser seluruh bidang di mode lain.
-                        Drag memakai `startVertexDrag`, yang mengubah satu titik di
-                        ruang lokal bidang sehingga rotasi bidang tetap dihormati.
+                        Sisi poligon. Selalu digambar untuk bidang yang dipilih, di
+                        mode apa pun, supaya bentuknya terbaca walaupun tidak sedang
+                        mengedit — dan supaya sisi dapat ditunjuk langsung ketika mode
+                        Hapus Simpul aktif.
+
+                        Garis yang terlihat tidak menangkap klik; hanya garis
+                        transparan setebal 14 px di belakangnya yang menangkap, agar
+                        menggeser seluruh bidang di mode lain tidak terhalang.
                       */}
-                      {cadTool === "edit_polygon" && (isSelected || isActive) && (
+                      {(isSelected || isActive) && (
+                        <g>
+                          {facetVerts.map((_, edgeIdx) => {
+                            const from = facetPoints[edgeIdx];
+                            const to = facetPoints[(edgeIdx + 1) % facetPoints.length];
+                            const canDeleteEdge =
+                              cadTool === "delete_vertex" && facetVerts.length > 3;
+
+                            return (
+                              <g key={`edge-${facet.id}-${edgeIdx}`}>
+                                <line
+                                  x1={from.x}
+                                  y1={from.y}
+                                  x2={to.x}
+                                  y2={to.y}
+                                  stroke={cadTool === "delete_vertex" ? "#fb7185" : "#fbbf24"}
+                                  strokeWidth={3}
+                                  strokeLinecap="round"
+                                  opacity={cadTool === "delete_vertex" ? 0.95 : 0.75}
+                                  className="pointer-events-none"
+                                />
+                                {canDeleteEdge && (
+                                  <line
+                                    x1={from.x}
+                                    y1={from.y}
+                                    x2={to.x}
+                                    y2={to.y}
+                                    stroke="transparent"
+                                    strokeWidth={14}
+                                    strokeLinecap="round"
+                                    style={{ cursor: "pointer" }}
+                                    className="pointer-events-auto"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteEdge(facet.id, edgeIdx);
+                                    }}
+                                  />
+                                )}
+                              </g>
+                            );
+                          })}
+                        </g>
+                      )}
+
+                      {/*
+                        Simpul poligon. Pada mode Edit Simpul simpul diseret untuk
+                        mengubah bentuk; pada mode Hapus Simpul simpul tampil merah
+                        dan sekali klik menghapusnya. Drag memakai `startVertexDrag`,
+                        yang mengubah satu titik di ruang lokal bidang sehingga rotasi
+                        bidang tetap dihormati.
+                      */}
+                      {(cadTool === "edit_polygon" || cadTool === "delete_vertex") &&
+                        (isSelected || isActive) && (
                         <g className="pointer-events-auto">
-                          {facetVerts.map((vertex, vertexIdx) => {
-                            const cx = polyWidth / 2 + vertex.x * pixelsPerMeter;
-                            const cy = polyHeight / 2 + vertex.y * pixelsPerMeter;
+                          {facetPoints.map((point, vertexIdx) => {
+                            const isDeleteMode = cadTool === "delete_vertex";
+                            const canDeleteVertex = isDeleteMode && facetVerts.length > 3;
 
                             return (
                               <g key={`vertex-${facet.id}-${vertexIdx}`}>
                                 <circle
-                                  cx={cx}
-                                  cy={cy}
-                                  r={9}
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={isDeleteMode ? 10 : 9}
                                   fill="transparent"
-                                  style={{ cursor: "grab" }}
-                                  onMouseDown={(e) => startVertexDrag(e, facet.id, vertexIdx)}
-                                  onDoubleClick={(e) => {
-                                    e.stopPropagation();
-                                    deleteVertex(vertexIdx, facet.id);
-                                  }}
+                                  style={{ cursor: isDeleteMode ? "pointer" : "grab" }}
+                                  onMouseDown={
+                                    isDeleteMode
+                                      ? undefined
+                                      : (e) => startVertexDrag(e, facet.id, vertexIdx)
+                                  }
+                                  onClick={
+                                    canDeleteVertex
+                                      ? (e) => {
+                                          e.stopPropagation();
+                                          deleteVertex(vertexIdx, facet.id);
+                                        }
+                                      : undefined
+                                  }
+                                  onDoubleClick={
+                                    isDeleteMode
+                                      ? undefined
+                                      : (e) => {
+                                          e.stopPropagation();
+                                          deleteVertex(vertexIdx, facet.id);
+                                        }
+                                  }
                                 />
                                 <circle
-                                  cx={cx}
-                                  cy={cy}
-                                  r={5}
-                                  fill="#ffffff"
-                                  stroke={isActive ? "#0284c7" : "#f59e0b"}
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={isDeleteMode ? 6 : 5}
+                                  fill={isDeleteMode ? "#f43f5e" : "#ffffff"}
+                                  stroke={
+                                    isDeleteMode
+                                      ? "#881337"
+                                      : isActive
+                                        ? "#0284c7"
+                                        : "#f59e0b"
+                                  }
                                   strokeWidth={2.5}
-                                  style={{ cursor: "grab" }}
                                   className="pointer-events-none"
                                 />
                               </g>
