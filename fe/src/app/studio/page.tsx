@@ -115,6 +115,20 @@ interface VertexDragState {
   rotation: number;
 }
 
+/**
+ * Sisi yang sedang ditunjuk kursor pada mode Edit Simpul.
+ *
+ * Titiknya disimpan dalam dua ruang: koordinat SVG untuk menggambar penanda, dan
+ * meter lokal bidang untuk disisipkan sebagai simpul baru — konversi bolak-balik
+ * dari layar ke meter akan membuang ketelitian pada zoom rendah.
+ */
+interface EdgeHoverState {
+  facetId: string;
+  edgeIdx: number;
+  point: Point2D;
+  localPoint: Point2D;
+}
+
 const MODULE_SPECS: Record<
   number,
   { name: string; w: number; l: number; eff: string; tech: string; price: number; desc: string }
@@ -1295,6 +1309,7 @@ function StudioPageContent() {
   }, []);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [vertexDragState, setVertexDragState] = useState<VertexDragState | null>(null);
+  const [edgeHover, setEdgeHover] = useState<EdgeHoverState | null>(null);
   const [penPoints, setPenPoints] = useState<Point2D[]>([]);
   const [penMousePos, setPenMousePos] = useState<Point2D | null>(null);
   const [measurePoints, setMeasurePoints] = useState<Point2D[]>([]);
@@ -1931,27 +1946,35 @@ function StudioPageContent() {
     [facets, activeFacet]
   );
 
-  const addVertexAtEdge = useCallback(
-    (edgeIdx: number) => {
-      const currentVertices = getFacetVertices(activeFacet);
-      const nextIdx = (edgeIdx + 1) % currentVertices.length;
-      const p1 = currentVertices[edgeIdx];
-      const p2 = currentVertices[nextIdx];
-      const midPoint: Point2D = {
-        x: (p1.x + p2.x) / 2,
-        y: (p1.y + p2.y) / 2,
-      };
+  /**
+   * Menyisipkan simpul baru pada satu sisi, tepat di titik yang ditunjuk kursor.
+   *
+   * Titiknya bukan titik tengah sisi: penanda `+` mengikuti kursor, dan yang
+   * disisipkan adalah titik itu. Simpul disisipkan di antara `edgeIdx` dan
+   * `edgeIdx + 1` sehingga urutan ring tetap sesuai bentuk yang terlihat.
+   */
+  const insertVertexOnEdge = useCallback(
+    (facetId: string, edgeIdx: number, point: Point2D) => {
+      const target = facets.find((facet) => facet.id === facetId) ?? activeFacet;
+      const currentVertices = getFacetVertices(target);
 
       const newVertices = [
         ...currentVertices.slice(0, edgeIdx + 1),
-        midPoint,
+        {
+          x: Math.round(point.x * 1000) / 1000,
+          y: Math.round(point.y * 1000) / 1000,
+        },
         ...currentVertices.slice(edgeIdx + 1),
       ];
 
-      updateActiveFacet({ ...buildPolygonPatch(newVertices, activeFacet), slotOverrides: {} });
+      updateFacetById(facetId, {
+        ...buildPolygonPatch(newVertices, target),
+        slotOverrides: {},
+      });
+      setEdgeHover(null);
       showToast(`✨ Simpul baru ditambahkan (${newVertices.length} titik)`);
     },
-    [activeFacet, updateActiveFacet, showToast, buildPolygonPatch]
+    [facets, activeFacet, updateFacetById, showToast, buildPolygonPatch]
   );
 
   const deleteVertex = useCallback(
@@ -5281,6 +5304,13 @@ function StudioPageContent() {
                             const to = facetPoints[(edgeIdx + 1) % facetPoints.length];
                             const canDeleteEdge =
                               cadTool === "delete_vertex" && facetVerts.length > 3;
+                            const canAddVertex = cadTool === "edit_polygon";
+                            const hoveredEdge =
+                              edgeHover !== null &&
+                              edgeHover.facetId === facet.id &&
+                              edgeHover.edgeIdx === edgeIdx
+                                ? edgeHover
+                                : null;
 
                             return (
                               <g key={`edge-${facet.id}-${edgeIdx}`}>
@@ -5306,11 +5336,134 @@ function StudioPageContent() {
                                     strokeLinecap="round"
                                     style={{ cursor: "pointer" }}
                                     className="pointer-events-auto"
+                                    onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       deleteEdge(facet.id, edgeIdx);
                                     }}
                                   />
+                                )}
+                                {/*
+                                  Menambah simpul: kursor yang mendekat ke sisi
+                                  memunculkan penanda `+` pada titik terdekat sisi
+                                  itu, dan klik menyisipkan simpul tepat di titik
+                                  tersebut. `onMouseDown` dihentikan supaya klik ini
+                                  tidak sekaligus memulai geser seluruh bidang.
+                                */}
+                                {canAddVertex && (
+                                  <line
+                                    x1={from.x}
+                                    y1={from.y}
+                                    x2={to.x}
+                                    y2={to.y}
+                                    stroke="transparent"
+                                    strokeWidth={12}
+                                    strokeLinecap="round"
+                                    style={{ cursor: "copy" }}
+                                    className="pointer-events-auto"
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onMouseMove={(e: ReactMouseEvent<SVGLineElement>) => {
+                                      const svg = e.currentTarget.ownerSVGElement;
+                                      const ctm = svg?.getScreenCTM();
+
+                                      if (!svg || !ctm) return;
+
+                                      const cursor = svg.createSVGPoint();
+                                      cursor.x = e.clientX;
+                                      cursor.y = e.clientY;
+                                      const local = cursor.matrixTransform(ctm.inverse());
+
+                                      const dx = to.x - from.x;
+                                      const dy = to.y - from.y;
+                                      const lengthSquared = dx * dx + dy * dy;
+                                      const t =
+                                        lengthSquared === 0
+                                          ? 0
+                                          : Math.max(
+                                              0,
+                                              Math.min(
+                                                1,
+                                                ((local.x - from.x) * dx +
+                                                  (local.y - from.y) * dy) /
+                                                  lengthSquared
+                                              )
+                                            );
+
+                                      // Terlalu dekat ujung sisi: menyisipkan di sini
+                                      // hanya membuat simpul ganda yang menumpuk.
+                                      if (t < 0.04 || t > 0.96) {
+                                        setEdgeHover(null);
+                                        return;
+                                      }
+
+                                      const point = {
+                                        x: from.x + t * dx,
+                                        y: from.y + t * dy,
+                                      };
+
+                                      setEdgeHover({
+                                        facetId: facet.id,
+                                        edgeIdx,
+                                        point,
+                                        localPoint: {
+                                          x: (point.x - polyWidth / 2) / pixelsPerMeter,
+                                          y: (point.y - polyHeight / 2) / pixelsPerMeter,
+                                        },
+                                      });
+                                    }}
+                                    onMouseLeave={() =>
+                                      setEdgeHover((prev) =>
+                                        prev !== null &&
+                                        prev.facetId === facet.id &&
+                                        prev.edgeIdx === edgeIdx
+                                          ? null
+                                          : prev
+                                      )
+                                    }
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+
+                                      if (hoveredEdge !== null) {
+                                        insertVertexOnEdge(
+                                          facet.id,
+                                          edgeIdx,
+                                          hoveredEdge.localPoint
+                                        );
+                                      }
+                                    }}
+                                  />
+                                )}
+                                {canAddVertex && hoveredEdge !== null && (
+                                  <g className="pointer-events-none">
+                                    <circle
+                                      cx={hoveredEdge.point.x}
+                                      cy={hoveredEdge.point.y}
+                                      r={9}
+                                      fill="#0ea5e9"
+                                      fillOpacity={0.2}
+                                      stroke="#0ea5e9"
+                                      strokeWidth={1.5}
+                                      strokeDasharray="3 2"
+                                    />
+                                    <line
+                                      x1={hoveredEdge.point.x - 4}
+                                      y1={hoveredEdge.point.y}
+                                      x2={hoveredEdge.point.x + 4}
+                                      y2={hoveredEdge.point.y}
+                                      stroke="#0369a1"
+                                      strokeWidth={2.2}
+                                      strokeLinecap="round"
+                                    />
+                                    <line
+                                      x1={hoveredEdge.point.x}
+                                      y1={hoveredEdge.point.y - 4}
+                                      x2={hoveredEdge.point.x}
+                                      y2={hoveredEdge.point.y + 4}
+                                      stroke="#0369a1"
+                                      strokeWidth={2.2}
+                                      strokeLinecap="round"
+                                    />
+                                  </g>
                                 )}
                               </g>
                             );
@@ -5732,7 +5885,7 @@ function StudioPageContent() {
               onClick={() => {
                 setCadTool("edit_polygon");
                 setActiveTab("geometry");
-                showToast("Mode Edit Simpul aktif");
+                showToast("Mode Edit Simpul aktif — seret titik, atau klik + pada sisi untuk menambah simpul");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "edit_polygon"
