@@ -281,6 +281,15 @@ Aturan yang mengikat:
 - `413` bila berkas melebihi 10 MB.
 - `503` bila layanan model tidak dapat dihubungi, `504` bila melewati batas waktu 60 detik.
 
+### Kunci layanan ke layanan model
+
+Permintaan prediksi membawa header `X-Api-Key` berisi nilai `ML_SERVICE_KEY`. Layanan model
+membandingkannya dengan `ML_API_KEY` miliknya dan menjawab `401` bila tidak cocok; backend memetakan
+jawaban itu menjadi `503`. Kedua nilai wajib sama. Bila `ML_SERVICE_KEY` kosong, header tidak dikirim,
+sehingga layanan model yang dipanggil harus berjalan tanpa kunci — hanya untuk mesin yang sama.
+Rute `GET /health` dan `GET /ready` milik layanan model tidak memeriksa kunci karena dipakai
+healthcheck container dan polling deploy.
+
 ## 6. Simulasi
 
 Satu simulasi memuat **satu atau lebih bidang atap**. Setiap bidang punya geometri, masukan, dan hasilnya

@@ -17,6 +17,10 @@ use Illuminate\Support\Facades\Http;
  * layanan. Kegagalan transport dipetakan ke exception domain supaya pengendali dapat
  * menjawab 503 atau 504 sesuai kontrak, alih-alih meneruskan 500 yang tidak
  * menjelaskan apa pun kepada pemanggil.
+ *
+ * Kunci layanan dikirim sebagai header `X-Api-Key` bila dikonfigurasi. Layanan model
+ * hanya memeriksa kunci pada rute prediksi, jadi `/health` dan `/ready` tetap dapat
+ * dipakai tanpa kredensial.
  */
 class MlClient
 {
@@ -35,6 +39,12 @@ class MlClient
         $request = Http::timeout($timeout)
             ->acceptJson()
             ->attach('file', $binary, $filename);
+
+        $key = (string) config('services.ml.key');
+
+        if ($key !== '') {
+            $request = $request->withHeader('X-Api-Key', $key);
+        }
 
         if ($minConfidence !== null) {
             // Layanan model membaca ambang keyakinan dari *query string*, bukan dari

@@ -51,6 +51,10 @@ return [
 
     'ml' => [
         'url' => env('ML_SERVICE_URL', 'http://127.0.0.1:8001'),
+        // Rahasia bersama yang dibaca layanan model dari header `X-Api-Key`.
+        // Kosong berarti header tidak dikirim, sehingga hanya cocok untuk layanan
+        // model yang berjalan di mesin yang sama dan tidak meminta autentikasi.
+        'key' => env('ML_SERVICE_KEY'),
         'timeout' => (int) env('ML_SERVICE_TIMEOUT', 60),
     ],
 

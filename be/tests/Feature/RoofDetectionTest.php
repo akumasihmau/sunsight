@@ -265,6 +265,32 @@ class RoofDetectionTest extends TestCase
             && ! str_contains((string) $request->body(), 'min_confidence'));
     }
 
+    public function test_kunci_layanan_model_dikirim_sebagai_header(): void
+    {
+        // Layanan model di internet terbuka harus menolak pemanggil tanpa kunci;
+        // backend memegang rahasianya lewat ML_SERVICE_KEY.
+        config(['services.ml.key' => 'rahasia-uji']);
+
+        Http::fake(['*' => Http::response(self::mlResponse())]);
+
+        $this->actingAsUser()->post('/api/roof-detections', $this->upload())->assertOk();
+
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('X-Api-Key', 'rahasia-uji'));
+    }
+
+    public function test_kunci_layanan_model_tidak_dikirim_bila_kosong(): void
+    {
+        // Layanan model di mesin yang sama tidak memasang kunci; header kosong akan
+        // ditolak pemeriksaan yang membandingkan nilainya.
+        config(['services.ml.key' => null]);
+
+        Http::fake(['*' => Http::response(self::mlResponse())]);
+
+        $this->actingAsUser()->post('/api/roof-detections', $this->upload())->assertOk();
+
+        Http::assertSent(fn (Request $request): bool => ! $request->hasHeader('X-Api-Key'));
+    }
+
     public function test_poligon_yang_padat_disederhanakan_sebelum_dikembalikan(): void
     {
         Http::fake(['*' => Http::response(self::mlResponse([
