@@ -639,7 +639,9 @@ Query: `page` (bawaan 1), `per_page` (bawaan 10, maks 100), `limit` (alias `per_
       "trees_equivalent": 503,
       "capacity_kwp": 11,
       "annual_production_kwh": 13829.81,
+      "monthly_bill_idr": 2500000,
       "monthly_saving_idr": 1959223,
+      "annual_saving_idr": 23510676,
       "payback_years": 3.07,
       "created_at": "2026-09-27T10:15:30.000000Z"
     }
@@ -648,6 +650,21 @@ Query: `page` (bawaan 1), `per_page` (bawaan 10, maks 100), `limit` (alias `per_
   "links": { "first": "...", "last": "...", "prev": null, "next": null }
 }
 ```
+
+### `PATCH /analyses/{id}/name`
+
+Mengubah nama atau label alamat (`address`) proyek simulasi pada riwayat tanpa menghitung ulang geometri atau memengaruhi angka hasil.
+
+| Field | Tipe | Aturan |
+| :---- | :---- | :---- |
+| `address` | string \| null | `present`, opsional `null`, maks `160` karakter; string kosong disimpan sebagai `null` |
+
+```json
+// 200 OK — bentuk bersama "detail simulasi" dengan `message`
+{ "message": "Simulation renamed", "id": 12, "address": "Rumah Pajajaran #1", … }
+```
+
+`id` yang bukan milik pemanggil menghasilkan `404`.
 
 ### `GET /analyses/{id}`
 
@@ -712,6 +729,29 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
 - Route dibatasi `throttle:30,1` per pengguna.
 - Atribusi "© OpenStreetMap contributors" wajib ditampilkan bersama hasil.
 
+### `GET /reverse-geocode`
+
+Mencari nama jalan/area terdekat dari koordinat peta (`lat`, `lng`) menggunakan Nominatim dengan *cache* 30 hari di backend (`geocode_cache`).
+
+| Query | Aturan |
+| :---- | :---- |
+| `lat` | wajib, numerik, `-90` s.d. `90` |
+| `lng` | wajib, numerik, `-180` s.d. `180` |
+
+```json
+// 200 OK
+{
+  "lat": -6.595038,
+  "lng": 106.797241,
+  "label": "Jl. Raya Pajajaran, Bogor Tengah",
+  "source": "nominatim"
+}
+```
+
+- `label` bernilai `null` bila Nominatim tidak menemukan alamat untuk koordinat tersebut (tetap `200`).
+- `422` bila koordinat di luar rentang; `503` bila layanan pencarian tidak dapat dihubungi.
+- Route dibatasi `throttle:30,1` per pengguna.
+
 ## 8. Ringkasan Endpoint
 
 | Endpoint | Method | Auth | Sukses |
@@ -724,16 +764,19 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
 | `/user` | GET | Bearer | `200` |
 | `/user` | PATCH | Bearer | `200` |
 | `/change-password` | POST | Bearer | `200` |
+| `/onboarding/complete` | POST | Bearer | `200` |
 | `/location` | POST | Bearer | `200` |
 | `/options` | GET | Bearer | `200` |
 | `/roof-detections` | POST | Bearer | `200` |
 | `/captures` | POST | Bearer | `201` |
 | `/geocode` | GET | Bearer | `200` |
+| `/reverse-geocode` | GET | Bearer | `200` |
 | `/simulate` | POST | Bearer | `200` |
 | `/analyses` | GET | Bearer | `200` |
 | `/analyses` | POST | Bearer | `201` |
 | `/analyses/{id}` | GET | Bearer | `200` |
 | `/analyses/{id}` | PATCH | Bearer | `200` |
+| `/analyses/{id}/name` | PATCH | Bearer | `200` |
 | `/analyses/{id}` | DELETE | Bearer | `200` |
 
 Endpoint produk lama (`/cv/fetch-osm`, `/cv/refine-polygon`, `/cv/detect-shadow`, `/solar/calculate`)
