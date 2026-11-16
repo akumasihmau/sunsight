@@ -108,7 +108,7 @@ Detail kontrak layanan model tetap mengacu pada [docs/ml-service-design.md](./do
 Bobot lama (`yolov8n-seg` di `YOLO_Sunsight.ipynb`, ±200 foto Google Maps) memiliki 3 bug nyata ketika dijalankan di peta **Esri World Imagery** SunSight:
 1. **Color & Domain Bias:** Overfit ke warna genteng tanah liat oranye/merah dari Google Maps; atap spandek biru/hijau, beton gelap, dan asbes abu-abu sering terlewat.
 2. **False Positive Jalan Raya:** Jalan aspal/paving kemerahan sering ikut terdeteksi sebagai kelas `roof`.
-3. **Poligon Blobby:** Mask segmentasi mentah membentuk kontur organik membulat, sementara backend [RoofDetectionController.php](./be/app/Http/Controllers/RoofDetectionController.php#L38) hanya menyederhanakan `0.5 px` (*Douglas-Peucker*), sehingga poligon tidak berbentuk siku persegi/limas/L-shape yang layak untuk *geometric module packing*.
+3. **Poligon Blobby:** Mask segmentasi mentah membentuk kontur organik membulat. Saat ini backend Laravel ([RoofDetectionController.php](./be/app/Http/Controllers/RoofDetectionController.php) + [PolygonGeometry::regularize](./be/app/Services/Geometry/PolygonGeometry.php)) sudah menambahkan perapian dasar yang dapat disetel via `.env` (`ML_SIMPLIFY_TOLERANCE_PX=1.8`, `ML_RECTANGULARITY_THRESHOLD=0.80`, `ML_MAX_ASPECT_RATIO=5.0`, `ML_MIN_AREA_SQM=6.0`), namun di sisi ML tetap perlu pembersihan mask morfologis + regularisasi ortogonal agar poligon kompleks (L/T/U-shape) maupun `bbox`/`area_px` mentah dari FastAPI ikut presisi sejak hulu.
 
 ### C. Spesifikasi Teknis Upgrade ML (Tanpa Mengubah Kontrak Laravel/FE)
 

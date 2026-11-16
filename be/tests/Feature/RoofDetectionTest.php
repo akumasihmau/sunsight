@@ -376,6 +376,33 @@ class RoofDetectionTest extends TestCase
         );
     }
 
+    public function test_deteksi_blobby_dirapikan_dan_kontur_jalan_serta_serpihan_disaring(): void
+    {
+        // Atap blobby: persegi 80 x 60 px dengan sudut membulat/banyak titik.
+        $blobbyRoof = [
+            [106, 100], [130, 98], [155, 98], [174, 100],
+            [180, 106], [182, 125], [182, 145], [178, 154],
+            [172, 160], [145, 162], [120, 162], [106, 158],
+            [100, 152], [98, 132], [98, 112], [102, 104],
+        ];
+        // Kontur jalan memanjang (250 x 10 px, rasio aspek 25).
+        $road = [[20, 200], [270, 200], [270, 210], [20, 210]];
+        // Serpihan noise kecil (3 x 3 px pada 0,5 m/px = 2,25 m² < 6 m²).
+        $speck = [[300, 300], [303, 300], [303, 303], [300, 303]];
+
+        Http::fake(['*' => Http::response(self::mlResponse([
+            self::detection('det_roof', $blobbyRoof, 0.91),
+            self::detection('det_road', $road, 0.85),
+            self::detection('det_speck', $speck, 0.80),
+        ]))]);
+
+        $response = $this->actingAsUser()->post('/api/roof-detections', $this->upload())->assertOk();
+
+        $this->assertCount(1, $response->json('roofs'));
+        $this->assertSame('det_roof', $response->json('roofs.0.id'));
+        $this->assertCount(4, $response->json('roofs.0.polygon_px'));
+    }
+
     /**
      * Jumlah pasangan sisi tak bersebelahan yang benar-benar bersilangan.
      *

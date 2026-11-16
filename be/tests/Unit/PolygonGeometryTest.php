@@ -292,6 +292,53 @@ class PolygonGeometryTest extends TestCase
         }
     }
 
+    public function test_min_area_rectangle_corners_mengembalikan_empat_sudut_presisi(): void
+    {
+        $rotated = self::rotatedRectangle(32.0);
+        $corners = PolygonGeometry::minAreaRectangleCorners($rotated);
+
+        $this->assertCount(4, $corners);
+        $this->assertEqualsWithDelta(PolygonGeometry::area($rotated), PolygonGeometry::area($corners), 1.0);
+    }
+
+    public function test_regularize_merapikan_mask_blobby_dan_membuang_kontur_memanjang(): void
+    {
+        // Mask blobby: persegi 100 x 80 dengan gangguan tepi +-4 px dan 12 titik per sisi.
+        $blobby = [];
+        $corners = [[50.0, 50.0], [150.0, 50.0], [150.0, 130.0], [50.0, 130.0]];
+
+        foreach ($corners as $index => $corner) {
+            $next = $corners[($index + 1) % 4];
+            $len = sqrt(($next[0] - $corner[0]) ** 2 + ($next[1] - $corner[1]) ** 2);
+            $nx = -($next[1] - $corner[1]) / $len;
+            $ny = ($next[0] - $corner[0]) / $len;
+
+            for ($step = 0; $step < 12; $step++) {
+                $t = $step / 12;
+                $offset = 4.0 * sin($t * M_PI);
+                $blobby[] = [
+                    $corner[0] + ($next[0] - $corner[0]) * $t + $nx * $offset,
+                    $corner[1] + ($next[1] - $corner[1]) * $t + $ny * $offset,
+                ];
+            }
+        }
+
+        $regularized = PolygonGeometry::regularize($blobby, 1.8, 0.80, 5.0);
+
+        $this->assertCount(5, $regularized, 'Persegi blobby harus dirapikan menjadi 4 sudut siku (ring tertutup 5 titik).');
+        $this->assertTrue(PolygonGeometry::isClosedRing($regularized));
+        $this->assertSame(0, self::crossings($regularized));
+
+        // Bentuk L tetap dipertahankan (tidak dipaksa menjadi kotak penuh).
+        $lRegularized = PolygonGeometry::regularize(self::L_SHAPE, 1.8, 0.80, 5.0);
+        $this->assertCount(6, PolygonGeometry::openRing($lRegularized));
+        $this->assertEqualsWithDelta(PolygonGeometry::area(self::L_SHAPE), PolygonGeometry::area($lRegularized), 1.0);
+
+        // Kontur memanjang seperti jalan (rasio aspek 30:1 > 5.0) disaring.
+        $roadLike = [[0.0, 0.0], [300.0, 0.0], [300.0, 10.0], [0.0, 10.0]];
+        $this->assertSame([], PolygonGeometry::regularize($roadLike, 1.8, 0.80, 5.0));
+    }
+
     /**
      * Kesepuluh ring mask sungguhan, disimpan sebagai fixture supaya perilakunya
      * dapat diuji ulang tanpa memanggil layanan model.

@@ -25,18 +25,6 @@ use Illuminate\Http\UploadedFile;
  */
 class RoofDetectionController extends Controller
 {
-    /**
-     * Toleransi penyederhanaan poligon, dalam piksel tangkapan.
-     *
-     * Mask model segmentasi sangat padat: satu tangkapan 512 piksel dengan 14 deteksi
-     * menghasilkan lebih dari enam ribu titik, dan poligon terbesarnya sendiri
-     * mencapai ribuan. Pada data nyata, toleransi 0,5 piksel memangkasnya menjadi
-     * sekitar seperempat dengan galat luas di bawah 0,25%; toleransi 1,0 piksel
-     * memberi kompresi jauh lebih besar tetapi galatnya menembus 1%, dan itu terlalu
-     * mahal untuk angka yang menjadi dasar kapasitas terpasang.
-     */
-    private const SIMPLIFY_TOLERANCE_PX = 0.5;
-
     public function __construct(
         private readonly MlClient $ml,
         private readonly ImageryAssetStore $assets,
@@ -71,23 +59,33 @@ class RoofDetectionController extends Controller
         );
 
         $roofs = [];
+        $simplifyTolerance = (float) config('services.ml.postprocess.simplify_tolerance_px', 1.8);
+        $rectangularityThreshold = (float) config('services.ml.postprocess.rectangularity_threshold', 0.80);
+        $maxAspectRatio = (float) config('services.ml.postprocess.max_aspect_ratio', 5.0);
+        $minAreaSqm = (float) config('services.ml.postprocess.min_area_sqm', 6.0);
 
         foreach ($result->detections as $detection) {
-            // Ring dirapikan sekali di sini: luas, GeoJSON, dan yang dikirim ke klien
-            // semuanya memakai ring sederhana yang sama.
-            $polygon = PolygonGeometry::makeSimple(
-                PolygonGeometry::simplify($detection->polygon, self::SIMPLIFY_TOLERANCE_PX),
+            // Ring dirapikan dan diregularisasi sekali di sini: luas, GeoJSON, dan yang
+            // dikirim ke klien semuanya memakai ring sederhana yang sama.
+            $polygon = PolygonGeometry::regularize(
+                ring: $detection->polygon,
+                simplifyTolerancePx: $simplifyTolerance,
+                rectangularityThreshold: $rectangularityThreshold,
+                maxAspectRatio: $maxAspectRatio,
             );
 
-            // Poligon yang tidak membentuk bidang tidak dapat dipakai menghitung apa
-            // pun; mengirimkannya hanya memaksa antarmuka menyaring hal yang sama.
-            // Ring tertutup dengan tiga titik sudut berarti empat titik, syarat
-            // minimum sebuah poligon yang sah.
+            // Poligon yang tersaring atau tidak membentuk bidang tidak dapat dipakai
+            // menghitung apa pun; mengirimkannya hanya memaksa antarmuka menyaring ulang.
             if (count($polygon) < 4) {
                 continue;
             }
 
             $polygonPx = PolygonGeometry::openRing($polygon);
+            $areaSqm = round(PolygonGeometry::area($polygonPx) * $metersPerPixel ** 2, 2);
+
+            if ($minAreaSqm > 0.0 && $areaSqm < $minAreaSqm) {
+                continue;
+            }
 
             $roofs[] = [
                 'id' => $detection->id,
@@ -95,7 +93,7 @@ class RoofDetectionController extends Controller
                 'polygon_lnglat' => RoofGeometry::ringLngLat($polygonPx, $bbox, $width, $height),
                 'bbox_px' => $detection->bbox,
                 'confidence' => round($detection->confidence, 4),
-                'area_sqm' => round(PolygonGeometry::area($polygonPx) * $metersPerPixel ** 2, 2),
+                'area_sqm' => $areaSqm,
             ];
         }
 

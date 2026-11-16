@@ -573,6 +573,111 @@ final class PolygonGeometry
     }
 
     /**
+     * Empat titik sudut persegi panjang pembatas terkecil (ring terbuka).
+     *
+     * Mengembalikan array kosong bila ring tidak membentuk bidang bernilai luas.
+     *
+     * @param  array<int, array{0: float|int, 1: float|int}>  $ring
+     * @return array<int, array{0: float, 1: float}>
+     */
+    public static function minAreaRectangleCorners(array $ring): array
+    {
+        $rect = self::minAreaRectangle($ring);
+
+        if ($rect['length'] <= self::EPSILON || $rect['width'] <= self::EPSILON) {
+            return [];
+        }
+
+        $rad = deg2rad($rect['rotation_deg']);
+        $ux = cos($rad);
+        $uy = sin($rad);
+        $vx = -$uy;
+        $vy = $ux;
+
+        $halfLength = $rect['length'] / 2.0;
+        $halfWidth = $rect['width'] / 2.0;
+        [$cx, $cy] = $rect['center'];
+
+        return [
+            [
+                round($cx - $halfLength * $ux - $halfWidth * $vx, 2),
+                round($cy - $halfLength * $uy - $halfWidth * $vy, 2),
+            ],
+            [
+                round($cx + $halfLength * $ux - $halfWidth * $vx, 2),
+                round($cy + $halfLength * $uy - $halfWidth * $vy, 2),
+            ],
+            [
+                round($cx + $halfLength * $ux + $halfWidth * $vx, 2),
+                round($cy + $halfLength * $uy + $halfWidth * $vy, 2),
+            ],
+            [
+                round($cx - $halfLength * $ux + $halfWidth * $vx, 2),
+                round($cy - $halfLength * $uy + $halfWidth * $vy, 2),
+            ],
+        ];
+    }
+
+    /**
+     * Merapikan kontur mask segmentasi menjadi poligon arsitektural yang bersih.
+     *
+     * Mask YOLO yang membulat ("blobby") dengan rasio luas terhadap kotak pembatas
+     * terkecil >= `$rectangularityThreshold` dirapikan ke empat sudut siku 90°,
+     * sedangkan bentuk majemuk seperti atap L/U tetap mempertahankan bentuk aslinya
+     * dengan tepi yang disederhanakan. Kontur memanjang melebihi `$maxAspectRatio`
+     * (misal false positive jalan) dibuang dengan mengembalikan array kosong.
+     *
+     * @param  array<int, array{0: float|int, 1: float|int}>  $ring
+     * @return array<int, array{0: float, 1: float}> Ring tertutup sederhana, atau kosong bila disaring.
+     */
+    public static function regularize(
+        array $ring,
+        float $simplifyTolerancePx = 1.8,
+        float $rectangularityThreshold = 0.80,
+        float $maxAspectRatio = 5.0,
+    ): array {
+        $simple = self::makeSimple(self::simplify($ring, $simplifyTolerancePx));
+
+        if (count($simple) < 4) {
+            return [];
+        }
+
+        $area = self::area($simple);
+        $rect = self::minAreaRectangle($simple);
+
+        if ($area <= self::EPSILON || $rect['width'] <= self::EPSILON) {
+            return [];
+        }
+
+        if ($maxAspectRatio > 0.0 && ($rect['length'] / $rect['width']) > $maxAspectRatio) {
+            return [];
+        }
+
+        $rectArea = $rect['length'] * $rect['width'];
+        $rectangularity = $rectArea > self::EPSILON ? ($area / $rectArea) : 0.0;
+
+        if ($rectangularityThreshold > 0.0 && $rectangularityThreshold <= 1.0 && $rectangularity >= $rectangularityThreshold) {
+            $corners = self::minAreaRectangleCorners($simple);
+
+            if ($corners !== []) {
+                return self::closeRing($corners);
+            }
+        }
+
+        // Bentuk non-persegi (mis. L/U) tetap dijaga bentuknya, namun bila masih
+        // sangat padat verteks karena mask blobby, sederhanakan ulang sedikit lebih tegas.
+        if (count(self::openRing($simple)) > 12) {
+            $firmer = self::makeSimple(self::simplify($simple, max($simplifyTolerancePx, 2.5)));
+
+            if (count($firmer) >= 4) {
+                return $firmer;
+            }
+        }
+
+        return $simple;
+    }
+
+    /**
      * Penyederhanaan ring dengan Douglas-Peucker, ring tertutup.
      *
      * Mask dari model segmentasi sangat padat: satu tangkapan 512 piksel dengan 14

@@ -56,6 +56,14 @@ return [
         // model yang berjalan di mesin yang sama dan tidak meminta autentikasi.
         'key' => env('ML_SERVICE_KEY'),
         'timeout' => (int) env('ML_SERVICE_TIMEOUT', 60),
+        // Parameter perapian poligon deteksi atap sebelum dikembalikan ke studio.
+        // Dapat disetel lewat `.env` tanpa menyentuh kode maupun kontrak API.
+        'postprocess' => [
+            'simplify_tolerance_px' => (float) env('ML_SIMPLIFY_TOLERANCE_PX', 1.8),
+            'rectangularity_threshold' => (float) env('ML_RECTANGULARITY_THRESHOLD', 0.80),
+            'max_aspect_ratio' => (float) env('ML_MAX_ASPECT_RATIO', 5.0),
+            'min_area_sqm' => (float) env('ML_MIN_AREA_SQM', 6.0),
+        ],
     ],
 
     /*
