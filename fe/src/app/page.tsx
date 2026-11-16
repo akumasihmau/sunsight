@@ -238,26 +238,127 @@ type RenderedSvgSlot = {
   state: NonNullable<LayoutPanelSlot["state"]>;
 };
 
+type EdgeDimension = {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  t1ax: number;
+  t1ay: number;
+  t1bx: number;
+  t1by: number;
+  t2ax: number;
+  t2ay: number;
+  t2bx: number;
+  t2by: number;
+  lx: number;
+  ly: number;
+  angleDeg: number;
+  label: string;
+  showLabel: boolean;
+};
+
+function buildEdgeDimensions(
+  svgPts: [number, number][],
+  metricPts: [number, number][]
+): EdgeDimension[] {
+  const n = Math.min(svgPts.length, metricPts.length);
+  if (n < 3) return [];
+
+  // Signed area in SVG y-down space: >= 0 indicates visually clockwise winding
+  let signedArea2 = 0;
+  for (let i = 0; i < n; i++) {
+    const [x1, y1] = svgPts[i];
+    const [x2, y2] = svgPts[(i + 1) % n];
+    signedArea2 += x1 * y2 - x2 * y1;
+  }
+  const isClockwise = signedArea2 >= 0;
+
+  const offset = 8.5;
+  const tickHalf = 2.6;
+  const labelGap = 6.5;
+  const dims: EdgeDimension[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const [x1, y1] = svgPts[i];
+    const [x2, y2] = svgPts[j];
+    const [mx1, my1] = metricPts[i];
+    const [mx2, my2] = metricPts[j];
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const svgLen = Math.hypot(dx, dy);
+    const lengthM = Math.hypot(mx2 - mx1, my2 - my1);
+
+    if (svgLen < 8 || lengthM <= 0.05) continue;
+
+    const tx = dx / svgLen;
+    const ty = dy / svgLen;
+    let nx = isClockwise ? ty : -ty;
+    let ny = isClockwise ? -tx : tx;
+
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    if (
+      isPointInPoly(midX + nx * 1.5, midY + ny * 1.5, svgPts) &&
+      !isPointInPoly(midX - nx * 1.5, midY - ny * 1.5, svgPts)
+    ) {
+      nx = -nx;
+      ny = -ny;
+    }
+
+    const ax = x1 + nx * offset;
+    const ay = y1 + ny * offset;
+    const bx = x2 + nx * offset;
+    const by = y2 + ny * offset;
+
+    let angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    if (angleDeg > 90) angleDeg -= 180;
+    if (angleDeg <= -90) angleDeg += 180;
+
+    const lx = Math.max(14, Math.min(346, (ax + bx) / 2 + nx * labelGap));
+    const ly = Math.max(8, Math.min(167, (ay + by) / 2 + ny * labelGap));
+
+    dims.push({
+      ax,
+      ay,
+      bx,
+      by,
+      t1ax: ax - nx * tickHalf,
+      t1ay: ay - ny * tickHalf,
+      t1bx: ax + nx * tickHalf,
+      t1by: ay + ny * tickHalf,
+      t2ax: bx - nx * tickHalf,
+      t2ay: by - ny * tickHalf,
+      t2bx: bx + nx * tickHalf,
+      t2by: by + ny * tickHalf,
+      lx,
+      ly,
+      angleDeg,
+      label: `${lengthM.toFixed(1)} m`,
+      showLabel: svgLen >= 13,
+    });
+  }
+
+  return dims;
+}
+
 function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
-  // Scale either the exact world-meter Studio layout OR fallback relative polygon into SVG box [46..330, 22..154]
+  // Scale either the exact world-meter Studio layout OR fallback relative polygon into padded SVG box
   const {
     polygonStr,
     insetStr,
-    minX,
-    maxX,
-    minY,
-    maxY,
-    sMinX,
-    sMaxY,
+    edgeDimensions,
     slots,
     avgSlotW,
     avgSlotH,
     legacyObstacles,
   } = useMemo(() => {
-    const boxLeft = 46;
-    const boxTop = 22;
+    const boxLeft = 38;
+    const boxTop = 24;
     const boxW = 284;
-    const boxH = 132;
+    const boxH = 116;
 
     if (facet.worldPolygon && facet.worldPolygon.length >= 3 && facet.layoutSlots) {
       const xs = facet.worldPolygon.map(([x]) => x);
@@ -285,11 +386,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
         facet.insetPolygon && facet.insetPolygon.length >= 3 ? facet.insetPolygon : facet.worldPolygon;
       const insetPts = rawInset.map(([mx, my]) => toSvg(mx, my));
 
-      const pXs = polyPts.map((p) => p[0]);
-      const pYs = polyPts.map((p) => p[1]);
-      const sXs = insetPts.map((p) => p[0]);
-      const sYs = insetPts.map((p) => p[1]);
-
       const slots: RenderedSvgSlot[] = [];
       for (const s of facet.layoutSlots) {
         const state = s.state ?? "active";
@@ -312,12 +408,7 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
       return {
         polygonStr: polyPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
         insetStr: insetPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
-        minX: Math.min(...pXs),
-        maxX: Math.max(...pXs),
-        minY: Math.min(...pYs),
-        maxY: Math.max(...pYs),
-        sMinX: Math.min(...sXs),
-        sMaxY: Math.max(...sYs),
+        edgeDimensions: buildEdgeDimensions(polyPts, facet.worldPolygon),
         slots,
         avgSlotW: sampleSlot?.w ?? 4,
         avgSlotH: sampleSlot?.h ?? 6,
@@ -400,15 +491,20 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
       }
     }
 
+    const longM = Math.max(facet.ridgeM, facet.slopeM);
+    const shortM = Math.min(facet.ridgeM, facet.slopeM);
+    const horizM = rawW >= rawH ? longM : shortM;
+    const vertM = rawW >= rawH ? shortM : longM;
+    const fallbackMetricPts: [number, number][] =
+      longM > 0 && shortM > 0
+        ? raw.map(([u, v]) => [((u - rMinX) / rawW) * horizM, ((v - rMinY) / rawH) * vertM])
+        : [];
+
     return {
       polygonStr: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
       insetStr: insetPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
-      minX,
-      maxX,
-      minY,
-      maxY,
-      sMinX,
-      sMaxY,
+      edgeDimensions:
+        fallbackMetricPts.length >= 3 ? buildEdgeDimensions(pts, fallbackMetricPts) : [],
       slots,
       avgSlotW: mw,
       avgSlotH: mh,
@@ -418,8 +514,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
 
   const showCellBusbars = avgSlotW >= 5 && avgSlotH >= 7;
   const showSlotTag = avgSlotW >= 9 && avgSlotH >= 7;
-  const topDimY = Math.max(10, minY - 8);
-  const leftDimX = Math.max(18, minX - 10);
   const setbackText = `Setback ${(facet.setbackM ?? 0.5).toFixed(1)}m`;
 
   return (
@@ -637,56 +731,55 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
           })}
         </g>
 
-        {/* Dimension & Setback Annotations */}
-        {facet.ridgeM > 0 && (
-          <g stroke="#94a3b8" strokeWidth="0.8" opacity="0.9">
-            <line x1={minX} y1={topDimY} x2={maxX} y2={topDimY} />
-            <line x1={minX} y1={topDimY - 3} x2={minX} y2={topDimY + 3} />
-            <line x1={maxX} y1={topDimY - 3} x2={maxX} y2={topDimY + 3} />
-            <text
-              x={(minX + maxX) / 2}
-              y={topDimY - 2.5}
-              textAnchor="middle"
-              fontSize="7"
-              fontWeight="600"
-              fill="#64748b"
-              stroke="none"
-            >
-              {facet.ridgeM.toFixed(1)} m
-            </text>
+        {/* Per-edge CAD Dimension Annotations matching polygon geometry */}
+        {edgeDimensions.map((dim, idx) => (
+          <g key={`dim-${idx}`} stroke="#94a3b8" strokeWidth="0.8" opacity="0.92">
+            <line x1={dim.ax} y1={dim.ay} x2={dim.bx} y2={dim.by} />
+            <line x1={dim.t1ax} y1={dim.t1ay} x2={dim.t1bx} y2={dim.t1by} />
+            <line x1={dim.t2ax} y1={dim.t2ay} x2={dim.t2bx} y2={dim.t2by} />
+            {dim.showLabel && (
+              <text
+                x={dim.lx}
+                y={dim.ly}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="6.5"
+                fontWeight="600"
+                fill="#475569"
+                stroke="#ffffff"
+                strokeWidth="2.4"
+                paintOrder="stroke"
+                strokeLinejoin="round"
+                transform={`rotate(${dim.angleDeg.toFixed(1)} ${dim.lx.toFixed(1)} ${dim.ly.toFixed(1)})`}
+              >
+                {dim.label}
+              </text>
+            )}
           </g>
-        )}
+        ))}
 
-        {facet.slopeM > 0 && (
-          <g stroke="#94a3b8" strokeWidth="0.8" opacity="0.9">
-            <line x1={leftDimX} y1={minY} x2={leftDimX} y2={maxY} />
-            <line x1={leftDimX - 3} y1={minY} x2={leftDimX + 3} y2={minY} />
-            <line x1={leftDimX - 3} y1={maxY} x2={leftDimX + 3} y2={maxY} />
-            <text
-              x={leftDimX - 4}
-              y={(minY + maxY) / 2}
-              textAnchor="middle"
-              fontSize="7"
-              fontWeight="600"
-              fill="#64748b"
-              stroke="none"
-              transform={`rotate(-90 ${leftDimX - 4} ${(minY + maxY) / 2})`}
-            >
-              {facet.slopeM.toFixed(1)} m
-            </text>
-          </g>
-        )}
-
-        <text
-          x={sMinX}
-          y={Math.min(170, Math.max(sMaxY + 13, maxY + 11))}
-          fontSize="6.5"
-          fontWeight="600"
-          fill="#64748b"
-          letterSpacing="0.02em"
-        >
-          {setbackText}
-        </text>
+        {/* Blueprint legend for dashed setback inset */}
+        <g opacity="0.9">
+          <line
+            x1="10"
+            y1="166.5"
+            x2="21"
+            y2="166.5"
+            stroke="#94a3b8"
+            strokeWidth="1"
+            strokeDasharray="3 1.8"
+          />
+          <text
+            x="24"
+            y="168.5"
+            fontSize="6.5"
+            fontWeight="600"
+            fill="#64748b"
+            letterSpacing="0.02em"
+          >
+            {setbackText}
+          </text>
+        </g>
       </svg>
     </div>
   );
