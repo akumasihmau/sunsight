@@ -7,11 +7,14 @@ use App\Http\Controllers\RoofDetectionController;
 use App\Http\Controllers\SimulationController;
 use Illuminate\Support\Facades\Route;
 
-// --- Publik: Autentikasi ---
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+// --- Publik: Autentikasi & Pencarian Alamat ---
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
+// Pencarian alamat dipakai di Landing Hero sebelum login maupun di Studio/Beranda;
+// dibatasi lajunya agar tidak membanjiri Nominatim.
+Route::get('/geocode', GeocodeController::class)->middleware('throttle:30,1');
 
 // --- Terlindungi (Wajib Login) ---
 Route::middleware('auth:sanctum')->group(function () {
@@ -30,8 +33,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // Acuan tangkapan untuk bidang yang digambar sendiri, tanpa memanggil model.
     Route::post('/captures', CaptureController::class);
 
-    // Pencarian alamat, dibatasi lajunya agar tidak membanjiri Nominatim.
-    Route::get('/geocode', GeocodeController::class)->middleware('throttle:30,1');
     Route::get('/reverse-geocode', [GeocodeController::class, 'reverse'])->middleware('throttle:30,1');
     Route::post('/simulate', [SimulationController::class, 'simulate']);
 

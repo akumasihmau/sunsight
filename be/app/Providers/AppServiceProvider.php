@@ -28,9 +28,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Membelokkan link reset password ke URL Next.js
-        ResetPassword::createUrlUsing(function (object $notifiable, string $token) {
-            return env('FRONTEND_URL')."/reset-password?token={$token}&email={$notifiable->getEmailForPasswordReset()}";
+        // Membelokkan link reset password ke URL Next.js (aman saat config di-cache)
+        ResetPassword::createUrlUsing(function (object $notifiable, string $token): string {
+            $frontendUrl = rtrim((string) config('app.frontend_url', 'http://localhost:3000'), '/');
+            $email = urlencode((string) $notifiable->getEmailForPasswordReset());
+
+            return "{$frontendUrl}/reset-password?token={$token}&email={$email}";
         });
     }
 }
