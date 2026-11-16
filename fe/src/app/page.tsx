@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { BogorProjectsMap } from "@/components/BogorProjectsMap";
+import { ProjectPolygonMapPreview } from "@/components/ProjectPolygonMapPreview";
 import { LandingView } from "@/components/landing/LandingView";
 import { ConfirmDialog } from "@/components/studio/ConfirmDialog";
 import { ProposalModal } from "@/components/studio/ProposalModal";
@@ -13,12 +14,21 @@ import { SunnyMascot } from "@/components/mascot/SunnyMascot";
 import {
   api,
   getToken,
+  type GeocodeResult,
   type ModulePreset,
   type SimulationDetail,
   type SimulationParameters,
   type SimulationSummary,
 } from "@/lib/api";
-import { saveStoredBiodata, useHasToken, useStoredBiodata, type PropertyType } from "@/lib/profile";
+import {
+  LOCATION_PRESETS,
+  saveStoredBiodata,
+  setPendingScanIntent,
+  useHasToken,
+  useStoredBiodata,
+  type PropertyType,
+} from "@/lib/profile";
+import { buildDashboardRoofLayout, type LayoutPanelSlot } from "@/lib/roofLayout";
 
 type DashboardNavTab = "overview" | "history" | "calculator";
 
@@ -43,6 +53,16 @@ interface ProjectFacet {
   effectiveAreaPct: number;
   polygonPoints: [number, number][];
   obstacles: ProjectObstacle[];
+  rows?: number;
+  cols?: number;
+  setbackM?: number;
+  /** Exact world-frame polygon coordinates in meters centered at (0,0) matching Studio */
+  worldPolygon?: [number, number][];
+  /** Exact world-frame setback boundary in meters matching Studio */
+  insetPolygon?: [number, number][];
+  /** Exact Studio-packed slots (position, size, rotationDeg, active/empty/hvac/skylight state) */
+  layoutSlots?: LayoutPanelSlot[];
+  isSolarPopulated?: boolean;
 }
 
 interface SavedRoofProject {
@@ -64,7 +84,10 @@ interface SavedRoofProject {
   moduleCount: number;
   modulePower: number;
   annualProdMwh: number;
+  monthlyBillIdr: number;
   monthlySavingIdr: number;
+  annualSavingIdr: number;
+  tariffIdrPerKwh?: number;
   paybackYears: number;
   treesCount: number;
   co2ReductionTon: number;
@@ -102,7 +125,9 @@ const EMPTY_PROJECT: SavedRoofProject = {
   moduleCount: 0,
   modulePower: 550,
   annualProdMwh: 0,
+  monthlyBillIdr: 0,
   monthlySavingIdr: 0,
+  annualSavingIdr: 0,
   paybackYears: 0,
   treesCount: 0,
   co2ReductionTon: 0,
@@ -204,20 +229,17 @@ function isPointInPoly(px: number, py: number, polygon: [number, number][]): boo
   return inside;
 }
 
-function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
-  const points = useMemo(() => {
-    const raw =
-      facet.polygonPoints && facet.polygonPoints.length >= 3
-        ? facet.polygonPoints
-        : [
-            [10, 15],
-            [90, 15],
-            [90, 85],
-            [10, 85],
-          ];
-    return raw.map(([u, v]) => [36 + (u / 100) * 288, 18 + (v / 100) * 140] as [number, number]);
-  }, [facet.polygonPoints]);
+type RenderedSvgSlot = {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  rotationDeg: number;
+  state: NonNullable<LayoutPanelSlot["state"]>;
+};
 
+function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
+  // Scale either the exact world-meter Studio layout OR fallback relative polygon into SVG box [46..330, 22..154]
   const {
     polygonStr,
     insetStr,
@@ -227,122 +249,178 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
     maxY,
     sMinX,
     sMaxY,
-    modules,
-    bestDim,
-    obstacles,
+    slots,
+    avgSlotW,
+    avgSlotH,
+    legacyObstacles,
   } = useMemo(() => {
-    const polygonStr = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-    const cx = points.reduce((acc, p) => acc + p[0], 0) / points.length;
-    const cy = points.reduce((acc, p) => acc + p[1], 0) / points.length;
+    const boxLeft = 46;
+    const boxTop = 22;
+    const boxW = 284;
+    const boxH = 132;
 
-    // Setback boundary points (smooth inward scaling)
-    const insetPoints = points.map(([x, y]) => [
-      cx + (x - cx) * 0.90,
-      cy + (y - cy) * 0.88,
-    ] as [number, number]);
-    const insetStr = insetPoints.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    if (facet.worldPolygon && facet.worldPolygon.length >= 3 && facet.layoutSlots) {
+      const xs = facet.worldPolygon.map(([x]) => x);
+      const ys = facet.worldPolygon.map(([, y]) => y);
+      const rMinX = Math.min(...xs);
+      const rMaxX = Math.max(...xs);
+      const rMinY = Math.min(...ys);
+      const rMaxY = Math.max(...ys);
+      const spanX = Math.max(1e-3, rMaxX - rMinX);
+      const spanY = Math.max(1e-3, rMaxY - rMinY);
 
-    const xs = points.map((p) => p[0]);
-    const ys = points.map((p) => p[1]);
+      const scale = Math.min(boxW / spanX, boxH / spanY);
+      const drawnW = spanX * scale;
+      const drawnH = spanY * scale;
+      const offsetX = boxLeft + (boxW - drawnW) / 2;
+      const offsetY = boxTop + (boxH - drawnH) / 2;
+
+      const toSvg = (mx: number, my: number): [number, number] => [
+        offsetX + (mx - rMinX) * scale,
+        offsetY + (my - rMinY) * scale,
+      ];
+
+      const polyPts = facet.worldPolygon.map(([mx, my]) => toSvg(mx, my));
+      const rawInset =
+        facet.insetPolygon && facet.insetPolygon.length >= 3 ? facet.insetPolygon : facet.worldPolygon;
+      const insetPts = rawInset.map(([mx, my]) => toSvg(mx, my));
+
+      const pXs = polyPts.map((p) => p[0]);
+      const pYs = polyPts.map((p) => p[1]);
+      const sXs = insetPts.map((p) => p[0]);
+      const sYs = insetPts.map((p) => p[1]);
+
+      const slots: RenderedSvgSlot[] = [];
+      for (const s of facet.layoutSlots) {
+        const state = s.state ?? "active";
+        // Hide normal PV modules when contour-only mode is active, while keeping explicit obstacles visible
+        if (facet.isSolarPopulated === false && (state === "active" || state === "empty")) {
+          continue;
+        }
+        const [cx, cy] = toSvg(s.x, s.y);
+        slots.push({
+          cx,
+          cy,
+          w: Math.max(1.8, s.w * scale),
+          h: Math.max(2.2, s.l * scale),
+          rotationDeg: s.rotationDeg ?? 0,
+          state,
+        });
+      }
+
+      const sampleSlot = slots[0];
+      return {
+        polygonStr: polyPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+        insetStr: insetPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+        minX: Math.min(...pXs),
+        maxX: Math.max(...pXs),
+        minY: Math.min(...pYs),
+        maxY: Math.max(...pYs),
+        sMinX: Math.min(...sXs),
+        sMaxY: Math.max(...sYs),
+        slots,
+        avgSlotW: sampleSlot?.w ?? 4,
+        avgSlotH: sampleSlot?.h ?? 6,
+        legacyObstacles: [] as (ProjectObstacle & { ox: number; oy: number })[],
+      };
+    }
+
+    // Fallback path for placeholder / summary-only facets
+    const raw =
+      facet.polygonPoints && facet.polygonPoints.length >= 3
+        ? facet.polygonPoints
+        : [
+            [10, 15],
+            [90, 15],
+            [90, 85],
+            [10, 85],
+          ];
+    const rXs = raw.map(([u]) => u);
+    const rYs = raw.map(([, v]) => v);
+    const rMinX = Math.min(...rXs);
+    const rMaxX = Math.max(...rXs);
+    const rMinY = Math.min(...rYs);
+    const rMaxY = Math.max(...rYs);
+    const rawW = Math.max(1e-3, rMaxX - rMinX);
+    const rawH = Math.max(1e-3, rMaxY - rMinY);
+    const scale = Math.min(boxW / rawW, boxH / rawH);
+    const offsetX = boxLeft + (boxW - rawW * scale) / 2;
+    const offsetY = boxTop + (boxH - rawH * scale) / 2;
+    const pts: [number, number][] = raw.map(([u, v]) => [
+      offsetX + (u - rMinX) * scale,
+      offsetY + (v - rMinY) * scale,
+    ]);
+    const cx = pts.reduce((acc, p) => acc + p[0], 0) / pts.length;
+    const cy = pts.reduce((acc, p) => acc + p[1], 0) / pts.length;
+    const insetPts = pts.map(([x, y]) => [cx + (x - cx) * 0.9, cy + (y - cy) * 0.88] as [number, number]);
+
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
-
-    const sXs = insetPoints.map((p) => p[0]);
-    const sYs = insetPoints.map((p) => p[1]);
+    const sXs = insetPts.map((p) => p[0]);
+    const sYs = insetPts.map((p) => p[1]);
     const sMinX = Math.min(...sXs);
     const sMaxX = Math.max(...sXs);
     const sMinY = Math.min(...sYs);
     const sMaxY = Math.max(...sYs);
 
-    const obstacles = (facet.obstacles || []).map((obs) => ({
+    const polySpanW = Math.max(1, maxX - minX);
+    const polySpanH = Math.max(1, maxY - minY);
+    const legacyObstacles = (facet.obstacles || []).map((obs) => ({
       ...obs,
-      ox: 36 + (obs.xPct / 100) * 288,
-      oy: 18 + (obs.yPct / 100) * 140,
+      ox: minX + (obs.xPct / 100) * polySpanW,
+      oy: minY + (obs.yPct / 100) * polySpanH,
     }));
 
-    // Symmetrical, perfectly structured module grid packing
-    const targetCount = facet.moduleCount || 12;
-    const sWidth = Math.max(30, sMaxX - sMinX);
-    const sHeight = Math.max(20, sMaxY - sMinY);
+    const targetCount = Math.max(0, facet.moduleCount || 0);
+    const sWidth = Math.max(24, sMaxX - sMinX);
+    const sHeight = Math.max(18, sMaxY - sMinY);
+    const bestCols = facet.cols && facet.cols > 0 ? facet.cols : Math.max(1, Math.ceil(Math.sqrt(Math.max(1, targetCount))));
+    const bestRows = facet.rows && facet.rows > 0 ? facet.rows : Math.max(1, Math.ceil(Math.max(1, targetCount) / bestCols));
+    const gap = bestCols > 18 || bestRows > 8 ? 0.75 : 1.8;
+    const mw = Math.max(2.0, (sWidth - (bestCols - 1) * gap) / bestCols);
+    const mh = Math.max(2.8, (sHeight - (bestRows - 1) * gap) / bestRows);
+    const startX = sMinX + Math.max(0, (sWidth - (bestCols * mw + (bestCols - 1) * gap)) / 2);
+    const startY = sMinY + Math.max(0, (sHeight - (bestRows * mh + (bestRows - 1) * gap)) / 2);
 
-    // Find optimal rows and cols so modules are arranged in pristine, neat arrays
-    let bestCols = 1;
-    let bestRows = 1;
-    let bestScore = Infinity;
-
-    for (let r = 1; r <= 4; r++) {
-      for (let c = 1; c <= 16; c++) {
-        if (r * c >= targetCount) {
-          const testMw = (sWidth - (c - 1) * 2) / c;
-          const testMh = (sHeight - (r - 1) * 2.2) / r;
-          if (testMw > 5 && testMh > 8) {
-            const ratio = testMh / testMw;
-            // Target portrait aspect ratio ~1.8 - 2.0
-            const score = Math.abs(ratio - 1.85) + (r * c - targetCount) * 0.15;
-            if (score < bestScore) {
-              bestScore = score;
-              bestCols = c;
-              bestRows = r;
-            }
-          }
+    const slots: RenderedSvgSlot[] = [];
+    if (targetCount > 0) {
+      for (let r = 0; r < bestRows; r++) {
+        for (let c = 0; c < bestCols; c++) {
+          const mcx = startX + c * (mw + gap) + mw / 2;
+          const mcy = startY + r * (mh + gap) + mh / 2;
+          if (!isPointInPoly(mcx, mcy, pts)) continue;
+          slots.push({ cx: mcx, cy: mcy, w: mw, h: mh, rotationDeg: 0, state: "active" });
+          if (slots.length >= targetCount) break;
         }
+        if (slots.length >= targetCount) break;
       }
-    }
-
-    const gapX = 2.0;
-    const gapY = 2.2;
-    const mw = Math.max(6, (sWidth - (bestCols - 1) * gapX) / bestCols);
-    const mh = Math.max(8, (sHeight - (bestRows - 1) * gapY) / bestRows);
-
-    const gridW = bestCols * mw + (bestCols - 1) * gapX;
-    const gridH = bestRows * mh + (bestRows - 1) * gapY;
-    const startX = sMinX + Math.max(0, (sWidth - gridW) / 2);
-    const startY = sMinY + Math.max(0, (sHeight - gridH) / 2);
-
-    const placed: { x: number; y: number }[] = [];
-    for (let r = 0; r < bestRows; r++) {
-      for (let c = 0; c < bestCols; c++) {
-        const mx = startX + c * (mw + gapX);
-        const my = startY + r * (mh + gapY);
-        const mcx = mx + mw / 2;
-        const mcy = my + mh / 2;
-
-        // Verify inside polygon
-        const inPoly =
-          isPointInPoly(mcx, mcy, points) &&
-          isPointInPoly(mx + 1, my + 1, points) &&
-          isPointInPoly(mx + mw - 1, my + mh - 1, points);
-
-        if (!inPoly) continue;
-
-        // Verify obstacle buffer clearance
-        const collides = obstacles.some(
-          (o) => Math.abs(mcx - o.ox) < 18 && Math.abs(mcy - o.oy) < 16
-        );
-        if (collides) continue;
-
-        placed.push({ x: mx, y: my });
-        if (placed.length >= targetCount) break;
-      }
-      if (placed.length >= targetCount) break;
     }
 
     return {
-      polygonStr,
-      insetStr,
+      polygonStr: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+      insetStr: insetPts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
       minX,
       maxX,
       minY,
       maxY,
       sMinX,
       sMaxY,
-      modules: placed,
-      bestDim: { mw, mh },
-      obstacles,
+      slots,
+      avgSlotW: mw,
+      avgSlotH: mh,
+      legacyObstacles,
     };
-  }, [points, facet.obstacles, facet.moduleCount]);
+  }, [facet]);
+
+  const showCellBusbars = avgSlotW >= 5 && avgSlotH >= 7;
+  const showSlotTag = avgSlotW >= 9 && avgSlotH >= 7;
+  const topDimY = Math.max(10, minY - 8);
+  const leftDimX = Math.max(18, minX - 10);
+  const setbackText = `Setback ${(facet.setbackM ?? 0.5).toFixed(1)}m`;
 
   return (
     <div className="w-full h-full flex items-center justify-center select-none">
@@ -364,7 +442,7 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
         <rect width="100%" height="100%" fill={`url(#cadDotGrid-${facet.id})`} opacity="0.65" />
 
         <g filter={`url(#roofVectorShadow-${facet.id})`}>
-          {/* User-drawn roof polygon */}
+          {/* User-drawn / DB roof polygon */}
           <polygon
             points={polygonStr}
             fill="#ffffff"
@@ -377,59 +455,151 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
           <polygon
             points={insetStr}
             fill="#f8fafc"
-            fillOpacity="0.5"
+            fillOpacity="0.55"
             stroke="#94a3b8"
             strokeWidth="1"
             strokeDasharray="4 2.5"
+            strokeLinejoin="round"
           />
 
-          {/* Solar PV Modules */}
-          {modules.map((m, idx) => (
-            <g key={`module-${idx}`}>
-              <rect
-                x={m.x}
-                y={m.y}
-                width={bestDim.mw}
-                height={bestDim.mh}
-                rx="1.5"
-                fill="#0f172a"
-                stroke="#334155"
-                strokeWidth="0.5"
-              />
-              <line
-                x1={m.x + bestDim.mw / 2}
-                y1={m.y}
-                x2={m.x + bestDim.mw / 2}
-                y2={m.y + bestDim.mh}
-                stroke="#1e293b"
-                strokeWidth="0.4"
-              />
-              <line
-                x1={m.x}
-                y1={m.y + bestDim.mh / 2}
-                x2={m.x + bestDim.mw}
-                y2={m.y + bestDim.mh / 2}
-                stroke="#1e293b"
-                strokeWidth="0.4"
-              />
-              <rect
-                x={m.x + 1}
-                y={m.y + 1}
-                width={Math.max(1, bestDim.mw - 2)}
-                height="1"
-                fill="#f59e0b"
-                opacity="0.75"
-              />
-            </g>
-          ))}
+          {/* Packed Solar, Empty & Obstacle Slots matching exact Studio positions & rotation */}
+          {slots.map((s, idx) => {
+            const x0 = -s.w / 2;
+            const y0 = -s.h / 2;
+            const rx = s.w >= 5 ? 1.2 : 0.45;
+            const rotTransform =
+              Math.abs(s.rotationDeg) >= 0.1
+                ? `translate(${s.cx.toFixed(2)}, ${s.cy.toFixed(2)}) rotate(${s.rotationDeg.toFixed(1)})`
+                : `translate(${s.cx.toFixed(2)}, ${s.cy.toFixed(2)})`;
 
-          {/* Obstacles with keep-out clearance safety buffer */}
-          {obstacles.map((obs) => {
+            if (s.state === "empty") {
+              return (
+                <rect
+                  key={`slot-${idx}`}
+                  transform={rotTransform}
+                  x={x0}
+                  y={y0}
+                  width={s.w}
+                  height={s.h}
+                  rx={rx}
+                  fill="#94a3b8"
+                  fillOpacity="0.10"
+                  stroke="#94a3b8"
+                  strokeOpacity="0.65"
+                  strokeWidth={s.w >= 5 ? "0.65" : "0.4"}
+                  strokeDasharray={s.w >= 5 ? "2 1.2" : "1.2 1"}
+                />
+              );
+            }
+
+            if (s.state === "hvac") {
+              return (
+                <g key={`slot-${idx}`} transform={rotTransform}>
+                  <rect
+                    x={x0}
+                    y={y0}
+                    width={s.w}
+                    height={s.h}
+                    rx={rx}
+                    fill="#ffe4e6"
+                    stroke="#f43f5e"
+                    strokeWidth={s.w >= 5 ? "0.7" : "0.45"}
+                  />
+                  {showSlotTag && (
+                    <text
+                      x="0"
+                      y="1.8"
+                      textAnchor="middle"
+                      fontSize="4.2"
+                      fontWeight="800"
+                      fill="#9f1239"
+                    >
+                      AC
+                    </text>
+                  )}
+                </g>
+              );
+            }
+
+            if (s.state === "skylight") {
+              return (
+                <g key={`slot-${idx}`} transform={rotTransform}>
+                  <rect
+                    x={x0}
+                    y={y0}
+                    width={s.w}
+                    height={s.h}
+                    rx={rx}
+                    fill="#fef3c7"
+                    stroke="#f59e0b"
+                    strokeWidth={s.w >= 5 ? "0.7" : "0.45"}
+                  />
+                  {showSlotTag && (
+                    <text
+                      x="0"
+                      y="1.8"
+                      textAnchor="middle"
+                      fontSize="4.0"
+                      fontWeight="800"
+                      fill="#92400e"
+                    >
+                      SKY
+                    </text>
+                  )}
+                </g>
+              );
+            }
+
+            return (
+              <g key={`slot-${idx}`} transform={rotTransform}>
+                <rect
+                  x={x0}
+                  y={y0}
+                  width={s.w}
+                  height={s.h}
+                  rx={rx}
+                  fill="#0f172a"
+                  stroke="#334155"
+                  strokeWidth={s.w >= 5 ? "0.5" : "0.25"}
+                />
+                {showCellBusbars && (
+                  <>
+                    <line
+                      x1="0"
+                      y1={y0}
+                      x2="0"
+                      y2={y0 + s.h}
+                      stroke="#1e293b"
+                      strokeWidth="0.4"
+                    />
+                    <line
+                      x1={x0}
+                      y1="0"
+                      x2={x0 + s.w}
+                      y2="0"
+                      stroke="#1e293b"
+                      strokeWidth="0.4"
+                    />
+                    <rect
+                      x={x0 + 0.8}
+                      y={y0 + 0.8}
+                      width={Math.max(1, s.w - 1.6)}
+                      height="0.9"
+                      fill="#f59e0b"
+                      opacity="0.75"
+                    />
+                  </>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Fallback obstacles for summary-only mock entries */}
+          {legacyObstacles.map((obs) => {
             const isRed = obs.type === "hvac" || obs.type === "tank";
 
             return (
               <g key={obs.name} transform={`translate(${obs.ox}, ${obs.oy})`}>
-                {/* Keep-out buffer zone */}
                 <rect
                   x="-18"
                   y="-15"
@@ -442,7 +612,6 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
                   strokeWidth="1"
                   strokeDasharray="3 2"
                 />
-                {/* Inner obstacle badge */}
                 <rect
                   x="-13"
                   y="-10.5"
@@ -463,65 +632,61 @@ function FacetRoofVisual({ facet }: { facet: ProjectFacet }) {
                 >
                   {obs.name}
                 </text>
-                <text
-                  x="0"
-                  y="20"
-                  textAnchor="middle"
-                  fontSize="5.5"
-                  fontWeight="600"
-                  fill={isRed ? "#e11d48" : "#0284c7"}
-                  letterSpacing="0.02em"
-                >
-                  buffer 0.5m
-                </text>
               </g>
             );
           })}
-
-          {/* Setback label */}
-          <text
-            x={sMinX + 6}
-            y={sMaxY - 4}
-            fontSize="6"
-            fontWeight="600"
-            fill="#64748b"
-            letterSpacing="0.02em"
-          >
-            Setback 0.5m
-          </text>
         </g>
 
-        {/* Dimension annotation lines */}
-        <g stroke="#94a3b8" strokeWidth="0.8" opacity="0.9">
-          <line x1={minX} y1="9" x2={maxX} y2="9" />
-          <line x1={minX} y1="6" x2={minX} y2="12" />
-          <line x1={maxX} y1="6" x2={maxX} y2="12" />
-          <text
-            x={(minX + maxX) / 2}
-            y="7.5"
-            textAnchor="middle"
-            fontSize="6.5"
-            fontWeight="600"
-            fill="#64748b"
-          >
-            {facet.ridgeM} m
-          </text>
+        {/* Dimension & Setback Annotations */}
+        {facet.ridgeM > 0 && (
+          <g stroke="#94a3b8" strokeWidth="0.8" opacity="0.9">
+            <line x1={minX} y1={topDimY} x2={maxX} y2={topDimY} />
+            <line x1={minX} y1={topDimY - 3} x2={minX} y2={topDimY + 3} />
+            <line x1={maxX} y1={topDimY - 3} x2={maxX} y2={topDimY + 3} />
+            <text
+              x={(minX + maxX) / 2}
+              y={topDimY - 2.5}
+              textAnchor="middle"
+              fontSize="7"
+              fontWeight="600"
+              fill="#64748b"
+              stroke="none"
+            >
+              {facet.ridgeM.toFixed(1)} m
+            </text>
+          </g>
+        )}
 
-          <line x1="22" y1={minY} x2="22" y2={maxY} />
-          <line x1="19" y1={minY} x2="25" y2={minY} />
-          <line x1="19" y1={maxY} x2="25" y2={maxY} />
-          <text
-            x="19"
-            y={(minY + maxY) / 2}
-            textAnchor="middle"
-            fontSize="6.5"
-            fontWeight="600"
-            fill="#64748b"
-            transform={`rotate(-90 19 ${(minY + maxY) / 2})`}
-          >
-            {facet.slopeM} m
-          </text>
-        </g>
+        {facet.slopeM > 0 && (
+          <g stroke="#94a3b8" strokeWidth="0.8" opacity="0.9">
+            <line x1={leftDimX} y1={minY} x2={leftDimX} y2={maxY} />
+            <line x1={leftDimX - 3} y1={minY} x2={leftDimX + 3} y2={minY} />
+            <line x1={leftDimX - 3} y1={maxY} x2={leftDimX + 3} y2={maxY} />
+            <text
+              x={leftDimX - 4}
+              y={(minY + maxY) / 2}
+              textAnchor="middle"
+              fontSize="7"
+              fontWeight="600"
+              fill="#64748b"
+              stroke="none"
+              transform={`rotate(-90 ${leftDimX - 4} ${(minY + maxY) / 2})`}
+            >
+              {facet.slopeM.toFixed(1)} m
+            </text>
+          </g>
+        )}
+
+        <text
+          x={sMinX}
+          y={Math.min(170, Math.max(sMaxY + 13, maxY + 11))}
+          fontSize="6.5"
+          fontWeight="600"
+          fill="#64748b"
+          letterSpacing="0.02em"
+        >
+          {setbackText}
+        </text>
       </svg>
     </div>
   );
@@ -635,9 +800,16 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
             {/* Slide Header */}
             <div className="relative z-10 flex items-start justify-between gap-2">
               <div>
-                <p className="text-[13px] font-semibold text-slate-900 leading-tight">
-                  {facet.name}
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[13px] font-semibold text-slate-900 leading-tight">
+                    {facet.name}
+                  </p>
+                  {hasMultiple && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-100/90 text-amber-900 text-[9.5px] font-bold font-code-metric">
+                      {activeFacetIdx + 1}/{facets.length}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5">
                   {facet.dimensions} · {facet.capacityKwp} kWp
                 </p>
@@ -794,6 +966,7 @@ function HomePageContent() {
   const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [projectDetailsCache, setProjectDetailsCache] = useState<Record<string, SimulationDetail>>({});
   const [modulePresets, setModulePresets] = useState<Record<string, ModulePreset>>({});
   const [pendingDeleteProject, setPendingDeleteProject] = useState<{ id: string; name: string } | null>(null);
   const [proposalOpen, setProposalOpen] = useState(false);
@@ -801,6 +974,9 @@ function HomePageContent() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [activePillarModal, setActivePillarModal] = useState<"hemat" | "mandiri" | "bersih" | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [geocodeResults, setGeocodeResults] = useState<GeocodeResult[]>([]);
+  const [geocodeLoading, setGeocodeLoading] = useState(false);
+  const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [tourOpen, setTourOpen] = useState(false);
 
   /**
@@ -864,6 +1040,71 @@ function HomePageContent() {
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  // Fetch rincian poligon & bidang atap nyata dari database (`GET /analyses/{id}`)
+  // untuk proyek aktif agar card "Bidang Atap Utama" menampilkan seluruh poligon Studio.
+  useEffect(() => {
+    const numId = Number(selectedProjectId);
+    if (!selectedProjectId || Number.isNaN(numId) || numId <= 0) return;
+    if (getToken() === null || projectDetailsCache[selectedProjectId]) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const detail = await api.getSimulation(numId);
+        if (cancelled) return;
+        setProjectDetailsCache((prev) => ({ ...prev, [selectedProjectId]: detail }));
+      } catch {
+        // Jika gagal memuat rincian, card tetap menampilkan ringkasan proyek.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId, projectDetailsCache]);
+
+  // Saat Tab Riwayat dibuka, muat detail poligon setiap kartu agar preview peta
+  // dan seluruh poligon bidang atap ter-render akurat sesuai skalanya.
+  useEffect(() => {
+    if (activeTab !== "history" || getToken() === null) return;
+    const missing = savedProjects.filter((p) => {
+      const numId = Number(p.id);
+      return !Number.isNaN(numId) && numId > 0 && !projectDetailsCache[p.id];
+    });
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      const entries = await Promise.all(
+        missing.slice(0, 24).map(async (p) => {
+          try {
+            const detail = await api.getSimulation(Number(p.id));
+            return [p.id, detail] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      const validEntries = entries.filter(
+        (entry): entry is readonly [string, SimulationDetail] => entry !== null
+      );
+      if (validEntries.length === 0) return;
+      setProjectDetailsCache((prev) => {
+        const next = { ...prev };
+        for (const [id, detail] of validEntries) {
+          next[id] = detail;
+        }
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, savedProjects, projectDetailsCache]);
 
   const [activeLocation, setActiveLocation] = useState({
     name: "Kota Bogor, Jawa Barat",
@@ -970,10 +1211,38 @@ function HomePageContent() {
     showToast(`Proyek "${name}" berhasil dihapus dari riwayat.`);
   }, [pendingDeleteProject, loadProjects, showToast]);
 
-  // Active Project for Bento display
+  // Active Project for Bento display (hydrated with real polygons & financials from GET /analyses/{id} when available)
+  const activeDetail = useMemo(() => {
+    const id = selectedProjectId || savedProjects[0]?.id || "";
+    return id ? projectDetailsCache[id] ?? null : null;
+  }, [selectedProjectId, savedProjects, projectDetailsCache]);
+
   const activeProj = useMemo(() => {
-    return savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || EMPTY_PROJECT;
-  }, [savedProjects, selectedProjectId]);
+    const base = savedProjects.find((p) => p.id === selectedProjectId) || savedProjects[0] || EMPTY_PROJECT;
+    const detail = projectDetailsCache[base.id];
+    if (!detail) {
+      return base;
+    }
+
+    const facets = detail.roofs.length > 0 ? toRealProjectFacets(detail) : base.facets;
+    const primaryFacet = facets?.[0];
+    return {
+      ...base,
+      ridgeM: primaryFacet?.ridgeM ?? base.ridgeM,
+      slopeM: primaryFacet?.slopeM ?? base.slopeM,
+      capacityKwp: detail.result.capacity_kwp,
+      moduleCount: detail.result.installed,
+      annualProdMwh: Math.round((detail.result.annual_production_kwh / 1000) * 10) / 10,
+      monthlyBillIdr: detail.input.monthly_bill_idr,
+      monthlySavingIdr: detail.result.monthly_saving_idr,
+      annualSavingIdr: detail.result.annual_saving_idr,
+      tariffIdrPerKwh: detail.assumptions.tariff_idr_per_kwh,
+      paybackYears: detail.result.payback_years ?? base.paybackYears,
+      treesCount: detail.result.trees_equivalent,
+      co2ReductionTon: Math.round((detail.result.co2_reduction_kg_per_year / 1000) * 100) / 100,
+      facets,
+    };
+  }, [savedProjects, selectedProjectId, projectDetailsCache]);
 
   /**
    * Membuka proposal memakai angka simulasi yang tersimpan.
@@ -1021,17 +1290,161 @@ function HomePageContent() {
     });
   }, [savedProjects, searchQuery]);
 
-  // Dynamic Calculator Metrics
+  // Preset alamat & jalan cepat agar selalu responsif meski belum mengetik 3 huruf
+  const matchingAddressPresets = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      // Saat kolom pencarian kosong, tampilkan contoh area Bogor terlebih dulu
+      const bogorFirst = LOCATION_PRESETS.filter((p) =>
+        p.address.toLowerCase().includes("bogor")
+      );
+      return bogorFirst.length > 0 ? bogorFirst : LOCATION_PRESETS.slice(0, 3);
+    }
+    return LOCATION_PRESETS.filter(
+      (p) =>
+        p.label.toLowerCase().includes(q) ||
+        p.address.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  // Live geocoding berbasis alamat & nama jalan saat popover pencarian terbuka
+  useEffect(() => {
+    if (!searchOpen) return;
+    const q = searchQuery.trim();
+    if (q.length < 3) {
+      setGeocodeResults([]);
+      setGeocodeLoading(false);
+      setGeocodeError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setGeocodeLoading(true);
+    setGeocodeError(null);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await api.geocode(q);
+        if (cancelled) return;
+        setGeocodeResults(res.results.slice(0, 6));
+      } catch {
+        if (cancelled) return;
+        setGeocodeResults([]);
+        setGeocodeError("Gagal terhubung ke layanan pencarian alamat.");
+      } finally {
+        if (!cancelled) setGeocodeLoading(false);
+      }
+    }, 320);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchOpen, searchQuery]);
+
+  const handleSelectAddressLocation = useCallback(
+    (label: string, lat: number, lng: number) => {
+      const parts = label.split(",").map((s) => s.trim()).filter(Boolean);
+      const shortName = parts[0] || label;
+      const district = parts[1] || "Kota Bogor";
+      setActiveLocation({
+        name: label,
+        district,
+        lat,
+        lng,
+        irradiance: 4.89,
+        source: "Search",
+      });
+      setPendingScanIntent({
+        address: label,
+        lat: lat.toFixed(6),
+        lng: lng.toFixed(6),
+      });
+      setSearchOpen(false);
+      showToast(`Membuka peta Studio di ${shortName}...`);
+      router.push(
+        `/studio?lat=${lat.toFixed(6)}&lng=${lng.toFixed(6)}&name=${encodeURIComponent(label)}`
+      );
+    },
+    [router, showToast]
+  );
+
+  const handleSearchSubmit = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      const q = searchQuery.trim();
+      if (!q) return;
+
+      if (geocodeResults.length > 0) {
+        const top = geocodeResults[0];
+        handleSelectAddressLocation(top.label, top.lat, top.lng);
+        return;
+      }
+
+      if (matchingAddressPresets.length > 0 && filteredProjects.length === 0) {
+        const p = matchingAddressPresets[0];
+        handleSelectAddressLocation(p.address, Number(p.lat), Number(p.lng));
+        return;
+      }
+
+      setGeocodeLoading(true);
+      setGeocodeError(null);
+      try {
+        const res = await api.geocode(q);
+        setGeocodeResults(res.results.slice(0, 6));
+        if (res.results.length > 0) {
+          const top = res.results[0];
+          handleSelectAddressLocation(top.label, top.lat, top.lng);
+          return;
+        }
+        if (filteredProjects.length > 0) {
+          const proj = filteredProjects[0];
+          setSelectedProjectId(proj.id);
+          setActiveTab("overview");
+          setSearchOpen(false);
+          return;
+        }
+        setGeocodeError("Alamat atau nama jalan tidak ditemukan. Sertakan nama jalan/kota.");
+      } catch {
+        if (filteredProjects.length > 0) {
+          const proj = filteredProjects[0];
+          setSelectedProjectId(proj.id);
+          setActiveTab("overview");
+          setSearchOpen(false);
+          return;
+        }
+        setGeocodeError("Layanan pencarian alamat sedang tidak tersedia.");
+      } finally {
+        setGeocodeLoading(false);
+      }
+    },
+    [
+      filteredProjects,
+      geocodeResults,
+      handleSelectAddressLocation,
+      matchingAddressPresets,
+      searchQuery,
+      setActiveTab,
+    ]
+  );
+
+  // Dynamic Calculator Metrics (selaras dengan rumus Metodologi & Studio)
   const calcMetrics = useMemo(() => {
-    const monthlyKwh = calcMonthlyBill / calcTariff;
-    const recommendedKwp = Math.min(20, Math.max(2, Number(((monthlyKwh / 30 / 3.8) * 0.85).toFixed(1))));
-    const annualProdKwh = Math.round(recommendedKwp * 1420);
-    const estimatedMonthlySavings = Math.min(calcMonthlyBill * 0.85, Math.round((annualProdKwh / 12) * calcTariff));
+    const monthlyKwh = calcTariff > 0 ? calcMonthlyBill / calcTariff : 0;
+    // Kebutuhan kWp agar 85% kebutuhan bulanan terpenuhi (~4.25 PSH * 30 hari * 0.80 PR = 102 kWh/kWp/bln)
+    const recommendedKwp = Math.min(120, Math.max(1.1, Number(((monthlyKwh * 0.85) / 102).toFixed(1))));
+    const annualProdKwh = Math.round(recommendedKwp * 4.25 * 365 * 0.8);
+    const monthlyProductionValue = (annualProdKwh / 12) * calcTariff;
+    const estimatedMonthlySavings = Math.round(Math.min(calcMonthlyBill * 0.85, monthlyProductionValue));
     const totalCapex = recommendedKwp * 12_500_000;
-    const paybackYears = Number((totalCapex / (estimatedMonthlySavings * 12)).toFixed(1));
-    const cumulative25Years = estimatedMonthlySavings * 12 * 25 - totalCapex;
-    const co2Ton = Number(((annualProdKwh * 0.8) / 1000).toFixed(1));
-    const trees = Math.round(annualProdKwh * 0.036);
+    const annualSaving = estimatedMonthlySavings * 12;
+    const paybackYears = annualSaving > 0 ? Number((totalCapex / annualSaving).toFixed(1)) : 0;
+    const cumulative25Years = annualSaving * 25 - totalCapex;
+    const co2Ton = Number(((Math.min(annualProdKwh, monthlyKwh * 12) * 0.8) / 1000).toFixed(1));
+    const trees = Math.round((co2Ton * 1000) / 21.77);
+
+    const roiAtYear = (years: number) =>
+      totalCapex > 0 ? Math.round(((annualSaving * years) / totalCapex) * 100) : 0;
 
     return {
       monthlyKwh,
@@ -1043,6 +1456,9 @@ function HomePageContent() {
       cumulative25Years,
       co2Ton,
       trees,
+      roiYear1: roiAtYear(1),
+      roiYear10: roiAtYear(10),
+      roiYear25: roiAtYear(25),
     };
   }, [calcMonthlyBill, calcTariff]);
 
@@ -1076,18 +1492,44 @@ function HomePageContent() {
   // so each project in the saved list has an immediate, noticeable change of 3+ trees.
   const activeTreeCount = useMemo(() => {
     const count = activeProj.treesCount;
-    if (count <= 420) return 9; // e.g. Taman Yasmin (380 pohon) -> 9 pohon
-    if (count <= 505) return 12; // e.g. Bantarjati (490 pohon) -> 12 pohon (+3 pohon)
-    if (count <= 580) return 15; // e.g. Menteng Residence (523 pohon) -> 15 pohon (+3 pohon)
-    return 18; // e.g. Baranangsiang Indah (630 pohon) -> 18 pohon (+3 pohon)
+    if (count <= 0) return 0;
+    if (count <= 420) return 9;
+    if (count <= 505) return 12;
+    if (count <= 580) return 15;
+    return 18;
   }, [activeProj.treesCount]);
 
   if (!hasToken) {
     return <LandingView />;
   }
 
-  const lifetimeSaving = activeProj.monthlySavingIdr * 12 * 25;
-  const roofScore = Math.min(99, Math.round(100 - activeProj.paybackYears * 2.5));
+  const annualSavingIdr =
+    activeProj.annualSavingIdr > 0
+      ? activeProj.annualSavingIdr
+      : activeProj.monthlySavingIdr * 12;
+  const lifetimeSaving = annualSavingIdr * 25;
+  const roofScore =
+    activeProj.id === "empty" || activeProj.capacityKwp <= 0
+      ? 0
+      : Math.max(55, Math.min(99, Math.round(100 - Math.min(20, activeProj.paybackYears) * 2.2)));
+
+  const billReductionPct =
+    activeProj.monthlyBillIdr > 0
+      ? Math.min(100, Math.round((activeProj.monthlySavingIdr / activeProj.monthlyBillIdr) * 100))
+      : activeProj.monthlySavingIdr > 0
+        ? 100
+        : 0;
+
+  const tariffPerKwh = activeProj.tariffIdrPerKwh ?? activeDetail?.assumptions.tariff_idr_per_kwh ?? 1699.53;
+  const estMonthlyNeedKwh =
+    activeProj.monthlyBillIdr > 0 && tariffPerKwh > 0
+      ? activeProj.monthlyBillIdr / tariffPerKwh
+      : 0;
+  const monthlyGenKwh = (activeProj.annualProdMwh * 1000) / 12;
+  const autonomyPct =
+    estMonthlyNeedKwh > 0
+      ? Math.min(100, Math.round((monthlyGenKwh / estMonthlyNeedKwh) * 100))
+      : billReductionPct;
 
   const navItems: { id: DashboardNavTab; label: string; icon: string }[] = [
     { id: "overview", label: "Beranda", icon: "grid_view" },
@@ -1129,18 +1571,18 @@ function HomePageContent() {
     },
     {
       title: "Tagihan",
-      subtitle: "Lebih hemat",
-      value: "85",
+      subtitle: activeProj.monthlyBillIdr > 0 ? `Dari ${formatJt(activeProj.monthlyBillIdr)}/bln` : "Lebih hemat",
+      value: String(billReductionPct),
       unit: "%",
-      badge: `−${formatJt(activeProj.monthlySavingIdr)}`,
+      badge: activeProj.monthlySavingIdr > 0 ? `−${formatJt(activeProj.monthlySavingIdr)}` : "Rp 0",
       tone: "bg-amber-100 text-amber-800",
     },
     {
       title: "Balik modal",
       subtitle: "Estimasi",
-      value: String(activeProj.paybackYears),
-      unit: "thn",
-      badge: `+${formatJt(lifetimeSaving)}`,
+      value: activeProj.paybackYears > 0 ? String(activeProj.paybackYears) : "—",
+      unit: activeProj.paybackYears > 0 ? "thn" : "",
+      badge: lifetimeSaving > 0 ? `+${formatJt(lifetimeSaving)}` : "Rp 0",
       tone: "bg-emerald-100 text-emerald-700",
     },
     {
@@ -1148,18 +1590,27 @@ function HomePageContent() {
       subtitle: "Berkurang per tahun",
       value: String(activeProj.co2ReductionTon),
       unit: "ton",
-      badge: `${activeProj.treesCount} pohon`,
+      badge: `${activeProj.treesCount.toLocaleString("id-ID")} pohon`,
       tone: "bg-sky-100 text-sky-700",
     },
   ];
 
   return (
-    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-900 font-sans antialiased relative overflow-hidden">
-      {/* Ambient soft glow radiant kuning & aksen biru */}
+    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-900 font-sans antialiased relative overflow-hidden print:min-h-0 print:h-auto print:overflow-visible print:bg-white">
+      {/* Ambient soft glow radiant kuning & aksen biru (pure radial gradients — zero full-screen blur passes) */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" data-print-hide="true">
-        <div className="absolute -top-36 left-1/4 w-[560px] h-[560px] rounded-full bg-gradient-to-br from-amber-300/35 via-yellow-200/25 to-transparent blur-[130px]" />
-        <div className="absolute top-1/4 -right-24 w-[520px] h-[520px] rounded-full bg-gradient-to-bl from-sky-300/30 via-cyan-100/20 to-transparent blur-[140px]" />
-        <div className="absolute bottom-12 left-10 w-[480px] h-[480px] rounded-full bg-gradient-to-tr from-amber-200/30 via-sky-200/20 to-transparent blur-[130px]" />
+        <div
+          className="absolute -top-40 left-1/4 w-[620px] h-[620px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(252,211,77,0.28) 0%, rgba(254,240,138,0.14) 40%, transparent 72%)" }}
+        />
+        <div
+          className="absolute top-1/4 -right-24 w-[560px] h-[560px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(125,211,252,0.24) 0%, rgba(207,250,254,0.12) 42%, transparent 72%)" }}
+        />
+        <div
+          className="absolute bottom-8 left-8 w-[520px] h-[520px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(253,230,138,0.24) 0%, rgba(186,230,253,0.12) 42%, transparent 72%)" }}
+        />
       </div>
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-3 sm:px-5 pb-8" data-print-hide="true">
@@ -1177,15 +1628,17 @@ function HomePageContent() {
               <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
             </Link>
 
-            {/* Search (popover with GPS & map inside) */}
+            {/* Search (popover with address/street geocoding, saved projects, GPS & map) */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setSearchOpen((v) => !v)}
                 className={`w-11 h-11 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  searchOpen ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50 shadow-xs"
+                  searchOpen
+                    ? "bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.2)]"
+                    : "bg-white/90 hover:bg-white text-slate-700 shadow-xs border border-white/80"
                 }`}
-                aria-label="Cari proyek"
+                aria-label="Cari proyek, alamat, atau nama jalan"
                 aria-expanded={searchOpen}
               >
                 <span className="material-symbols-outlined text-[20px]">{searchOpen ? "close" : "search"}</span>
@@ -1199,23 +1652,46 @@ function HomePageContent() {
                     className="fixed inset-0 z-30 cursor-default"
                     onClick={() => setSearchOpen(false)}
                   />
-                  <div className="absolute left-0 top-14 z-40 w-[min(400px,calc(100vw-1.5rem))] bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.25)] p-2.5 animate-fadeIn">
-                    <div className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100">
-                      <span className="material-symbols-outlined text-[18px] text-slate-400">search</span>
+                  <div className="absolute left-0 top-14 z-40 w-[min(430px,calc(100vw-1.5rem))] bg-white/92 backdrop-blur-2xl saturate-150 rounded-[28px] border border-white/90 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.24),0_0_28px_rgba(251,191,36,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] p-3 animate-fadeIn">
+                    <form
+                      onSubmit={handleSearchSubmit}
+                      className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 focus-within:bg-white focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-200/40 transition"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">search</span>
                       <input
                         autoFocus
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Cari proyek atau alamat"
+                        placeholder="Cari proyek, alamat, atau nama jalan..."
                         className="flex-1 min-w-0 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 outline-none border-0 border-none focus:ring-0 p-0"
                       />
+                      {searchQuery.trim().length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setSearchQuery("")}
+                            title="Bersihkan kata kunci"
+                            className="w-7 h-7 rounded-xl hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">close</span>
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={geocodeLoading}
+                            title="Cari alamat di Studio"
+                            className="h-8 px-2.5 rounded-xl bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 text-[11px] font-semibold border border-amber-300/80 flex items-center justify-center transition cursor-pointer disabled:opacity-60 shrink-0"
+                          >
+                            {geocodeLoading ? "..." : "Cari"}
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         onClick={handleUseGps}
                         disabled={isGpsLoading}
                         title="Gunakan lokasi GPS"
-                        className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer disabled:opacity-50"
+                        className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer disabled:opacity-50 shrink-0"
                       >
                         <span className={`material-symbols-outlined text-[18px] ${isGpsLoading ? "animate-spin" : ""}`}>
                           {isGpsLoading ? "sync" : "my_location"}
@@ -1228,54 +1704,183 @@ function HomePageContent() {
                           router.push("/studio");
                         }}
                         title="Buka & Pilih di Peta Studio CAD"
-                        className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer"
+                        className="w-8 h-8 rounded-xl hover:bg-white text-slate-600 hover:text-amber-600 flex items-center justify-center transition cursor-pointer shrink-0"
                       >
                         <span className="material-symbols-outlined text-[18px]">map</span>
                       </button>
+                    </form>
+
+                    <div className="flex items-center justify-between gap-2 px-2 pt-2.5 pb-1 text-[11px] text-slate-400">
+                      <p className="flex items-center gap-1 min-w-0 truncate">
+                        <span className="material-symbols-outlined text-[13px] text-amber-500 shrink-0">location_on</span>
+                        <span className="truncate">{activeLocation.name}</span>
+                      </p>
+                      <span className="shrink-0 text-[10px] font-medium text-slate-400">Enter untuk cari jalan</span>
                     </div>
 
-                    <p className="flex items-center gap-1 px-2 pt-2.5 pb-1 text-[11px] text-slate-400 truncate">
-                      <span className="material-symbols-outlined text-[13px]">location_on</span>
-                      <span className="truncate">{activeLocation.name}</span>
-                    </p>
-
-                    <div className="max-h-72 overflow-y-auto">
-                      {filteredProjects.length === 0 ? (
-                        <p className="px-3 py-6 text-center text-sm text-slate-400">Tidak ada hasil</p>
-                      ) : (
-                        filteredProjects.map((proj) => {
-                          const isCurrent = proj.id === selectedProjectId;
-                          return (
-                            <button
-                              key={proj.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedProjectId(proj.id);
-                                setActiveTab("overview");
-                                setSearchOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
-                                isCurrent
-                                  ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
-                                  : "hover:bg-slate-50 text-slate-700"
-                              }`}
-                            >
-                              <span
-                                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
-                                  isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
-                                }`}
-                              >
-                                <span className="material-symbols-outlined text-[18px]">roofing</span>
-                              </span>
-                              <span className="flex-1 min-w-0">
-                                <span className="block text-sm font-semibold truncate text-slate-900">{proj.name}</span>
-                                <span className="block text-xs text-slate-400 truncate">{proj.address}</span>
-                              </span>
-                              <span className="text-xs font-semibold text-slate-700 shrink-0">{proj.capacityKwp} kWp</span>
-                            </button>
-                          );
-                        })
+                    <div className="max-h-80 overflow-y-auto space-y-2.5 pt-1 pr-0.5">
+                      {/* Bagian Proyek Tersimpan */}
+                      {filteredProjects.length > 0 && (
+                        <div>
+                          <p className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                            Proyek Tersimpan ({filteredProjects.length})
+                          </p>
+                          <div className="space-y-1">
+                            {filteredProjects.map((proj) => {
+                              const isCurrent = proj.id === selectedProjectId;
+                              return (
+                                <button
+                                  key={proj.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedProjectId(proj.id);
+                                    setActiveTab("overview");
+                                    setSearchOpen(false);
+                                  }}
+                                  className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
+                                    isCurrent
+                                      ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
+                                      : "hover:bg-slate-100/70 text-slate-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                                      isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">roofing</span>
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-sm font-semibold truncate text-slate-900">{proj.name}</span>
+                                    <span className="block text-xs text-slate-400 truncate">{proj.address}</span>
+                                  </span>
+                                  <span className="text-xs font-semibold text-slate-700 shrink-0">{proj.capacityKwp} kWp</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
+
+                      {/* Bagian Alamat & Nama Jalan */}
+                      <div>
+                        <div className="flex items-center justify-between px-2 pb-1">
+                          <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                            {searchQuery.trim().length > 0 ? "Alamat & Nama Jalan" : "Lokasi Cepat ke Studio"}
+                          </p>
+                          {geocodeLoading && (
+                            <span className="text-[10.5px] font-medium text-amber-700 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[13px] animate-spin">sync</span>
+                              Mencari...
+                            </span>
+                          )}
+                        </div>
+
+                        {geocodeResults.length > 0 && (
+                          <div className="space-y-1">
+                            {geocodeResults.map((res, idx) => {
+                              const parts = res.label.split(",").map((s) => s.trim()).filter(Boolean);
+                              const title = parts[0] || res.label;
+                              const subtitle = parts.slice(1).join(", ") || `${res.lat.toFixed(5)}, ${res.lng.toFixed(5)}`;
+                              return (
+                                <button
+                                  key={`${res.lat}-${res.lng}-${idx}`}
+                                  type="button"
+                                  onClick={() => handleSelectAddressLocation(res.label, res.lat, res.lng)}
+                                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl text-left hover:bg-amber-50/80 border border-transparent hover:border-amber-200/70 transition cursor-pointer group"
+                                >
+                                  <span className="w-9 h-9 rounded-full bg-amber-100/90 text-amber-700 group-hover:bg-amber-200/80 group-hover:text-amber-900 flex items-center justify-center shrink-0 transition">
+                                    <span className="material-symbols-outlined text-[18px]">location_on</span>
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-sm font-semibold truncate text-slate-900">{title}</span>
+                                    <span className="block text-xs text-slate-400 truncate">{subtitle}</span>
+                                  </span>
+                                  <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-800 bg-amber-100/80 px-2 py-1 rounded-full shrink-0">
+                                    Studio
+                                    <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {matchingAddressPresets.length > 0 && (
+                          <div className={geocodeResults.length > 0 ? "mt-1 space-y-1" : "space-y-1"}>
+                            {matchingAddressPresets
+                              .filter(
+                                (preset) =>
+                                  !geocodeResults.some(
+                                    (r) => r.label.toLowerCase() === preset.address.toLowerCase()
+                                  )
+                              )
+                              .map((preset) => (
+                                <button
+                                  key={preset.label}
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectAddressLocation(
+                                      preset.address,
+                                      Number(preset.lat),
+                                      Number(preset.lng)
+                                    )
+                                  }
+                                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl text-left hover:bg-slate-100/80 transition cursor-pointer group"
+                                >
+                                  <span className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 group-hover:bg-amber-100 group-hover:text-amber-800 flex items-center justify-center shrink-0 transition">
+                                    <span className="material-symbols-outlined text-[18px]">signpost</span>
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-sm font-semibold truncate text-slate-900">{preset.label}</span>
+                                    <span className="block text-xs text-slate-400 truncate">{preset.address}</span>
+                                  </span>
+                                  <span className="text-[11px] font-medium text-slate-500 group-hover:text-amber-800 shrink-0">
+                                    Buka →
+                                  </span>
+                                </button>
+                              ))}
+                          </div>
+                        )}
+
+                        {searchQuery.trim().length > 0 &&
+                          searchQuery.trim().length < 3 &&
+                          geocodeResults.length === 0 && (
+                            <p className="px-2.5 py-2 text-xs text-slate-400">
+                              Ketik minimal 3 huruf (mis. <span className="text-slate-600 font-medium">Jl. Pajajaran, Bogor</span>) untuk mencari alamat otomatis.
+                            </p>
+                          )}
+
+                        {geocodeError && (
+                          <p className="px-2.5 py-2 text-xs text-amber-800 bg-amber-50/90 border border-amber-200/80 rounded-xl mt-1">
+                            {geocodeError}
+                          </p>
+                        )}
+
+                        {filteredProjects.length === 0 &&
+                          geocodeResults.length === 0 &&
+                          matchingAddressPresets.length === 0 &&
+                          searchQuery.trim().length >= 3 &&
+                          !geocodeLoading &&
+                          !geocodeError && (
+                            <div className="px-3 py-4 text-center space-y-2">
+                              <p className="text-xs text-slate-500">
+                                Alamat <span className="font-semibold text-slate-700">&ldquo;{searchQuery.trim()}&rdquo;</span> belum ditemukan.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSearchOpen(false);
+                                  router.push("/studio");
+                                }}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-100 hover:bg-amber-200/80 text-amber-950 text-xs font-semibold transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">map</span>
+                                <span>Pilih Titik di Peta Studio</span>
+                              </button>
+                            </div>
+                          )}
+                      </div>
                     </div>
                   </div>
                 </>
@@ -1416,7 +2021,9 @@ function HomePageContent() {
                   {/* Title & Stat */}
                   <div className="relative z-10">
                     <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-sky-950">Mandiri</h3>
-                    <p className="text-[9px] font-semibold text-sky-800/90 leading-tight mt-1">78% daya</p>
+                    <p className="text-[9px] font-semibold text-sky-800/90 leading-tight mt-1">
+                      {autonomyPct > 0 ? `${autonomyPct}% daya` : "Otonomi surya"}
+                    </p>
                   </div>
 
                   {/* Bottom CTA Pill */}
@@ -1448,7 +2055,9 @@ function HomePageContent() {
                   {/* Title & Stat */}
                   <div className="relative z-10">
                     <h3 className="text-[15px] sm:text-[16px] font-extrabold tracking-tight leading-none text-amber-950">Hemat</h3>
-                    <p className="text-[9px] font-semibold text-amber-900/90 leading-tight mt-1">s.d 85%</p>
+                    <p className="text-[9px] font-semibold text-amber-900/90 leading-tight mt-1">
+                      {billReductionPct > 0 ? `-${billReductionPct}% tagihan` : "Simulasi biaya"}
+                    </p>
                   </div>
 
                   {/* Bottom CTA Pill */}
@@ -1859,19 +2468,21 @@ function HomePageContent() {
         )}
 
         {/* =====================================================
-            TAB 2: RIWAYAT POLIGON & DESAIN ATAP
+            TAB 2: RIWAYAT POLIGON & DESAIN ATAP (Apple Glass + Soft Radiant Glow)
             ===================================================== */}
         {activeTab === "history" && (
           <div id="dashboard-history-section" className="space-y-4 animate-fadeIn">
             {/* Top Search & Actions Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-[22px] p-3.5 shadow-xs">
-              <div className="flex items-center gap-2 pl-2">
-                <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-[24px] bg-white/78 bg-gradient-to-r from-white/90 via-amber-50/25 to-sky-50/20 backdrop-blur-2xl saturate-150 border border-white/85 p-3.5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center gap-2.5 pl-1.5">
+                <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 to-yellow-100 text-amber-800 flex items-center justify-center shrink-0 border border-amber-200/70">
                   <span className="material-symbols-outlined text-[18px]">history</span>
                 </span>
                 <div>
-                  <h2 className="text-sm font-semibold text-slate-900 leading-tight">Riwayat Proyek</h2>
-                  <p className="text-[11px] text-slate-400 leading-tight">{savedProjects.length} rancangan atap tersimpan</p>
+                  <h2 className="text-sm font-semibold text-slate-900 tracking-tight leading-tight">Riwayat Proyek</h2>
+                  <p className="text-[11px] text-slate-500 leading-tight tabular-nums">
+                    {savedProjects.length} simulasi tersimpan · Tanggal ISO 8601
+                  </p>
                 </div>
               </div>
 
@@ -1886,14 +2497,14 @@ function HomePageContent() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Cari nama proyek atau alamat..."
-                    className="w-full h-9 pl-8 pr-3 rounded-full bg-slate-100 text-xs text-slate-900 placeholder:text-slate-400 outline-none border-0 border-none focus:ring-0"
+                    className="w-full h-9 pl-8 pr-3 rounded-full bg-slate-900/[0.045] hover:bg-slate-900/[0.06] focus:bg-white text-xs text-slate-900 placeholder:text-slate-400 outline-none border border-transparent focus:border-amber-300/80 transition"
                   />
                 </div>
 
                 {/* Add New Studio Link */}
                 <Link
                   href="/studio"
-                  className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                  className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
                   <span>Proyek Baru</span>
@@ -1902,28 +2513,28 @@ function HomePageContent() {
             </div>
 
             {/* Project Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {filteredProjects.length === 0 ? (
-                <div className="md:col-span-2 bg-white rounded-[22px] p-10 text-center space-y-3 shadow-xs border border-slate-200/70">
+                <div className="md:col-span-2 rounded-[24px] bg-white/80 backdrop-blur-2xl border border-white/85 p-10 text-center space-y-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
                   <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
                     <span className="material-symbols-outlined text-[24px]">
                       {savedProjects.length === 0 ? "solar_power" : "search_off"}
                     </span>
                   </div>
-                  <p className="text-sm font-semibold text-slate-700">
+                  <p className="text-sm font-semibold text-slate-800">
                     {savedProjects.length === 0
                       ? "Belum ada simulasi PLTS tersimpan"
                       : `Tidak ada proyek yang sesuai dengan pencarian "${searchQuery}"`}
                   </p>
                   {savedProjects.length === 0 && (
-                    <p className="text-xs text-slate-400 max-w-md mx-auto">
-                      Mulai dengan memindai atap bangunan di Kota Bogor menggunakan Studio CAD untuk melihat ringkasan teknis dan proposalnya di sini.
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Mulai dengan memindai atap di Studio CAD untuk melihat ringkasan teknis dan proposalnya di sini.
                     </p>
                   )}
                   {savedProjects.length === 0 && (
                     <Link
                       href="/studio"
-                      className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold text-xs border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18)] transition"
+                      className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-semibold text-xs border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.2)] transition"
                     >
                       <span className="material-symbols-outlined text-[16px]">draw</span>
                       <span>Buat Simulasi Pertama</span>
@@ -1936,26 +2547,18 @@ function HomePageContent() {
                   return (
                     <div
                       key={proj.id}
-                      className={`relative overflow-hidden rounded-[22px] p-5 flex flex-col justify-between transition-all border ${
+                      className={`relative overflow-hidden rounded-[24px] p-5 flex flex-col justify-between transition-all backdrop-blur-2xl saturate-150 border ${
                         isSelected
-                          ? "bg-gradient-to-br from-amber-50/90 via-white to-sky-50/30 border-amber-300/60 shadow-xs"
-                          : "bg-white border-slate-200/80 hover:border-slate-300 text-slate-900 shadow-xs"
+                          ? "bg-white/85 bg-gradient-to-br from-amber-50/75 via-white/90 to-sky-50/45 border-amber-300/75 shadow-[0_12px_32px_rgba(245,158,11,0.12)]"
+                          : "bg-white/76 hover:bg-white/88 border-white/85 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
                       }`}
                     >
-                      {/* Soft round bubbles: amber in top-left, sky blue in bottom-right */}
-                      {isSelected && (
-                        <>
-                          <div className="pointer-events-none absolute -top-8 -left-8 w-28 h-28 rounded-full bg-amber-200/50 blur-xl" />
-                          <div className="pointer-events-none absolute -bottom-8 -right-8 w-28 h-28 rounded-full bg-sky-200/50 blur-xl" />
-                        </>
-                      )}
-
                       <div className="relative z-10 flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <span
                             className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                               isSelected
-                                ? "bg-amber-200/90 text-amber-950 font-bold shadow-2xs"
+                                ? "bg-amber-200/90 text-amber-950 font-semibold shadow-2xs"
                                 : PROJECT_TONES[idx % PROJECT_TONES.length]
                             }`}
                           >
@@ -1963,39 +2566,54 @@ function HomePageContent() {
                           </span>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="text-sm font-semibold text-slate-900 truncate">{proj.name}</h3>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800">
+                              <h3 className="text-sm font-semibold text-slate-900 tracking-tight truncate">{proj.name}</h3>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700">
                                 {proj.statusBadge}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-400 truncate mt-0.5">{proj.address}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{proj.address}</p>
                           </div>
                         </div>
 
-                        <span className="text-[11px] font-medium text-slate-400 shrink-0">{proj.date}</span>
+                        <span className="text-[11px] font-medium text-slate-400 font-code-metric tabular-nums shrink-0">
+                          {proj.date}
+                        </span>
                       </div>
 
-                      {/* Specs Row */}
-                      <div className="relative z-10 grid grid-cols-3 gap-2 my-4 pt-3 border-t border-slate-100/80 text-xs">
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Dimensi</span>
-                          <span className="font-medium text-slate-900 block truncate">{proj.dimensions}</span>
-                          <span className="text-[10px] text-slate-400">Area {proj.effectiveAreaPct}%</span>
+                      {/* Auto-fitted Satellite Map & Polygon Preview */}
+                      <ProjectPolygonMapPreview
+                        detail={projectDetailsCache[proj.id] ?? null}
+                        fallbackLat={proj.lat}
+                        fallbackLng={proj.lng}
+                        roofCountLabel={proj.facetsSummary}
+                        moduleCount={proj.moduleCount}
+                        loading={!projectDetailsCache[proj.id]}
+                      />
+
+                      {/* Unified 3-Cell Metrics Strip */}
+                      <div className="relative z-10 grid grid-cols-3 divide-x divide-slate-900/[0.06] rounded-2xl bg-slate-900/[0.035] mb-4 py-2.5 text-xs">
+                        <div className="px-3">
+                          <span className="text-[10.5px] text-slate-500 block">Dimensi</span>
+                          <span className="font-semibold text-slate-900 block truncate font-code-metric tabular-nums mt-0.5">
+                            {proj.dimensions}
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Kapasitas</span>
-                          <span className="font-semibold text-slate-900 tracking-tight block">{proj.capacityKwp} kWp</span>
-                          <span className="text-[10px] text-slate-400">{proj.annualProdMwh} MWh/thn</span>
+                        <div className="px-3">
+                          <span className="text-[10.5px] text-slate-500 block">Kapasitas</span>
+                          <span className="font-semibold text-slate-900 block font-code-metric tabular-nums mt-0.5">
+                            {proj.capacityKwp} kWp
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block">Penghematan</span>
-                          <span className="font-semibold text-emerald-700 block">{formatJt(proj.monthlySavingIdr)}/bln</span>
-                          <span className="text-[10px] text-slate-400">BEP {proj.paybackYears} thn</span>
+                        <div className="px-3">
+                          <span className="text-[10.5px] text-slate-500 block">Hemat/Bln</span>
+                          <span className="font-semibold text-emerald-700 block font-code-metric tabular-nums mt-0.5">
+                            {formatJt(proj.monthlySavingIdr)}
+                          </span>
                         </div>
                       </div>
 
                       {/* Card Actions */}
-                      <div className="relative z-10 flex items-center justify-between gap-2 pt-2 border-t border-slate-100/80">
+                      <div className="relative z-10 flex items-center justify-between gap-2 pt-2 border-t border-slate-900/[0.06]">
                         <button
                           type="button"
                           onClick={() => {
@@ -2004,18 +2622,18 @@ function HomePageContent() {
                           }}
                           className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition cursor-pointer ${
                             isSelected
-                              ? "bg-amber-400 text-amber-950 font-semibold"
-                              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                              ? "bg-amber-300/90 text-amber-950"
+                              : "bg-slate-900/[0.05] hover:bg-slate-900/[0.09] text-slate-700"
                           }`}
                         >
-                          {isSelected ? "Sedang Aktif" : "Tampilkan di Beranda"}
+                          {isSelected ? "Aktif di Beranda" : "Tampilkan"}
                         </button>
 
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleDeleteProject(proj.id, proj.name)}
-                            className="w-8 h-8 rounded-full border border-slate-200/80 hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
+                            className="w-8 h-8 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
                             title="Hapus proyek ini dari riwayat"
                             aria-label="Hapus proyek"
                           >
@@ -2027,14 +2645,14 @@ function HomePageContent() {
                               setSelectedProjectId(proj.id);
                               void openProposal(proj.id);
                             }}
-                            className="h-8 px-3 rounded-full hover:bg-slate-100 text-slate-600 text-xs font-medium transition cursor-pointer"
+                            className="h-8 px-3 rounded-full hover:bg-slate-900/[0.05] text-slate-600 text-xs font-medium transition cursor-pointer"
                           >
                             Proposal PDF
                           </button>
                           <button
                             type="button"
                             onClick={() => openProjectInStudio(proj)}
-                            className="h-8 px-3.5 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-bold flex items-center gap-1 transition cursor-pointer border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                            className="h-8 px-3.5 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-semibold flex items-center gap-1 transition cursor-pointer border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                           >
                             <span>Buka Studio</span>
                             <span className="material-symbols-outlined text-[16px]">chevron_right</span>
@@ -2050,34 +2668,32 @@ function HomePageContent() {
         )}
 
         {/* =====================================================
-            TAB 3: KALKULATOR TARIF & ANALISIS ROI
+            TAB 3: KALKULATOR TARIF & ANALISIS ROI (Apple Glass + Soft Radiant Glow)
             ===================================================== */}
         {activeTab === "calculator" && (
           <div id="dashboard-calculator-section" className="space-y-4 animate-fadeIn">
-            {/* Header Strip: Clean, focused, without redundant duplicate buttons */}
-            <div className="bg-white rounded-[22px] p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Header Strip */}
+            <div className="rounded-[24px] bg-white/78 bg-gradient-to-r from-white/90 via-amber-50/25 to-sky-50/25 backdrop-blur-2xl saturate-150 border border-white/85 p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Kalkulator Finansial</h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Estimasi penghematan listrik PLN, periode balik modal, dan proyeksi arus kas 25 tahun.
+                <h2 className="text-lg font-semibold text-slate-900 tracking-tight">Kalkulator Finansial PLTS</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Estimasi penghematan tagihan PLN, periode balik modal, dan proyeksi arus kas 25 tahun.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 text-amber-950 border border-amber-200/80 text-xs font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  Tarif Subsidi &amp; Non-Subsidi PLN
-                </span>
-              </div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/90 text-amber-900 border border-amber-200/70 text-[11px] font-semibold shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Acuan Permen ESDM No. 2 &amp; 7/2024
+              </span>
             </div>
 
             {/* Main 2-Column Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
               {/* Left Column: Parameter Input (5 Cols) */}
-              <section className="lg:col-span-5 bg-white rounded-[22px] p-5 flex flex-col justify-between shadow-xs space-y-4">
+              <section className="lg:col-span-5 rounded-[24px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_10px_28px_rgba(15,23,42,0.04)] space-y-4">
                 <CardHeader
                   title="Parameter Listrik"
-                  subtitle="Pilih golongan tarif dan pengeluaran bulanan"
+                  subtitle="Pilih golongan tarif PLN dan tagihan bulanan Anda"
                 />
 
                 {/* Tariff Selector */}
@@ -2086,12 +2702,12 @@ function HomePageContent() {
                   <select
                     value={calcTariff}
                     onChange={(e) => setCalcTariff(Number(e.target.value))}
-                    className="w-full h-10 px-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-800 focus:outline-none focus:border-amber-400 transition cursor-pointer"
+                    className="w-full h-10 px-3.5 rounded-xl bg-slate-900/[0.045] hover:bg-slate-900/[0.06] border border-transparent focus:border-amber-400 focus:bg-white text-xs font-medium text-slate-800 focus:outline-none transition cursor-pointer"
                   >
-                    <option value={1444.70}>R-1 / 900-2.200 VA (Rp 1.444,70/kWh)</option>
-                    <option value={1699.53}>R-2 / 3.500-5.500 VA (Rp 1.699,53/kWh)</option>
-                    <option value={1699.53}>R-3 / 6.600 VA ke atas (Rp 1.699,53/kWh)</option>
-                    <option value={1444.70}>B-2 / Bisnis 6.600-200 kVA (Rp 1.444,70/kWh)</option>
+                    <option value={1444.70}>R-1 / 900–2.200 VA (Rp 1.444,70/kWh)</option>
+                    <option value={1699.53}>R-2 / 3.500–5.500 VA (Rp 1.699,53/kWh)</option>
+                    <option value={1699.53}>R-3 / ≥ 6.600 VA (Rp 1.699,53/kWh)</option>
+                    <option value={1444.70}>B-2 / Bisnis 6.600 VA–200 kVA (Rp 1.444,70/kWh)</option>
                   </select>
                 </div>
 
@@ -2101,8 +2717,8 @@ function HomePageContent() {
                     <label htmlFor="calc-bill-input" className="font-medium text-slate-600">
                       Tagihan Listrik per Bulan
                     </label>
-                    <div className="flex items-center gap-1 bg-slate-100 rounded-full px-3 py-1.5 transition">
-                      <span className="text-slate-500 font-semibold text-xs">Rp</span>
+                    <div className="flex items-center gap-1 bg-slate-900/[0.045] rounded-full px-3 py-1.5">
+                      <span className="text-slate-500 font-medium text-xs">Rp</span>
                       <input
                         id="calc-bill-input"
                         type="number"
@@ -2111,7 +2727,7 @@ function HomePageContent() {
                         step={50000}
                         value={calcMonthlyBill}
                         onChange={(e) => setCalcMonthlyBill(Math.max(100000, Number(e.target.value) || 0))}
-                        className="w-24 text-right font-bold tracking-tight text-slate-900 text-xs bg-transparent outline-none border-0 border-none focus:ring-0 p-0"
+                        className="w-24 text-right font-semibold font-code-metric tabular-nums tracking-tight text-slate-900 text-xs bg-transparent outline-none border-0 border-none focus:ring-0 p-0"
                       />
                     </div>
                   </div>
@@ -2123,9 +2739,9 @@ function HomePageContent() {
                     value={calcMonthlyBill}
                     onChange={(e) => setCalcMonthlyBill(Number(e.target.value))}
                     aria-label="Penggeser tagihan"
-                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    className="w-full h-2 bg-slate-900/10 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
-                  <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                  <div className="flex justify-between text-[10.5px] text-slate-400 font-code-metric tabular-nums">
                     <span>Rp 500 rb</span>
                     <span>Rp 7,5 jt</span>
                     <span>Rp 15 jt</span>
@@ -2133,30 +2749,30 @@ function HomePageContent() {
                 </div>
 
                 {/* System Recommendation Box */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 via-yellow-50/50 to-sky-50/60 border border-amber-200/70 space-y-2">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50/85 via-white/75 to-sky-50/60 border border-amber-200/70 space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-amber-900 uppercase tracking-wide">
-                      Rekomendasi Kapasitas
+                    <span className="text-[11px] font-medium text-amber-900">
+                      Rekomendasi Sistem
                     </span>
-                    <span className="text-[11px] font-bold text-amber-800">
-                      ~{Math.ceil(calcMetrics.recommendedKwp / 0.55)} panel
+                    <span className="text-[11px] font-semibold text-amber-800 font-code-metric tabular-nums">
+                      ~{Math.ceil(calcMetrics.recommendedKwp / 0.55)} panel · 550 Wp
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold tracking-tight text-slate-900">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                       {calcMetrics.recommendedKwp}
                     </span>
-                    <span className="text-xs text-slate-500 font-medium">kWp kapasitas ideal</span>
+                    <span className="text-xs text-slate-500 font-medium">kWp</span>
                   </div>
                   <p className="text-[11px] text-slate-500 leading-snug">
-                    Menutupi ~85% konsumsi bulanan ({Math.round(calcMetrics.monthlyKwh)} kWh) dengan modul 550W.
+                    Menutupi ~85% kebutuhan (~{Math.round(calcMetrics.monthlyKwh)} kWh/bln).
                   </p>
                 </div>
 
                 {/* Primary CTA Studio CAD Button */}
                 <Link
                   href="/studio"
-                  className="w-full h-11 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                  className="w-full h-11 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-amber-300/80 shadow-[0_6px_18px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                 >
                   <span className="material-symbols-outlined text-[17px]">polyline</span>
                   <span>Buka Desain di Studio CAD</span>
@@ -2164,113 +2780,106 @@ function HomePageContent() {
               </section>
 
               {/* Right Column: 4 Metrics & Timeline (7 Cols) */}
-              <div className="lg:col-span-7 space-y-3">
-                {/* 4 Stat Cards in 2x2 Grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  <section className="bg-white rounded-[22px] p-5 flex flex-col justify-between shadow-xs h-[135px]">
-                    <span className="text-[11px] text-slate-400 font-medium">Hemat Bulanan</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold tracking-tight text-emerald-700">
+              <div className="lg:col-span-7 space-y-3.5">
+                {/* 4 Stat Cards in 2x2 Grid (Uncluttered Apple Metric Tiles) */}
+                <div className="grid grid-cols-2 gap-3.5">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
+                    <span className="text-[11.5px] text-slate-500 font-medium">Hemat Bulanan</span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-semibold tracking-tight text-emerald-700 font-code-metric tabular-nums">
                         {formatJt(calcMetrics.estimatedMonthlySavings)}
                       </span>
                       <span className="text-xs text-slate-400">/bln</span>
                     </div>
-                    <span className="text-[10px] text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md w-fit font-medium">
-                      Hemat 85% tagihan
-                    </span>
+                    <span className="text-[11px] text-emerald-700/90 font-medium">~85% efisiensi tagihan</span>
                   </section>
 
-                  <section className="bg-white rounded-[22px] p-5 flex flex-col justify-between shadow-xs h-[135px]">
-                    <span className="text-[11px] text-slate-400 font-medium">Balik Modal (BEP)</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold tracking-tight text-slate-900">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
+                    <span className="text-[11.5px] text-slate-500 font-medium">Balik Modal (BEP)</span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                         {calcMetrics.paybackYears}
                       </span>
                       <span className="text-xs text-slate-400">tahun</span>
                     </div>
-                    <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md w-fit font-medium">
-                      Impas di tahun ke-{Math.ceil(calcMetrics.paybackYears)}
-                    </span>
+                    <span className="text-[11px] text-slate-500">Impas di tahun ke-{Math.ceil(calcMetrics.paybackYears)}</span>
                   </section>
 
-                  <section className="bg-white rounded-[22px] p-5 flex flex-col justify-between shadow-xs h-[135px]">
-                    <span className="text-[11px] text-slate-400 font-medium">Investasi Awal (Capex)</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold tracking-tight text-slate-900">
-                        {formatJt(calcMetrics.totalCapex)}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md w-fit font-medium">
-                      Termasuk instalasi
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
+                    <span className="text-[11.5px] text-slate-500 font-medium">Investasi Awal (CAPEX)</span>
+                    <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                      {formatJt(calcMetrics.totalCapex)}
                     </span>
+                    <span className="text-[11px] text-slate-500">Termasuk modul, inverter &amp; pasang</span>
                   </section>
 
-                  <section className="bg-white rounded-[22px] p-5 flex flex-col justify-between shadow-xs h-[135px]">
-                    <span className="text-[11px] text-slate-400 font-medium">Total Laba 25 Tahun</span>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold tracking-tight text-slate-900">
-                        {formatJt(calcMetrics.cumulative25Years)}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md w-fit font-medium">
-                      Keuntungan bersih
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
+                    <span className="text-[11.5px] text-slate-500 font-medium">Total Nilai 25 Tahun</span>
+                    <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                      {formatJt(calcMetrics.cumulative25Years)}
                     </span>
+                    <span className="text-[11px] text-emerald-700 font-medium">Masa garansi IEC 61215</span>
                   </section>
                 </div>
 
                 {/* 25-Year Timeline & Environmental Summary */}
-                <section className="bg-white rounded-[22px] p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between">
+                <section className="rounded-[24px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] space-y-4">
+                  <div className="flex items-center justify-between gap-2">
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-900">Proyeksi Arus Kas 25 Tahun</h4>
-                      <p className="text-[11px] text-slate-400 mt-0.5">Estimasi imbal hasil investasi selama masa garansi modul surya</p>
+                      <h4 className="text-sm font-semibold text-slate-900 tracking-tight">Proyeksi Arus Kas 25 Tahun</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Estimasi imbal hasil kumulatif selama garansi modul</p>
                     </div>
-                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
-                      BEP Tahun ke-{Math.ceil(calcMetrics.paybackYears)}
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full shrink-0 font-code-metric">
+                      BEP Thn ke-{Math.ceil(calcMetrics.paybackYears)}
                     </span>
                   </div>
 
-                  <div className="space-y-2 pt-1">
+                  <div className="space-y-2.5 pt-1">
                     {[
-                      { year: 1, label: "Tahun 1 · Fase Awal Investasi", returnPct: 25 },
-                      { year: 3, label: `Tahun ${Math.ceil(calcMetrics.paybackYears)} · Titik Impas (BEP)`, returnPct: 100 },
-                      { year: 10, label: "Tahun 10 · Laba Bersih Akumulatif", returnPct: 280 },
-                      { year: 25, label: "Tahun 25 · Total Akumulasi Penghematan", returnPct: 550 },
-                    ].map((item) => (
-                      <div key={item.year} className="space-y-1">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-slate-600 font-medium">{item.label}</span>
-                          <span className="font-bold tracking-tight text-slate-900">+{item.returnPct}% ROI</span>
+                      { year: 1, label: "Tahun 1 · Awal Operasi", returnPct: calcMetrics.roiYear1 },
+                      { year: 3, label: `Tahun ${Math.max(1, Math.ceil(calcMetrics.paybackYears))} · Titik Impas (BEP)`, returnPct: 100 },
+                      { year: 10, label: "Tahun 10 · Laba Kumulatif", returnPct: calcMetrics.roiYear10 },
+                      { year: 25, label: "Tahun 25 · Akumulasi Penuh", returnPct: calcMetrics.roiYear25 },
+                    ].map((item) => {
+                      const barMax = Math.max(100, calcMetrics.roiYear25);
+                      return (
+                        <div key={item.year} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-600 font-medium">{item.label}</span>
+                            <span className="font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                              {item.returnPct}% ROI
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-900/[0.06] rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                item.returnPct >= 100 ? "bg-emerald-500" : "bg-amber-400"
+                              }`}
+                              style={{ width: `${Math.min(100, Math.round((item.returnPct / barMax) * 100))}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              item.returnPct >= 100 ? "bg-emerald-500" : "bg-amber-400"
-                            }`}
-                            style={{ width: `${Math.min(100, item.returnPct / 5.5)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Eco Stats & Primary Proposal Trigger */}
-                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-3 text-slate-600">
+                  <div className="pt-3 border-t border-slate-900/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3 text-slate-600 font-code-metric">
                       <span className="inline-flex items-center gap-1 font-medium">
                         <span className="material-symbols-outlined text-[16px] text-emerald-600">park</span>
-                        {calcMetrics.trees} pohon lestari
+                        {calcMetrics.trees} pohon/thn
                       </span>
-                      <span className="text-slate-300">•</span>
+                      <span className="text-slate-300">·</span>
                       <span className="inline-flex items-center gap-1 font-medium">
                         <span className="material-symbols-outlined text-[16px] text-sky-600">eco</span>
-                        {calcMetrics.co2Ton} ton emisi CO₂ ditekan
+                        {calcMetrics.co2Ton} ton CO₂/thn
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => void openProposal()}
-                      className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 active:scale-95 text-amber-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
+                      className="h-9 px-4 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 active:scale-95 text-amber-950 font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                     >
                       <span className="material-symbols-outlined text-[15px] text-amber-950">picture_as_pdf</span>
                       <span>Unduh Proposal PDF</span>
@@ -2482,10 +3091,10 @@ function HomePageContent() {
                 </h3>
                 <p className="text-sm font-medium opacity-90 mt-1">
                   {activePillarModal === "hemat"
-                    ? "Memangkas tagihan listrik PLN hingga 85% dengan energi surya."
+                    ? `Memangkas tagihan listrik PLN sebesar ${billReductionPct}% (${formatJt(activeProj.monthlySavingIdr)}/bulan).`
                     : activePillarModal === "mandiri"
-                    ? "Penuhi hingga 78% kebutuhan listrik mandiri dari atap Anda sendiri."
-                    : "Kurangi 11.5 ton emisi karbon per tahun tanpa polusi operasional."}
+                    ? `Memasok sekitar ${autonomyPct}% kebutuhan listrik mandiri langsung dari atap Anda.`
+                    : `Kurangi ${activeProj.co2ReductionTon.toLocaleString("id-ID")} ton emisi karbon per tahun tanpa polusi operasional.`}
                 </p>
               </div>
 
@@ -2562,9 +3171,11 @@ function HomePageContent() {
                 <div>
                   <p className="text-xs text-slate-500 font-medium">Metrik Proyek ({activeProj.name})</p>
                   <p className="text-base font-bold text-slate-900">
-                    {activePillarModal === "hemat" && "Hemat Rp 2,0 jt / bulan · ROI 2.4 tahun"}
+                    {activePillarModal === "hemat" &&
+                      `Hemat ${formatJt(activeProj.monthlySavingIdr)} / bulan${activeProj.paybackYears > 0 ? ` · ROI ${activeProj.paybackYears} tahun` : ""}`}
                     {activePillarModal === "mandiri" && `${activeProj.capacityKwp} kWp (${activeProj.moduleCount} Panel) · Area Atap ${activeProj.effectiveAreaPct}%`}
-                    {activePillarModal === "bersih" && "11.5 Ton CO₂ / thn · Setara 523 Pohon Rimbun"}
+                    {activePillarModal === "bersih" &&
+                      `${activeProj.co2ReductionTon.toLocaleString("id-ID")} Ton CO₂ / thn · Setara ${activeProj.treesCount.toLocaleString("id-ID")} Pohon`}
                   </p>
                 </div>
               </div>
@@ -2600,7 +3211,9 @@ function HomePageContent() {
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">Perlindungan Kenaikan Tarif (Tariff Hedge)</h4>
                         <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
-                          Investasi balik modal dalam 2.4 tahun, setelah itu seluruh listrik yang dihasilkan menjadi bebas biaya selama sisa umur panel (25+ tahun).
+                          {activeProj.paybackYears > 0
+                            ? `Estimasi balik modal dalam ${activeProj.paybackYears} tahun, setelah itu listrik surya menghasilkan penghematan selama sisa umur panel (25+ tahun).`
+                            : "Setelah titik balik modal tercapai, listrik surya menghasilkan penghematan selama sisa umur panel (25+ tahun)."}
                         </p>
                       </div>
                     </div>
@@ -2655,7 +3268,7 @@ function HomePageContent() {
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">Menggantikan Pasokan PLTU Batubara</h4>
                         <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
-                          Setiap kWh listrik bersih dari atap mencegah sekitar ~0.87 kg emisi karbon yang biasanya dilepaskan pembangkit listrik fosil ke udara.
+                          Setiap kWh listrik bersih yang menggantikan listrik jaringan mencegah sekitar 0,80 kg emisi CO₂ sesuai faktor emisi Grid Jamali.
                         </p>
                       </div>
                     </div>
@@ -2664,7 +3277,7 @@ function HomePageContent() {
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">Dampak Nyata Menuju Net-Zero 2060</h4>
                         <p className="text-xs text-slate-600 leading-relaxed mt-0.5">
-                          Mereduksi 11.5 ton CO₂ per tahun sama efektifnya dengan menanam 523 pohon rimbun dewasa di sekitar properti Anda.
+                          Mereduksi {activeProj.co2ReductionTon.toLocaleString("id-ID")} ton CO₂ per tahun setara dengan penyerapan karbon oleh {activeProj.treesCount.toLocaleString("id-ID")} pohon dewasa.
                         </p>
                       </div>
                     </div>
@@ -2802,7 +3415,9 @@ function toSavedProject(
     moduleCount: summary.installed,
     modulePower,
     annualProdMwh: annualMwh,
+    monthlyBillIdr: summary.monthly_bill_idr ?? 0,
     monthlySavingIdr: summary.monthly_saving_idr,
+    annualSavingIdr: summary.annual_saving_idr ?? summary.monthly_saving_idr * 12,
     paybackYears: summary.payback_years ?? 0,
     treesCount: summary.trees_equivalent ?? 0,
     co2ReductionTon:
@@ -2813,6 +3428,61 @@ function toSavedProject(
     effectiveAreaPct,
     obstacles: [],
   };
+}
+
+/**
+ * Mengubah rincian bidang atap dari database (`GET /analyses/{id}`) menjadi
+ * daftar `ProjectFacet` dengan koordinat poligon ternormalisasi & proporsional.
+ */
+function toRealProjectFacets(detail: SimulationDetail): ProjectFacet[] {
+  return detail.roofs.map((roof, idx) => {
+    const layout = buildDashboardRoofLayout(roof, detail.imagery);
+    const worldPolygon: [number, number][] = layout.worldPolygon.map((p) => [p.x, p.y]);
+    const insetPolygon: [number, number][] = layout.insetPolygon.map((p) => [p.x, p.y]);
+
+    const xs = worldPolygon.map(([x]) => x);
+    const ys = worldPolygon.map(([, y]) => y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const maxSpan = Math.max(1e-6, maxX - minX, maxY - minY);
+
+    const normalizedPolygon: [number, number][] = worldPolygon.map(([x, y]) => [
+      ((x - minX) / maxSpan) * 100,
+      ((y - minY) / maxSpan) * 100,
+    ]);
+
+    const activeCount = layout.isSolarPopulated
+      ? layout.slots.filter((s) => (s.state ?? "active") === "active").length
+      : 0;
+
+    const effectivePct =
+      roof.result.area_sqm > 0
+        ? Math.round((roof.result.effective_area_sqm / roof.result.area_sqm) * 100)
+        : 0;
+
+    return {
+      id: `${detail.id}-roof-${idx}`,
+      name: roof.label || `Bidang Atap ${idx + 1}`,
+      shapeLabel: `${idx + 1}/${detail.roofs.length}`,
+      dimensions: `${roof.result.roof_length_m.toFixed(1)} × ${roof.result.roof_width_m.toFixed(1)} m`,
+      ridgeM: roof.result.roof_length_m,
+      slopeM: roof.result.roof_width_m,
+      capacityKwp: roof.result.capacity_kwp,
+      moduleCount: roof.result.installed || activeCount,
+      effectiveAreaPct: effectivePct,
+      polygonPoints: normalizedPolygon,
+      obstacles: [],
+      rows: layout.rows,
+      cols: layout.cols,
+      setbackM: roof.input.setback_m,
+      worldPolygon,
+      insetPolygon,
+      layoutSlots: layout.slots,
+      isSolarPopulated: layout.isSolarPopulated,
+    };
+  });
 }
 
 export default function HomePage() {

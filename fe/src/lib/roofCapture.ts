@@ -99,8 +99,8 @@ const MIN_CAPTURE_SIDE_PX = 320;
  * Rentang cakupan yang paling baik menurut pengukuran model, dalam meter.
  * Diperiksa dan dilaporkan, bukan dipaksakan: yang tampil di layar tetap yang dikirim.
  */
-export const RECOMMENDED_MIN_FOOTPRINT_M = 150;
-export const RECOMMENDED_MAX_FOOTPRINT_M = 260;
+export const RECOMMENDED_MIN_FOOTPRINT_M = 120;
+export const RECOMMENDED_MAX_FOOTPRINT_M = 340;
 
 /** Di atas ini pemindaian hampir pasti tidak menghasilkan apa pun, jadi ditolak. */
 export const MAX_FOOTPRINT_M = 800;

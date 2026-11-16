@@ -235,58 +235,66 @@ export default function MethodologyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] text-slate-800 font-body-md antialiased selection:bg-amber-100 selection:text-amber-950 flex flex-col justify-between">
-      {/* Radiant Soft Glow Ambient Background */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[780px] h-[400px] bg-gradient-to-b from-amber-200/30 via-amber-100/15 to-transparent rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-[#EFF1F4] text-slate-800 font-body-md antialiased selection:bg-amber-100 selection:text-amber-950 flex flex-col justify-between relative overflow-x-clip">
+      {/* Radiant Soft Glow Ambient Background (pure radial gradients — light on GPU) */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div
+          className="absolute -top-36 left-1/3 w-[680px] h-[680px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(252,211,77,0.28) 0%, rgba(254,240,138,0.12) 42%, transparent 72%)" }}
+        />
+        <div
+          className="absolute top-1/3 -right-24 w-[540px] h-[540px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(125,211,252,0.22) 0%, rgba(207,250,254,0.10) 42%, transparent 72%)" }}
+        />
+        <div
+          className="absolute bottom-8 left-12 w-[500px] h-[500px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(253,230,138,0.20) 0%, rgba(186,230,253,0.10) 42%, transparent 72%)" }}
+        />
+      </div>
 
-      {/* Soft Top Viewport Fade Mask (Seamless Blend saat Scroll tanpa garis kaku) */}
-      <div className="fixed top-0 inset-x-0 h-20 bg-gradient-to-b from-[#FAF9F5]/90 via-[#FAF9F5]/45 to-transparent pointer-events-none z-20" />
-
-      {/* Header Bar: Bersih, Tanpa Kontainer / Border Kaku */}
+      {/* Header Bar */}
       <header className="relative xl:fixed xl:top-5 xl:left-8 z-40 px-4 sm:px-8 xl:px-0 pt-5 xl:pt-0 flex items-center">
         <button
           type="button"
           onClick={handleGoBack}
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-600 hover:text-amber-900 transition-colors cursor-pointer group p-1 -ml-1"
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl border border-white/90 shadow-xs text-xs sm:text-sm font-semibold text-slate-700 hover:text-amber-950 transition cursor-pointer group"
           title="Kembali ke halaman sebelumnya"
         >
-          <span className="material-symbols-outlined text-[20px] group-hover:-translate-x-1 transition-transform text-slate-500 group-hover:text-amber-800">
+          <span className="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform text-slate-500 group-hover:text-amber-800">
             arrow_back
           </span>
           <span>Kembali</span>
         </button>
       </header>
 
-      {/* Hero Headline Section */}
-      <main className="relative z-30 flex-1 max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-12 sm:py-12 w-full space-y-10 sm:space-y-12">
-        
+      {/* Main Content */}
+      <main className="relative z-30 flex-1 max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-12 sm:py-12 w-full space-y-8 sm:space-y-10">
         {/* Apple-style Clean Hero */}
-        <div className="text-center max-w-3xl mx-auto space-y-3.5 sm:space-y-4">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/90 backdrop-blur-xl border border-white/90 shadow-[0_2px_12px_rgba(245,158,11,0.08)]">
+        <div className="text-center max-w-3xl mx-auto space-y-3.5">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/85 backdrop-blur-xl border border-white/90 shadow-[0_4px_16px_rgba(245,158,11,0.10)]">
             <span className="material-symbols-outlined text-amber-600 text-[16px]">verified</span>
-            <span className="text-xs font-bold text-amber-950 font-title tracking-tight">
-              Transparansi Ilmiah &amp; Regulasi Resmi
+            <span className="text-xs font-semibold text-amber-950 font-title tracking-tight">
+              Standar Teknis IEC / ISO &amp; Regulasi ESDM
             </span>
           </div>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 font-title tracking-tight leading-[1.16]">
-            Sumber data &amp; standar <br />
+          <h1 className="text-3xl sm:text-5xl font-semibold text-slate-900 font-title tracking-tight leading-[1.15]">
+            Sumber data &amp; standar{" "}
             <span className="bg-gradient-to-r from-amber-800 via-amber-600 to-amber-700 bg-clip-text text-transparent">
-              perhitungan yang terbuka.
+              perhitungan terbuka.
             </span>
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto">
-            Setiap angka potensi energi dan penghematan dihitung berdasarkan data satelit presisi,
-            radiasi iklim nyata Kota Bogor, komponen Tier-1, dan regulasi resmi Permen ESDM yang dapat Anda verifikasi langsung ke dokumen aslinya.
+            Setiap angka potensi energi, biaya investasi, dan reduksi emisi di SunSight mengacu pada standar teknik internasional (IEC, IEEE, ISO) serta regulasi resmi Kementerian ESDM &amp; PT PLN.
           </p>
         </div>
 
-        {/* Floating Capsule Nav: Seamless Frosted Glass (Tanpa Kotak Latar Kaku / Garis Border-B) */}
+        {/* Floating Capsule Nav: Frosted Glass */}
         <nav className="sticky top-4 z-40 flex justify-center pointer-events-none">
           <div
             ref={navScrollRef}
-            className="pointer-events-auto flex items-center gap-1 p-1.5 rounded-full bg-white/75 backdrop-blur-2xl border border-white/90 shadow-[0_12px_36px_rgba(15,23,42,0.07),0_2px_12px_rgba(245,158,11,0.08)] max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="pointer-events-auto flex items-center gap-1 p-1.5 rounded-full bg-white/78 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_12px_36px_rgba(15,23,42,0.07),0_2px_12px_rgba(245,158,11,0.10)] max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {NAV_ITEMS.map((item) => {
               const isActive = activeSection === item.id;
@@ -298,10 +306,10 @@ export default function MethodologyPage() {
                   }}
                   type="button"
                   onClick={() => scrollTo(item.id)}
-                  className={`h-9 px-3.5 rounded-full text-xs font-bold transition-all duration-300 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer border ${
+                  className={`h-9 px-3.5 rounded-full text-xs font-semibold transition-all duration-300 flex items-center gap-1.5 shrink-0 whitespace-nowrap cursor-pointer border ${
                     isActive
-                      ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
-                      : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-amber-50/70 border-transparent"
+                      ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 text-amber-950 shadow-[0_2px_10px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.88)] border-amber-300/80"
+                      : "bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-900/[0.04] border-transparent"
                   }`}
                 >
                   <span className="material-symbols-outlined text-[16px]">{item.icon}</span>
@@ -312,161 +320,137 @@ export default function MethodologyPage() {
           </div>
         </nav>
 
-        {/* =========================================================
-            PILAR 1: CITRA SATELIT & PRESISI ATAP (Komparasi Visual yang Menarik)
-            ========================================================= */}
+        {/* PILAR 1: CITRA SATELIT & PRESISI ATAP */}
         <section
           id="spatial"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 01 • Akurasi Geospasial
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                01 · Akurasi Geospasial (Ortofoto Nadir)
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
                 Citra Satelit Tegak Lurus 90° Bebas Distorsi
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50/90 text-[11px] font-semibold text-amber-900 font-code-metric w-fit">
               <span className="material-symbols-outlined text-[15px]">straighten</span>
-              Skala 1 Meter = 20 Px
+              Skala 1 m = 20 px
             </span>
           </div>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            Pengukuran potensi atap membutuhkan akurasi geometris nyata. SunSight menggunakan citra ortorektifikasi 90° tegak lurus dari atas (*nadir view*) sehingga ukuran fisik atap di lapangan sejajar dengan modul surya pada kanvas simulasi.
+            Citra ortorektifikasi 90° tegak lurus (*nadir view*) memastikan ukuran panjang dan lebar bidang atap di Studio CAD sebanding dengan ukuran fisik di lapangan.
           </p>
 
-          {/* Visual Comparison: Foto Udara Biasa vs SunSight Ortofoto */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-            {/* Sisi Negatif: Foto Miring Biasa */}
-            <div className="p-5 rounded-2xl bg-rose-50/40 border border-rose-200/60 space-y-3">
-              <div className="flex items-center gap-2 text-rose-800 text-xs font-bold uppercase tracking-wide">
-                <span className="material-symbols-outlined text-[18px]">cancel</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/[0.035] space-y-2">
+              <div className="flex items-center gap-2 text-rose-700 text-xs font-semibold">
+                <span className="material-symbols-outlined text-[17px]">cancel</span>
                 <span>Foto Udara Miring Biasa</span>
               </div>
-              <ul className="space-y-2 text-xs text-slate-600">
-                <li className="flex items-start gap-2">
-                  <span className="text-rose-500 font-bold">•</span>
-                  <span><strong>Distorsi Sudut Lensa:</strong> Kamera miring membuat dinding bangunan ikut terlihat, membiaskan batas talang dan bubungan genteng.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-rose-500 font-bold">•</span>
-                  <span><strong>Kesalahan Luas s/d 30%:</strong> Estimasi kapasitas menjadi meleset, modul surya yang direncanakan berisiko tidak muat saat instalasi.</span>
-                </li>
-              </ul>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Sudut kamera miring menampakkan dinding bangunan dan mengaburkan garis talang, sehingga estimasi luas atap dapat meleset hingga 30%.
+              </p>
             </div>
 
-            {/* Sisi Positif: Standar SunSight (Radiant Golden Glow) */}
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50/80 via-white to-amber-50/40 border border-amber-300/80 shadow-[0_4px_16px_rgba(245,158,11,0.08)] space-y-3">
-              <div className="flex items-center gap-2 text-amber-950 text-xs font-bold uppercase tracking-wide">
-                <span className="material-symbols-outlined text-[18px] text-amber-600">check_circle</span>
-                <span>Pendekatan SunSight 90° Nadir</span>
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-50/85 via-white/80 to-sky-50/50 border border-amber-200/70 space-y-2">
+              <div className="flex items-center gap-2 text-amber-950 text-xs font-semibold">
+                <span className="material-symbols-outlined text-[17px] text-amber-600">check_circle</span>
+                <span>Ortofoto Nadir 90° + DEMNAS</span>
               </div>
-              <ul className="space-y-2 text-xs text-slate-700">
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-600 font-bold">•</span>
-                  <span><strong>Koreksi Digital Elevation Model (DEM):</strong> Menghilangkan kemiringan sudut dan bayangan dinding untuk mendapatkan bidang atap murni.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-600 font-bold">•</span>
-                  <span><strong>Kalibrasi Kontur 6 Kecamatan Bogor:</strong> Disesuaikan dengan elevasi 190–330 mdpl di Bogor Tengah, Selatan, Timur, Utara, Barat, dan Tanah Sareal.</span>
-                </li>
-              </ul>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Koreksi elevasi DEM (190–330 mdpl di 6 kecamatan Kota Bogor) menghilangkan distorsi sudut agar modul 550 Wp tersusun akurat.
+              </p>
             </div>
           </div>
 
-          {/* Outbound Link Sumber Geospasial (Verified 200 OK) */}
-          <div className="pt-2 flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <a
               href="https://tanahair.indonesia.go.id/demnas/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-xs font-semibold text-slate-700 hover:text-amber-950 transition group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">map</span>
-              <span>Buka Portal DEMNAS (Badan Informasi Geospasial)</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+              <span>Portal DEMNAS (Badan Informasi Geospasial)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 transition-transform">
                 north_east
               </span>
             </a>
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 2: RADIASI SURYA & MIKROKLIMAT KOTA BOGOR
-            ========================================================= */}
+        {/* PILAR 2: RADIASI SURYA & MIKROKLIMAT */}
         <section
           id="solar"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 02 • Meteorologi Surya
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                02 · Meteorologi Surya (IEC 61724)
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
-                Radiasi Matahari Khusus Mikroklimat Kota Bogor
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
+                Radiasi Matahari Mikroklimat Kota Bogor
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-50/90 text-[11px] font-semibold text-sky-900 w-fit">
               <span className="material-symbols-outlined text-[15px]">sunny</span>
               NASA POWER &amp; Solargis
             </span>
           </div>
 
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            Sebagai kawasan tropis khatulistiwa dengan curah hujan tinggi, Kota Bogor memiliki pola penyinaran yang khas. SunSight menggunakan data historis multi-dekade NASA POWER dan Bank Dunia yang disesuaikan dengan fenomena iklim lokal.
+            Data historis multi-dekade NASA POWER dan Global Solar Atlas (World Bank/Solargis) disesuaikan dengan pola awan konvektif sore hari serta faktor suhu tropis Kota Bogor.
           </p>
 
-          {/* 3 Metric Cards Bergaya Apple Feature Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-            <div className="p-5 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Insolasi Harian</span>
-              <div className="text-2xl sm:text-3xl font-extrabold text-amber-950 font-code-metric">
-                4.20–4.52
+          <div className="rounded-2xl bg-slate-900/[0.035] grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-900/[0.07]">
+            <div className="p-5 space-y-1">
+              <span className="text-[11px] font-medium text-slate-500 block">Insolasi Harian</span>
+              <div className="text-2xl font-semibold text-slate-900 font-code-metric tabular-nums">
+                4,20–4,52
               </div>
-              <div className="text-xs font-semibold text-slate-800">kWh/m² / hari (Peak Sun Hours)</div>
-              <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
-                Rata-rata jam penyinaran matahari efektif tahunan di wilayah Kota Bogor.
+              <div className="text-xs font-medium text-slate-700">kWh/m²/hari (Peak Sun Hours)</div>
+              <p className="text-[11px] text-slate-500 pt-1">
+                Rata-rata radiasi surya tahunan Kota Bogor.
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Puncak Penyinaran</span>
-              <div className="text-2xl sm:text-3xl font-extrabold text-amber-950 font-code-metric">
+            <div className="p-5 space-y-1">
+              <span className="text-[11px] font-medium text-slate-500 block">Puncak Penyinaran</span>
+              <div className="text-2xl font-semibold text-slate-900 font-code-metric tabular-nums">
                 72%
               </div>
-              <div className="text-xs font-semibold text-slate-800">Jam 08.30 – 13.30 WIB</div>
-              <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
-                Energi harian terfokus di pagi-siang hari sebelum terbentuk awan konvektif sore Gunung Salak.
+              <div className="text-xs font-medium text-slate-700">Pukul 08.30 – 13.30 WIB</div>
+              <p className="text-[11px] text-slate-500 pt-1">
+                Terkonsentrasi sebelum awan konvektif sore terbentuk.
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Faktor Koreksi Realistis</span>
-              <div className="text-2xl sm:text-3xl font-extrabold text-amber-950 font-code-metric">
-                80.0%
+            <div className="p-5 space-y-1">
+              <span className="text-[11px] font-medium text-slate-500 block">Performance Ratio</span>
+              <div className="text-2xl font-semibold text-emerald-700 font-code-metric tabular-nums">
+                80,0%
               </div>
-              <div className="text-xs font-semibold text-slate-800">Performance Ratio (PR 0.80)</div>
-              <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
-                Memperhitungkan rugi suhu tropis (-0.34%/°C di atas 25°C), hambatan kabel, dan debu.
+              <div className="text-xs font-medium text-slate-700">Standar IEC 61724 (PR 0,80)</div>
+              <p className="text-[11px] text-slate-500 pt-1">
+                Mencakup rugi suhu tropis (-0,34%/°C), kabel, dan debu.
               </p>
             </div>
           </div>
 
-          {/* Outbound Link Sumber Radiasi (Verified 200 OK) */}
-          <div className="pt-2 flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <a
               href="https://power.larc.nasa.gov/data-access-viewer/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-xs font-semibold text-slate-700 hover:text-amber-950 transition group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">public</span>
-              <span>NASA POWER Data Access Viewer</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+              <span>NASA POWER Data Viewer</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 transition-transform">
                 north_east
               </span>
             </a>
@@ -475,109 +459,102 @@ export default function MethodologyPage() {
               href="https://globalsolaratlas.info/map?c=-6.5971,106.806,11&s=-6.5971,106.806&m=site"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-xs font-semibold text-slate-700 hover:text-amber-950 transition group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">wb_sunny</span>
-              <span>Peta Global Solar Atlas — Kota Bogor</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+              <span>Global Solar Atlas — Bogor</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 transition-transform">
                 north_east
               </span>
             </a>
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 3: STANDAR HARDWARE TIER-1 & KEAMANAN CAD
-            ========================================================= */}
+        {/* PILAR 3: HARDWARE TIER-1 & ATURAN CAD */}
         <section
           id="hardware"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 03 • Komponen &amp; Fisik
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                03 · Perangkat &amp; Keselamatan (IEC / IEEE / PUIL)
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
-                Spesifikasi Hardware Tier-1 &amp; Aturan CAD Atap
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
+                Standar Hardware Tier-1 &amp; Aturan CAD
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50/90 text-[11px] font-semibold text-amber-900 w-fit">
               <span className="material-symbols-outlined text-[15px]">verified</span>
-              Standar IEC &amp; PUIL 2020
+              IEC 61215 · IEEE 1547 · PUIL 2020
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Modul Tier-1 */}
-            <div className="p-5 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <div className="p-5 rounded-2xl bg-slate-900/[0.035] space-y-2.5">
               <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-sm shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">solar_power</span>
+                <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[18px]">solar_power</span>
                 </span>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">Modul Surya Tier-1 (550Wp)</h3>
-                  <span className="text-[11px] text-slate-400">Monocrystalline Half-Cell</span>
+                  <h3 className="font-semibold text-slate-900 text-sm">Modul Surya Tier-1 (550 Wp)</h3>
+                  <span className="text-[11px] text-slate-500">IEC 61215 &amp; IEC 61730 · Mono PERC</span>
                 </div>
               </div>
-              <div className="space-y-2 text-xs text-slate-600">
-                <p><strong>Efisiensi Sel ~21.3%:</strong> Mampu menyerap spektrum radiasi matahari secara optimal meski kondisi langit berawan tipis.</p>
-                <p><strong>Dimensi Standar:</strong> 2.278 × 1.134 × 35 mm (bidang ±2.58 m² per panel) dengan rangka aluminium anti karat.</p>
-                <p><strong>Garansi Daya 25 Tahun:</strong> Menjamin penurunan daya maksimal hanya 0.55%/tahun (daya tetap di atas 84.8% di tahun ke-25).</p>
-              </div>
+              <ul className="text-xs text-slate-600 space-y-1.5 pl-4 list-disc">
+                <li>Efisiensi sel ~21,3%, dimensi standar 2,278 × 1,134 m (±2,58 m²).</li>
+                <li>Garansi degradasi linier 25 tahun (daya tersisa ≥ 84,8% di tahun ke-25).</li>
+              </ul>
             </div>
 
-            {/* Inverter Grid-Tied */}
-            <div className="p-5 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-3">
+            <div className="p-5 rounded-2xl bg-slate-900/[0.035] space-y-2.5">
               <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-sm shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">bolt</span>
+                <span className="w-8 h-8 rounded-xl bg-sky-100 text-sky-800 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[18px]">bolt</span>
                 </span>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">Inverter Grid-Tied &amp; Proteksi</h3>
-                  <span className="text-[11px] text-slate-400">Sinkronisasi Jaringan PLN</span>
+                  <h3 className="font-semibold text-slate-900 text-sm">Inverter &amp; Proteksi Jaringan</h3>
+                  <span className="text-[11px] text-slate-500">IEEE 1547 &amp; SNI PUIL 2020</span>
                 </div>
               </div>
-              <div className="space-y-2 text-xs text-slate-600">
-                <p><strong>Euro Efficiency ≥ 97.5%:</strong> Mengubah arus DC menjadi AC gelombang sinus murni yang aman bagi seluruh peralatan elektronik rumah.</p>
-                <p><strong>Anti-Islanding (IEEE 1547):</strong> Otomatis memutus aliran listrik dalam waktu &lt;2 detik saat jaringan PLN padam demi keselamatan teknisi.</p>
-                <p><strong>Proteksi Petir (SPD Type II):</strong> Jalur pengaman lonjakan tegangan DC dan AC dengan pentanahan wajib &le; 5 Ohm.</p>
-              </div>
+              <ul className="text-xs text-slate-600 space-y-1.5 pl-4 list-disc">
+                <li>Euro Efficiency ≥ 97,5% dengan pemutus anti-islanding &lt; 2 detik saat PLN padam.</li>
+                <li>Wajib Surge Protection Device (SPD Type II) DC/AC &amp; grounding ≤ 5 Ohm.</li>
+              </ul>
             </div>
           </div>
 
-          {/* Aturan Tata Letak CAD Atap */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200/70 space-y-2">
-            <span className="text-xs font-bold text-amber-950 uppercase tracking-wide block">
-              3 Aturan Penataan Panel Surya di Studio CAD SunSight
+          {/* 3 Aturan Penataan CAD (Grouped Inset Strip) */}
+          <div className="rounded-2xl bg-gradient-to-br from-amber-50/75 via-white/70 to-sky-50/45 border border-amber-200/60 p-4 space-y-2.5">
+            <span className="text-xs font-semibold text-amber-950 block">
+              Aturan Penataan Panel di Studio CAD
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600 pt-1">
-              <div className="p-3 rounded-xl bg-white/80 border border-amber-100">
-                <strong className="text-slate-900 block mb-0.5">1. Setback Tepi (30–50 cm)</strong>
-                <span>Jarak bebas dari bibir talang dan genteng untuk meredam terpaan angin dan jalur pijak teknisi saat perawatan.</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-600">
+              <div>
+                <strong className="text-slate-900 block">1. Setback Tepi (30–50 cm)</strong>
+                <span>Jarak aman dari tepi atap untuk tahanan angin dan akses teknisi.</span>
               </div>
-              <div className="p-3 rounded-xl bg-white/80 border border-amber-100">
-                <strong className="text-slate-900 block mb-0.5">2. Celah Antar Panel (2–3 cm)</strong>
-                <span>Ruang pasang klem aluminium (*mid-clamp*) dan ruang toleransi pemuaian material saat cuaca terik.</span>
+              <div>
+                <strong className="text-slate-900 block">2. Celah Panel (2–3 cm)</strong>
+                <span>Ruang klem aluminium (*mid-clamp*) dan toleransi muai panas.</span>
               </div>
-              <div className="p-3 rounded-xl bg-white/80 border border-amber-100">
-                <strong className="text-slate-900 block mb-0.5">3. Kemiringan Optimal (10°–22°)</strong>
-                <span>Sudut kemiringan yang memungkinkan air hujan mengalir lancar membersihkan debu secara otomatis (*self-cleaning*).</span>
+              <div>
+                <strong className="text-slate-900 block">3. Kemiringan (10°–22°)</strong>
+                <span>Sudut alami air hujan membersihkan debu (*self-cleaning*).</span>
               </div>
             </div>
           </div>
 
-          {/* Outbound Link Standarisasi Hardware (Verified 200 OK) */}
-          <div className="pt-2 flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <a
               href="https://peraturan.bpk.go.id/Details/180040/permen-esdm-no-7-tahun-2021"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-xs font-semibold text-slate-700 hover:text-amber-950 transition group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">verified</span>
-              <span>Permen ESDM No. 7/2021 — Wajib SNI PUIL 2020 (JDIH BPK)</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+              <span>Permen ESDM No. 7/2021 — PUIL 2020</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 transition-transform">
                 north_east
               </span>
             </a>
@@ -586,299 +563,267 @@ export default function MethodologyPage() {
               href="https://standards.ieee.org/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50/70 text-xs font-semibold text-slate-700 hover:text-amber-950 border border-slate-200/80 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-xs font-semibold text-slate-700 hover:text-amber-950 transition group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-amber-600">electric_bolt</span>
-              <span>Portal Standar IEEE 1547 (Interkoneksi &amp; Proteksi)</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
+              <span>Standar IEEE 1547</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 transition-transform">
                 north_east
               </span>
             </a>
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 4: FORMULA FINANSIAL & REGULASI PERMEN ESDM
-            ========================================================= */}
+        {/* PILAR 4: FORMULA FINANSIAL & REGULASI */}
         <section
           id="financial"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 04 • Regulasi &amp; Investasi
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                04 · Regulasi &amp; Finansial
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
-                Kalkulasi Penghematan Sesuai Permen ESDM No. 2/2024
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
+                Kalkulasi Penghematan (Permen ESDM 2/2024)
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50/90 text-[11px] font-semibold text-amber-900 w-fit">
               <span className="material-symbols-outlined text-[15px]">gavel</span>
-              Regulasi Resmi Terbaru
+              Permen ESDM No. 2 &amp; 7/2024
             </span>
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            Perhitungan rupiah didasarkan pada kebijakan Peraturan Menteri ESDM No. 2 Tahun 2024 serta Permen ESDM No. 7 Tahun 2024 tentang Tarif Tenaga Listrik PT PLN (Persero). Rumus disusun secara transparan agar mudah diverifikasi.
-          </p>
-
-          {/* Formula Alur Perhitungan Yang Sangat Mudah Dipahami */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-50/90 via-amber-100/30 to-white/95 border border-amber-300/80 shadow-[0_4px_16px_rgba(245,158,11,0.06)] space-y-4">
-            <span className="text-xs font-bold text-amber-950 uppercase tracking-wider block font-title">
-              Rumus Produksi Listrik Tahunan SunSight
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50/85 via-white/80 to-sky-50/45 border border-amber-200/70 space-y-3">
+            <span className="text-xs font-semibold text-amber-950 block font-title">
+              Rumus Produksi Energi Tahunan
             </span>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm font-bold text-amber-950 font-code-metric">
-              <span className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 shadow-2xs">Kapasitas (kWp)</span>
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-amber-950 font-code-metric">
+              <span className="px-3 py-1.5 rounded-xl bg-white/90 shadow-2xs">Kapasitas (kWp)</span>
               <span>×</span>
-              <span className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 shadow-2xs">4.25 Jam PSH</span>
+              <span className="px-3 py-1.5 rounded-xl bg-white/90 shadow-2xs">4,25 Jam PSH</span>
               <span>×</span>
-              <span className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 shadow-2xs">365 Hari</span>
+              <span className="px-3 py-1.5 rounded-xl bg-white/90 shadow-2xs">365 Hari</span>
               <span>×</span>
-              <span className="px-3 py-1.5 rounded-xl bg-white border border-amber-200 shadow-2xs">0.80 Efisiensi</span>
+              <span className="px-3 py-1.5 rounded-xl bg-white/90 shadow-2xs">0,80 PR</span>
               <span>=</span>
-              <span className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border border-amber-300 shadow-xs">
-                Total Listrik (kWh/Tahun)
+              <span className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 text-amber-950 border border-amber-300/80 shadow-xs">
+                Energi (kWh/Thn)
               </span>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              <strong>Contoh Nyata:</strong> Jika sistem Anda berkapasitas <strong>4.4 kWp</strong> (sekitar 8 panel):  
-              4.4 × 4.25 × 365 × 0.80 = <strong>±5.460 kWh per tahun</strong>.  
-              Pada tarif PLN R-1 (Rp 1.444,70/kWh), Anda menghemat sekitar <strong>Rp 7,8 Juta per tahun</strong>.
+              <strong>Contoh:</strong> Sistem <strong>4,4 kWp</strong> (8 panel) menghasilkan 4,4 × 4,25 × 365 × 0,80 ≈{" "}
+              <strong>5.460 kWh/tahun</strong> (~Rp 7,8 juta/tahun pada tarif R-1 Rp 1.444,70/kWh).
             </p>
           </div>
 
-          {/* 3 Pokok Permen ESDM No. 2/2024 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
-            <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-1.5">
-              <strong className="text-xs font-bold text-slate-900 block">Sistem Kuota Wilayah</strong>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Penghapusan batas kaku 100% daya kontrak PLN, digantikan mekanisme kuota terintegrasi sistem transmisi.
+          {/* 3 Pokok Permen ESDM 2/2024 */}
+          <div className="rounded-2xl bg-slate-900/[0.035] grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-900/[0.07] text-xs">
+            <div className="p-4 space-y-1">
+              <strong className="text-slate-900 block">Sistem Kuota Wilayah</strong>
+              <p className="text-slate-600 leading-relaxed">
+                Menggantikan batas kaku 100% daya terpasang dengan mekanisme kuota sistem distribusi PLN.
               </p>
             </div>
-
-            <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-1.5">
-              <strong className="text-xs font-bold text-slate-900 block">Fokus Self-Consumption</strong>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Algoritma SunSight memprioritaskan pemakaian langsung di siang hari agar penghematan optimal tanpa listrik terbuang.
+            <div className="p-4 space-y-1">
+              <strong className="text-slate-900 block">Fokus Self-Consumption</strong>
+              <p className="text-slate-600 leading-relaxed">
+                Kapasitas dioptimalkan untuk pemakaian siang hari langsung agar tidak ada daya terbuang.
               </p>
             </div>
-
-            <div className="p-4 rounded-2xl bg-[#FAF9F5] border border-amber-100/90 space-y-1.5">
-              <strong className="text-xs font-bold text-slate-900 block">Bebas Biaya Beban</strong>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Pelanggan rumah tangga dibebaskan dari biaya kapasitas bulanan (*capacity charge*), memaksimalkan margin hemat.
+            <div className="p-4 space-y-1">
+              <strong className="text-slate-900 block">Bebas Biaya Kapasitas</strong>
+              <p className="text-slate-600 leading-relaxed">
+                Pelanggan rumah tangga dibebaskan dari *capacity charge* bulanan PLN.
               </p>
             </div>
           </div>
 
           {/* Katalog Tarif Resmi PLN */}
-          <div className="space-y-2 pt-2">
-            <span className="text-xs font-bold text-slate-700 block">Tarif Listrik Resmi PT PLN (Persero) yang Digunakan:</span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-code-metric text-xs">
-              <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-slate-400 text-[10px] block">R-1 / 900 VA RTM</span>
-                <span className="font-bold text-slate-900">Rp 1.352,00 / kWh</span>
+          <div className="space-y-2">
+            <span className="text-xs font-semibold text-slate-700 block">Tarif Listrik Resmi PT PLN (Persero):</span>
+            <div className="rounded-2xl bg-slate-900/[0.035] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-900/[0.07] font-code-metric text-xs">
+              <div className="p-3.5">
+                <span className="text-slate-500 text-[10.5px] block">R-1 / 900 VA RTM</span>
+                <span className="font-semibold text-slate-900 tabular-nums">Rp 1.352,00/kWh</span>
               </div>
-              <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-slate-400 text-[10px] block">R-1 / 1.300 &amp; 2.200 VA</span>
-                <span className="font-bold text-slate-900">Rp 1.444,70 / kWh</span>
+              <div className="p-3.5">
+                <span className="text-slate-500 text-[10.5px] block">R-1 / 1.300–2.200 VA</span>
+                <span className="font-semibold text-slate-900 tabular-nums">Rp 1.444,70/kWh</span>
               </div>
-              <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-slate-400 text-[10px] block">R-2 / 3.500 – 5.500 VA</span>
-                <span className="font-bold text-slate-900">Rp 1.699,53 / kWh</span>
+              <div className="p-3.5">
+                <span className="text-slate-500 text-[10.5px] block">R-2 / 3.500–5.500 VA</span>
+                <span className="font-semibold text-slate-900 tabular-nums">Rp 1.699,53/kWh</span>
               </div>
-              <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
-                <span className="text-slate-400 text-[10px] block">R-3 / &ge; 6.600 VA</span>
-                <span className="font-bold text-slate-900">Rp 1.699,53 / kWh</span>
+              <div className="p-3.5">
+                <span className="text-slate-500 text-[10.5px] block">R-3 / ≥ 6.600 VA</span>
+                <span className="font-semibold text-slate-900 tabular-nums">Rp 1.699,53/kWh</span>
               </div>
             </div>
           </div>
 
-          {/* Tautan Dokumen Resmi Regulasi & Portal PLN (Verified 200 OK) */}
-          <div className="pt-2 flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <a
               href="https://peraturan.bpk.go.id/Details/288519/permen-esdm-no-2-tahun-2024"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 font-bold text-xs border border-amber-200/90 hover:border-amber-400 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-semibold text-xs border border-amber-300/80 transition group cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[17px] text-amber-700">description</span>
-              <span>Buka Naskah Permen ESDM No. 2/2024 (JDIH BPK RI)</span>
-              <span className="material-symbols-outlined text-[15px] text-amber-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
-                north_east
-              </span>
+              <span className="material-symbols-outlined text-[16px] text-amber-800">description</span>
+              <span>Naskah Permen ESDM No. 2/2024</span>
+              <span className="material-symbols-outlined text-[14px]">north_east</span>
             </a>
-
             <a
               href="https://peraturan.bpk.go.id/Details/294347/permen-esdm-no-7-tahun-2024"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-amber-50/70 text-slate-700 hover:text-amber-950 font-semibold text-xs border border-slate-200 hover:border-amber-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-amber-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[17px] text-amber-600">gavel</span>
-              <span>Permen ESDM No. 7/2024 (Tarif Listrik PLN)</span>
-              <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
-                north_east
-              </span>
+              <span className="material-symbols-outlined text-[16px] text-amber-600">gavel</span>
+              <span>Permen ESDM No. 7/2024</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">north_east</span>
             </a>
-
             <a
               href="https://www.pln.co.id/penyesuaian-tarif-id"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 font-semibold text-xs border border-slate-200 hover:border-slate-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-slate-900/[0.08] text-slate-700 font-semibold text-xs transition cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[17px] text-slate-500">payments</span>
-              <span>Halaman Penyesuaian Tarif Resmi PLN</span>
-              <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
-                north_east
-              </span>
+              <span className="material-symbols-outlined text-[16px] text-slate-500">payments</span>
+              <span>Tarif Resmi PLN</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">north_east</span>
             </a>
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 5: STANDAR REDUKSI EMISI & DAMPAK LINGKUNGAN
-            ========================================================= */}
+        {/* PILAR 5: DAMPAK LINGKUNGAN (ISO 14064) */}
         <section
           id="emissions"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block font-title">
-                Pilar 05 • Dampak Lingkungan
+              <span className="text-[11px] font-semibold text-emerald-800 block">
+                05 · Dekarbonisasi (ISO 14064)
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
-                Standar Reduksi Emisi Karbon &amp; Ekuivalensi Pohon
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
+                Standar Reduksi Emisi CO₂ &amp; Ekuivalensi Pohon
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-[11px] font-bold text-emerald-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-[11px] font-semibold text-emerald-800 w-fit">
               <span className="material-symbols-outlined text-[15px]">forest</span>
-              Standar Kementerian ESDM
+              Kepmen ESDM 163/2021
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50/70 to-white/90 border border-emerald-200/70 space-y-2 shadow-2xs">
-              <span className="text-xs font-bold text-emerald-950 block">Faktor Emisi Grid Jamali</span>
-              <div className="text-3xl font-extrabold text-emerald-900 font-code-metric">
-                0.80 kg CO₂ <span className="text-xs font-normal text-slate-600">/ kWh</span>
+          <div className="rounded-2xl bg-emerald-50/60 border border-emerald-200/70 grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-emerald-200/60">
+            <div className="p-5 space-y-1.5">
+              <span className="text-xs font-semibold text-emerald-950 block">Faktor Emisi Grid Jamali</span>
+              <div className="text-2xl sm:text-3xl font-semibold text-emerald-900 font-code-metric tabular-nums">
+                0,80 kg CO₂ <span className="text-xs font-normal text-slate-600">/ kWh</span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Berdasarkan Kepmen ESDM No. 163.K/HK.02/MEM.S/2021 dan Permen ESDM No. 22/2019 untuk sistem jaringan interkoneksi Jawa-Madura-Bali.
+                Sesuai Kepmen ESDM No. 163.K/HK.02/MEM.S/2021 dan Permen ESDM No. 22/2019 untuk jaringan Jawa-Madura-Bali.
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50/70 to-white/90 border border-emerald-200/70 space-y-2 shadow-2xs">
-              <span className="text-xs font-bold text-emerald-950 block">Daya Serap Pohon Hutan Tropis</span>
-              <div className="text-3xl font-extrabold text-emerald-900 font-code-metric">
-                21.77 kg CO₂ <span className="text-xs font-normal text-slate-600">/ pohon / tahun</span>
+            <div className="p-5 space-y-1.5">
+              <span className="text-xs font-semibold text-emerald-950 block">Serapan Karbon Pohon Tropis</span>
+              <div className="text-2xl sm:text-3xl font-semibold text-emerald-900 font-code-metric tabular-nums">
+                21,77 kg CO₂ <span className="text-xs font-normal text-slate-600">/ pohon / thn</span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Standar penyerapan karbon pohon tropis dewasa. Setiap reduksi 1 ton CO₂ setara dengan menanam dan merawat sekitar 46 pohon per tahun.
+                Setiap penurunan 1 ton emisi CO₂ setara dengan penyerapan ~46 pohon dewasa per tahun.
               </p>
             </div>
           </div>
 
-          {/* Outbound Link Sumber Lingkungan (Verified 200 OK) */}
-          <div className="pt-2 flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap gap-2">
             <a
               href="https://peraturan.bpk.go.id/Details/142358/permen-esdm-no-22-tahun-2019"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50/70 text-xs font-semibold text-slate-700 hover:text-emerald-950 border border-slate-200/80 hover:border-emerald-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-emerald-50 text-xs font-semibold text-slate-700 hover:text-emerald-900 transition cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-emerald-600">co2</span>
-              <span>Permen ESDM No. 22/2019 — Inventarisasi GRK Energi (JDIH BPK)</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
-                north_east
-              </span>
+              <span>Permen ESDM No. 22/2019 (GRK Energi)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">north_east</span>
             </a>
 
             <a
               href="https://jdih.esdm.go.id/dokumen/download?id=Abstrak+Kepmen+ESDM+No.+163.K_HK.02_MEM.S_2021.pdf"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-emerald-50/70 text-xs font-semibold text-slate-700 hover:text-emerald-950 border border-slate-200/80 hover:border-emerald-300 transition-all shadow-2xs group cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/[0.045] hover:bg-emerald-50 text-xs font-semibold text-slate-700 hover:text-emerald-900 transition cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-emerald-600">picture_as_pdf</span>
-              <span>Kepmen ESDM 163/2021 — Faktor Emisi Ketenagalistrikan (PDF)</span>
-              <span className="material-symbols-outlined text-[14px] text-slate-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">
-                north_east
-              </span>
+              <span>Kepmen ESDM 163/2021 (PDF)</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">north_east</span>
             </a>
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 6: PUSAT REGULASI & TAUTAN RESMI PEMERINTAH (DEDICATED DIRECTORY)
-            ========================================================= */}
+        {/* PILAR 6: PUSAT DOKUMEN RESMI */}
         <section
           id="directory"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Katalog Sumber Resmi &amp; Regulasi
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                06 · Direktori Referensi
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
-                Pusat Tautan Dokumen Asli &amp; Standarisasi
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
+                Tautan Dokumen Asli &amp; Regulasi
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50/90 text-[11px] font-semibold text-amber-900 w-fit">
               <span className="material-symbols-outlined text-[15px]">verified_user</span>
-              Tautan Aktif Terverifikasi
+              JDIH BPK · ESDM · PLN · NASA
             </span>
           </div>
-
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
-            SunSight berkomitmen pada prinsip transparansi ilmiah dan kepatuhan hukum penuh. Seluruh tautan di bawah mengarah langsung ke naskah peraturan resmi di <strong>JDIH BPK RI</strong>, <strong>Kementerian ESDM</strong>, <strong>PT PLN (Persero)</strong>, dan pangkalan data internasional:
-          </p>
 
           <div className="space-y-6">
             {officialSources.map((cat, catIdx) => (
               <div key={catIdx} className="space-y-3">
-                <h3 className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                   <span>{cat.category}</span>
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {cat.items.map((item, itemIdx) => (
                     <a
                       key={itemIdx}
                       href={item.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-4 sm:p-5 rounded-2xl bg-[#FAF9F5] hover:bg-white border border-amber-100/90 hover:border-amber-300 transition-all duration-200 shadow-2xs hover:shadow-[0_8px_24px_rgba(245,158,11,0.12)] flex flex-col justify-between space-y-3 group cursor-pointer"
+                      className="p-4 rounded-2xl bg-slate-900/[0.03] hover:bg-white/95 border border-transparent hover:border-amber-200/80 transition-all duration-200 hover:shadow-[0_8px_24px_rgba(245,158,11,0.10)] flex flex-col justify-between space-y-3 group cursor-pointer"
                     >
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="px-2 py-0.5 rounded-full bg-amber-100/80 text-[10px] font-bold text-amber-900">
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100/80 text-[10px] font-semibold text-amber-900">
                             {item.badge}
                           </span>
-                          <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all">
                             north_east
                           </span>
                         </div>
-                        <h4 className="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-amber-950 transition-colors">
+                        <h4 className="font-semibold text-xs sm:text-sm text-slate-900">
                           {item.title}
                         </h4>
-                        <span className="text-[10px] text-slate-400 font-semibold block">
+                        <span className="text-[10.5px] text-slate-400 font-medium block">
                           {item.institution}
                         </span>
-                        <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
+                        <p className="text-[11px] text-slate-600 leading-relaxed pt-0.5">
                           {item.desc}
                         </p>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-200/50 flex items-center gap-1.5 text-[11px] font-bold text-amber-800 group-hover:text-amber-900">
-                        <span>Buka Dokumen Asli</span>
+                      <div className="pt-2 border-t border-slate-900/[0.06] flex items-center gap-1 text-[11px] font-semibold text-amber-800">
+                        <span>Buka Dokumen</span>
                         <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
                       </div>
                     </a>
@@ -889,52 +834,47 @@ export default function MethodologyPage() {
           </div>
         </section>
 
-        {/* =========================================================
-            PILAR 7: TANYA JAWAB UMUM & GLOSARIUM INTERAKTIF (Apple Accordion)
-            ========================================================= */}
+        {/* PILAR 7: TANYA JAWAB (Single Apple Grouped Accordion) */}
         <section
           id="faq"
-          className="rounded-[32px] bg-white/85 backdrop-blur-2xl border border-white/90 shadow-[0_16px_40px_rgba(15,23,42,0.03),0_2px_12px_rgba(245,158,11,0.05)] p-6 sm:p-9 space-y-6 scroll-mt-24"
+          className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(15,23,42,0.04)] p-6 sm:p-8 space-y-5 scroll-mt-24"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
             <div>
-              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block font-title">
-                Pilar 07 • Tanya Jawab Ramah
+              <span className="text-[11px] font-semibold text-amber-800 block">
+                07 · Tanya Jawab &amp; Glosarium
               </span>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 font-title mt-0.5">
+              <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 font-title tracking-tight mt-0.5">
                 Pertanyaan yang Sering Diajukan
               </h2>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200/80 text-[11px] font-bold text-amber-900 w-fit">
-              <span className="material-symbols-outlined text-[15px]">help</span>
-              Glosarium Surya
-            </span>
           </div>
 
-          <div className="space-y-3">
+          <div className="rounded-2xl bg-slate-900/[0.03] divide-y divide-slate-900/[0.06] overflow-hidden">
             {faqs.map((item, idx) => {
               const isOpen = openFaq === idx;
               return (
-                <div
-                  key={idx}
-                  className="rounded-2xl border border-amber-100/90 bg-[#FAF9F5] overflow-hidden transition-all duration-200"
-                >
+                <div key={idx}>
                   <button
                     type="button"
                     onClick={() => setOpenFaq(isOpen ? null : idx)}
-                    className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 cursor-pointer hover:bg-amber-50/50 transition-colors"
+                    className="w-full px-5 py-4 text-left flex items-center justify-between gap-4 cursor-pointer hover:bg-white/50 transition-colors"
                   >
-                    <span className="font-bold text-xs sm:text-sm text-slate-900 font-title">
+                    <span className="font-semibold text-xs sm:text-sm text-slate-900 font-title">
                       {item.q}
                     </span>
-                    <span className={`material-symbols-outlined text-[20px] text-amber-700 transition-transform duration-200 shrink-0 ${isOpen ? "rotate-180" : ""}`}>
+                    <span
+                      className={`material-symbols-outlined text-[20px] text-amber-700 transition-transform duration-200 shrink-0 ${
+                        isOpen ? "rotate-180" : ""
+                      }`}
+                    >
                       expand_more
                     </span>
                   </button>
 
                   {isOpen && (
-                    <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 text-xs text-slate-600 leading-relaxed border-t border-amber-100/60 animate-fadeIn">
-                      <p className="pt-2">{item.a}</p>
+                    <div className="px-5 pb-4 text-xs text-slate-600 leading-relaxed animate-fadeIn">
+                      <p className="m-0">{item.a}</p>
                     </div>
                   )}
                 </div>
@@ -943,18 +883,18 @@ export default function MethodologyPage() {
           </div>
         </section>
 
-        {/* Bottom Mascot Card: Sunny Memberi Ringkasan Ramah (Tombol Radiant Soft Glow Glass) */}
-        <div className="rounded-[32px] bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 border border-amber-300/80 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-[0_16px_40px_rgba(245,158,11,0.14)]">
+        {/* Bottom Mascot Card */}
+        <div className="rounded-[28px] bg-white/80 bg-gradient-to-r from-amber-50/90 via-yellow-50/70 to-sky-50/60 backdrop-blur-2xl border border-white/90 p-6 sm:p-7 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-[0_14px_38px_rgba(245,158,11,0.12)]">
           <div className="flex items-center gap-4 text-center sm:text-left">
             <div className="hidden sm:block shrink-0">
-              <SunnyMascot size={72} expression="happy" animated={true} />
+              <SunnyMascot size={68} expression="happy" animated={true} />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-amber-950 font-title">
+              <h3 className="text-base sm:text-lg font-semibold text-slate-900 font-title tracking-tight">
                 Sains terbuka untuk keputusan energi yang tepat.
               </h3>
-              <p className="text-xs text-amber-900/80 mt-1 max-w-xl">
-                Dokumentasi ini diselaraskan secara berkala mengikuti pembaruan regulasi Permen ESDM dan tarif listrik resmi PLN.
+              <p className="text-xs text-slate-600 mt-1 max-w-xl">
+                Dokumentasi ini diselaraskan berkala mengikuti regulasi Permen ESDM, tarif resmi PLN, dan standar teknik IEC/ISO.
               </p>
             </div>
           </div>
@@ -962,18 +902,16 @@ export default function MethodologyPage() {
           <button
             type="button"
             onClick={handleGoBack}
-            className="w-full sm:w-auto h-11 px-6 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 font-title text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-[0_2px_12px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.3)] border border-amber-300/80 shrink-0 cursor-pointer"
+            className="w-full sm:w-auto h-11 px-6 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-title text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition shadow-[0_6px_18px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.88)] border border-amber-300/80 shrink-0 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-            <span>Kembali ke Halaman Sebelumnya</span>
+            <span>Kembali</span>
           </button>
         </div>
-
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200/80 bg-white py-6 px-4 text-center text-xs text-slate-400">
-        <p>© {new Date().getFullYear()} SunSight • Transparansi Metodologi &amp; Standar Data Energi Surya Kota Bogor</p>
+      <footer className="relative z-10 border-t border-white/80 bg-white/70 backdrop-blur-xl py-6 px-4 text-center text-xs text-slate-500">
+        <p>© {new Date().getFullYear()} SunSight · Transparansi Metodologi &amp; Standar Data Energi Surya</p>
       </footer>
     </div>
   );

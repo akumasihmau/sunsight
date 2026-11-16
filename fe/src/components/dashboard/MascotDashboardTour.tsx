@@ -113,9 +113,9 @@ const AnimatedSunnyTourMascot = memo(function AnimatedSunnyTourMascot({
     : "translate(0px, 0px) rotate(0deg) scale(1)";
 
   return (
-    <div className="relative w-[88px] h-[76px] select-none pointer-events-none drop-shadow-[0_6px_16px_rgba(245,158,11,0.22)]">
+    <div className="relative w-12 h-12 select-none pointer-events-none shrink-0 drop-shadow-[0_4px_12px_rgba(245,158,11,0.22)]">
       <svg
-        viewBox="0 0 460 360"
+        viewBox="55 10 350 340"
         className="w-full h-full overflow-visible"
         aria-label="Sunny - Maskot Panduan SunSight"
       >
@@ -561,21 +561,16 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
         }}
         className="z-50 pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
       >
-        <div className="relative rounded-[28px] bg-white/92 backdrop-blur-2xl border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14)] p-4 sm:p-5 text-slate-800">
-          
-          {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu (Sejajar Badge & Bebas Tabrakan Teks) */}
-          <div className="absolute -top-2.5 sm:-top-3 left-2 sm:left-2.5">
-            <AnimatedSunnyTourMascot
-              expression={currentStep.expression}
-              isGliding={isGliding}
-              glideDirection={glideDirection}
-            />
-          </div>
-
-          {/* Header Card: Badge Step & Tombol Tutup */}
-          <div className="flex items-center justify-between gap-2 mb-3.5 pl-16 sm:pl-[74px]">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] sm:text-[11px] font-bold text-amber-900 bg-amber-50/90 px-2.5 py-0.5 rounded-full border border-amber-200/70 font-code-metric">
+        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14),inset_0_1px_1px_rgba(255,255,255,0.92)] p-5 text-slate-800">
+          {/* Header Card: Sunny Proporsional + Badge Step + Tombol Tutup */}
+          <div className="flex items-center justify-between gap-2.5 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AnimatedSunnyTourMascot
+                expression={currentStep.expression}
+                isGliding={isGliding}
+                glideDirection={glideDirection}
+              />
+              <span className="text-[11px] font-semibold text-amber-900 bg-amber-50/90 px-2.5 py-0.5 rounded-full border border-amber-200/70 font-code-metric truncate">
                 {currentStep.badge}
               </span>
             </div>
@@ -583,7 +578,7 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
             <button
               type="button"
               onClick={handleComplete}
-              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.05] flex items-center justify-center transition-colors cursor-pointer shrink-0"
               title="Tutup panduan"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
@@ -591,8 +586,8 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
           </div>
 
           {/* Judul & Penjelasan Ringkas (To the Point) */}
-          <div className="pl-1 pt-1.5 mb-4">
-            <h3 className="font-title text-sm sm:text-[15px] font-bold text-slate-900 leading-snug mb-1">
+          <div className="mb-4">
+            <h3 className="font-title text-sm sm:text-[15px] font-semibold text-slate-900 tracking-tight leading-snug mb-1">
               {currentStep.title}
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">

@@ -43,7 +43,7 @@ import {
 
 type CvLayer = "satellite" | "cv" | "heatmap";
 type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
-type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "resize_edge" | "add_polygon" | "add_obstacle" | "measure";
+type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "add_polygon" | "add_obstacle" | "measure";
 type Orientation = "portrait" | "landscape";
 type InverterType = "string" | "micro";
 type SlotState = "active" | "skylight" | "hvac" | "empty";
@@ -81,6 +81,13 @@ interface RoofFacet {
 }
 
 type DragMode = "move" | "rot" | "br" | "r" | "b" | "tl" | "tr" | "bl";
+interface DragGroupTarget {
+  id: string;
+  initOx: number;
+  initOy: number;
+  initLat: number;
+  initLng: number;
+}
 interface DragState {
   facetId: string;
   mode: DragMode;
@@ -93,6 +100,7 @@ interface DragState {
   initOy: number;
   initLat: number;
   initLng: number;
+  groupTargets?: DragGroupTarget[];
 }
 
 interface PanelSlotItem {
@@ -121,32 +129,21 @@ interface VertexDragState {
   rotation: number;
 }
 
-/**
- * Sisi yang sedang ditunjuk kursor pada mode Edit Simpul.
- *
- * Titiknya disimpan dalam dua ruang: koordinat SVG untuk menggambar penanda, dan
- * meter lokal bidang untuk disisipkan sebagai simpul baru — konversi bolak-balik
- * dari layar ke meter akan membuang ketelitian pada zoom rendah.
- */
+/** Sisi yang sedang disorot kursor pada mode Edit Poligon atau Pen Tool. */
 interface EdgeHoverState {
   facetId: string;
   edgeIdx: number;
-  point: Point2D;
-  localPoint: Point2D;
+  point?: Point2D;
+  localPoint?: Point2D;
 }
 
 /**
- * Tarikan pada satu sisi poligon.
- *
- * Satu sisi tidak punya titik sendiri, jadi menyeretnya menggeser kedua simpul ujungnya
- * dengan vektor yang sama. Dua mode berbagi gesture yang sama: `insert` menambah simpul
- * bila tarikan berakhir tanpa perpindahan (yaitu klik), sedangkan `resize` hanya
- * mengubah ukuran dan tidak menyisipkan apa pun.
+ * Tarikan pada satu sisi poligon: menyeret garis atau kotak tengah sisi
+ * menggeser kedua simpul ujungnya dengan vektor yang sama untuk mengubah ukuran.
  */
 interface EdgeDragState {
   facetId: string;
   edgeIdx: number;
-  mode: "insert" | "resize";
   startX: number;
   startY: number;
   initVertices: Point2D[];
@@ -155,7 +152,6 @@ interface EdgeDragState {
   initLat?: number;
   initLng?: number;
   rotation: number;
-  insertAt: Point2D;
 }
 
 const MODULE_SPECS: Record<
@@ -1338,6 +1334,9 @@ function StudioPageContent() {
   const [searchOpen, setSearchOpen] = useState(false);
   // Layers & CAD Tools State
   const [activeLayer, setActiveLayer] = useState<CvLayer>("satellite");
+  const [baseMap, setBaseMap] = useState<"satellite" | "osm">("satellite");
+  const [showStreetLabels, setShowStreetLabels] = useState(true);
+  const [showCadGrid, setShowCadGrid] = useState(true);
   const [layerDrawerOpen, setLayerDrawerOpen] = useState(false);
   const [obstacleFilterActive, setObstacleFilterActive] = useState(true);
   const [sunHour, setSunHour] = useState<number>(12);
@@ -1356,14 +1355,31 @@ function StudioPageContent() {
 
   // Address search input (Defaulted to Kota Bogor)
   const [addressInput, setAddressInput] = useState("Komp. Baranangsiang Indah Blok C, Bogor Timur, Kota Bogor");
+  const [projectName, setProjectName] = useState("");
+  const [hasCustomProjectName, setHasCustomProjectName] = useState(false);
+  const searchAnchorRef = useRef<{ label: string; lat: number; lng: number } | null>(null);
+  const hasCustomProjectNameRef = useRef(false);
+  useEffect(() => {
+    hasCustomProjectNameRef.current = hasCustomProjectName;
+  }, [hasCustomProjectName]);
 
-  // Mouse HUD for Radiometer
-  const [probePos, setProbePos] = useState<{ x: number; y: number } | null>(null);
+  // Mouse HUD for Radiometer (real GHI & polygon POA calculation)
+  const [probePos, setProbePos] = useState<{
+    x: number;
+    y: number;
+    ghi: number;
+    pct: number;
+    label: string;
+  } | null>(null);
 
   // Multi-Polygon Roof Facets State & Selection
   // Daftar dimulai kosong: seluruh bidang berasal dari hasil deteksi model,
   // ditambah poligon yang digambar sendiri oleh pengguna bila perlu.
   const [facets, setFacets] = useState<RoofFacet[]>([]);
+  const facetsCountRef = useRef(0);
+  useEffect(() => {
+    facetsCountRef.current = facets.length;
+  }, [facets.length]);
   const [selectedFacetIds, setSelectedFacetIds] = useState<string[]>([]);
 
   // Active facet ID is the primary focus facet for single-facet properties editing
@@ -1597,8 +1613,15 @@ function StudioPageContent() {
     [pixelsPerMeter]
   );
 
-  // Synchronize initial facet & map location from URL query params (e.g. when launched from Dashboard)
+  const lastAppliedParamsKeyRef = useRef<string | null>(null);
+
+  // Synchronize initial map location from URL query params (runs once per URL search change,
+  // never re-applying when the user draws/switches polygons).
   useEffect(() => {
+    const paramsKey = searchParams.toString();
+    if (lastAppliedParamsKeyRef.current === paramsKey) return;
+    lastAppliedParamsKeyRef.current = paramsKey;
+
     const pName = searchParams.get("name");
     const pLat = searchParams.get("lat");
     const pLng = searchParams.get("lng");
@@ -1618,17 +1641,28 @@ function StudioPageContent() {
       const lngNum = pLng ? Number(pLng) : null;
       const zoomNum = pZoom ? Number(pZoom) : null;
 
-      updateActiveFacet({
-        ...(pName ? { name: pName } : {}),
-        ...(latNum !== null && !isNaN(latNum) ? { lat: latNum } : {}),
-        ...(lngNum !== null && !isNaN(lngNum) ? { lng: lngNum } : {}),
-        ...(pRidge && !isNaN(Number(pRidge)) ? { ridge: Number(pRidge) } : {}),
-        ...(pSlope && !isNaN(Number(pSlope)) ? { slope: Number(pSlope) } : {}),
-        ...(pTilt && !isNaN(Number(pTilt)) ? { pitch: Number(pTilt) } : {}),
-        ...(pRot && !isNaN(Number(pRot)) ? { rotation: Number(pRot) } : {}),
-        ...(pShape ? { shape: pShape } : {}),
-        ...(pPower && !isNaN(Number(pPower)) ? { modulePower: Number(pPower) } : {}),
-      });
+      if (pRidge || pSlope || pTilt || pRot || pShape || pPower) {
+        setFacets((prev) => {
+          if (prev.length === 0) return prev;
+          const targetId = prev[0].id;
+          return prev.map((f) =>
+            f.id === targetId
+              ? {
+                  ...f,
+                  ...(pName ? { name: pName } : {}),
+                  ...(latNum !== null && !isNaN(latNum) ? { lat: latNum } : {}),
+                  ...(lngNum !== null && !isNaN(lngNum) ? { lng: lngNum } : {}),
+                  ...(pRidge && !isNaN(Number(pRidge)) ? { ridge: Number(pRidge) } : {}),
+                  ...(pSlope && !isNaN(Number(pSlope)) ? { slope: Number(pSlope) } : {}),
+                  ...(pTilt && !isNaN(Number(pTilt)) ? { pitch: Number(pTilt) } : {}),
+                  ...(pRot && !isNaN(Number(pRot)) ? { rotation: Number(pRot) } : {}),
+                  ...(pShape ? { shape: pShape } : {}),
+                  ...(pPower && !isNaN(Number(pPower)) ? { modulePower: Number(pPower) } : {}),
+                }
+              : f
+          );
+        });
+      }
 
       if (latNum !== null && lngNum !== null && !isNaN(latNum) && !isNaN(lngNum) && mapInstanceRef.current) {
         // `zoom` berasal dari `map_zoom` respons server, sehingga proyek tersimpan
@@ -1637,7 +1671,7 @@ function StudioPageContent() {
         mapInstanceRef.current.setView([latNum, lngNum], zoom);
       }
     }
-  }, [searchParams, updateActiveFacet]);
+  }, [searchParams]);
 
   /**
    * Membuka kembali simulasi tersimpan lewat `?analysis=<id>`.
@@ -1691,6 +1725,7 @@ function StudioPageContent() {
           `${detail.input.inverter_type}|${restoredSunHour}|${restoredExtraTilt}`;
 
         const restoredAddress = detail.address ?? "Proyek tersimpan";
+        const savedLabel = detail.address?.trim() ?? "";
 
         setFacets(restored);
         setServerMetrics(detail.result);
@@ -1701,6 +1736,21 @@ function StudioPageContent() {
         setSelectionDone(true);
         setShowDetectedRoofs(false);
         setAddressInput(restoredAddress);
+        setProjectName(savedLabel);
+        setHasCustomProjectName(savedLabel !== "");
+        searchAnchorRef.current = savedLabel
+          ? { label: savedLabel, lat: detail.center_point.lat, lng: detail.center_point.lng }
+          : null;
+        if (savedLabel === "") {
+          void api
+            .reverseGeocode(detail.center_point.lat, detail.center_point.lng)
+            .then((rev) => {
+              if (rev.label && !hasCustomProjectNameRef.current) {
+                setProjectName(rev.label);
+              }
+            })
+            .catch(() => {});
+        }
 
         // Perbarui pembanding rancangan tersimpan agar membuka simulasi lama tanpa
         // modifikasi tidak langsung memicu konfirmasi "Keluar tanpa menyimpan?".
@@ -1913,6 +1963,20 @@ function StudioPageContent() {
       setSelectedDetectedIds([]);
 
       try {
+        // Pastikan layer satelit Esri aktif bila pengguna sedang melihat peta jalan OSM
+        if (
+          confirmedCapture === undefined &&
+          map &&
+          esriSatelliteLayerRef.current &&
+          !map.hasLayer(esriSatelliteLayerRef.current)
+        ) {
+          if (osmStreetLayerRef.current && map.hasLayer(osmStreetLayerRef.current)) {
+            map.removeLayer(osmStreetLayerRef.current);
+          }
+          esriSatelliteLayerRef.current.addTo(map);
+          setBaseMap("satellite");
+        }
+
         const capture = confirmedCapture ?? (await captureMapForDetection(map, {
           layer: esriSatelliteLayerRef.current,
         }));
@@ -2032,6 +2096,10 @@ function StudioPageContent() {
       }
 
       setAddressInput("Lokasi GPS Terkini");
+      searchAnchorRef.current = null;
+      if (!hasCustomProjectNameRef.current) {
+        setProjectName("");
+      }
       setFacets([]);
       setSelectedFacetIds([]);
       setServerMetrics(null);
@@ -2049,6 +2117,7 @@ function StudioPageContent() {
 
   const startVertexDrag = useCallback(
     (e: ReactMouseEvent, facetId: string, vertexIdx: number) => {
+      if (cadTool === "measure") return;
       e.stopPropagation();
       e.preventDefault();
       setActiveFacetId(facetId);
@@ -2067,7 +2136,7 @@ function StudioPageContent() {
         rotation: facet.rotation,
       });
     },
-    [facets, activeFacet]
+    [cadTool, facets, activeFacet]
   );
 
   /**
@@ -2083,10 +2152,9 @@ function StudioPageContent() {
     (
       e: ReactMouseEvent,
       facetId: string,
-      edgeIdx: number,
-      insertAt: Point2D,
-      mode: EdgeDragState["mode"]
+      edgeIdx: number
     ) => {
+      if (cadTool === "measure") return;
       e.stopPropagation();
       e.preventDefault();
       setActiveFacetId(facetId);
@@ -2097,7 +2165,6 @@ function StudioPageContent() {
       setEdgeDragState({
         facetId,
         edgeIdx,
-        mode,
         startX: e.clientX,
         startY: e.clientY,
         initVertices: getFacetVertices(facet).map((v) => ({ ...v })),
@@ -2106,18 +2173,13 @@ function StudioPageContent() {
         initLat: facet.lat,
         initLng: facet.lng,
         rotation: facet.rotation,
-        insertAt,
       });
     },
-    [facets, activeFacet, setActiveFacetId]
+    [cadTool, facets, activeFacet, setActiveFacetId]
   );
 
   /**
-   * Menyisipkan simpul baru pada satu sisi, tepat di titik yang ditunjuk kursor.
-   *
-   * Titiknya bukan titik tengah sisi: penanda `+` mengikuti kursor, dan yang
-   * disisipkan adalah titik itu. Simpul disisipkan di antara `edgeIdx` dan
-   * `edgeIdx + 1` sehingga urutan ring tetap sesuai bentuk yang terlihat.
+   * Menyisipkan simpul baru pada satu sisi poligon yang sudah ada (khusus Pen Tool).
    */
   const insertVertexOnEdge = useCallback(
     (facetId: string, edgeIdx: number, point: Point2D) => {
@@ -2138,7 +2200,7 @@ function StudioPageContent() {
         slotOverrides: {},
       });
       setEdgeHover(null);
-      showToast(`✨ Simpul baru ditambahkan (${newVertices.length} titik)`);
+      showToast(`Simpul baru ditambahkan (${newVertices.length} titik)`);
     },
     [facets, activeFacet, updateFacetById, showToast, buildPolygonPatch]
   );
@@ -2261,16 +2323,25 @@ function StudioPageContent() {
         offsetY = Math.round(cy - vRect.height / 2);
       }
 
-      // Geo-coordinates projection from Leaflet map
+      // Geo-coordinates projection from Leaflet map at the exact drawn screen center (cx, cy)
       let targetLat = activeFacet.lat || -6.6110;
       let targetLng = activeFacet.lng || 106.8150;
-      if (mapInstanceRef.current && (window as any).L) {
+      if (mapInstanceRef.current) {
         try {
-          const L = (window as any).L;
-          const latLng = mapInstanceRef.current.containerPointToLatLng(L.point(cx, cy));
-          targetLat = latLng.lat;
-          targetLng = latLng.lng;
-        } catch {}
+          const latLng = mapInstanceRef.current.containerPointToLatLng([cx, cy]);
+          if (latLng && Number.isFinite(latLng.lat) && Number.isFinite(latLng.lng)) {
+            targetLat = latLng.lat;
+            targetLng = latLng.lng;
+          }
+        } catch {
+          try {
+            const center = mapInstanceRef.current.getCenter();
+            if (center) {
+              targetLat = center.lat;
+              targetLng = center.lng;
+            }
+          } catch {}
+        }
       }
 
       const newNum = facets.length + 1;
@@ -2358,20 +2429,6 @@ function StudioPageContent() {
     return computePolygonArea(meterPts);
   }, [measurePoints, pixelsPerMeter]);
 
-  const measureCentroid = useMemo(() => {
-    if (measurePoints.length === 0) return null;
-    let sumX = 0;
-    let sumY = 0;
-    for (const p of measurePoints) {
-      sumX += p.x;
-      sumY += p.y;
-    }
-    return {
-      x: sumX / measurePoints.length,
-      y: sumY / measurePoints.length,
-    };
-  }, [measurePoints]);
-
   const handleCanvasMeasureClick = (e: ReactMouseEvent) => {
     if (cadTool !== "measure") return;
     if (isMeasureClosed) return;
@@ -2405,6 +2462,21 @@ function StudioPageContent() {
   const addNewFacet = useCallback(() => {
     const newId = `facet-${Date.now()}`;
     const newNum = facets.length + 1;
+    let spawnLat = (activeFacet.lat || -6.6110) - 0.00008;
+    let spawnLng = (activeFacet.lng || 106.8150) + 0.00012;
+    let spawnOx = activeFacet.offsetX + 150;
+    let spawnOy = activeFacet.offsetY + 70;
+
+    if (facets.length === 0 && mapInstanceRef.current) {
+      try {
+        const center = mapInstanceRef.current.getCenter();
+        spawnLat = center.lat;
+        spawnLng = center.lng;
+        spawnOx = 0;
+        spawnOy = 0;
+      } catch {}
+    }
+
     const newFacet: RoofFacet = {
       id: newId,
       name: `Bidang Atap #${newNum}`,
@@ -2416,10 +2488,10 @@ function StudioPageContent() {
       setback: 0.5,
       gutter: 0.5,
       rotation: activeFacet.rotation || -4,
-      lat: (activeFacet.lat || -6.6110) - 0.00008,
-      lng: (activeFacet.lng || 106.8150) + 0.00012,
-      offsetX: activeFacet.offsetX + 150,
-      offsetY: activeFacet.offsetY + 70,
+      lat: spawnLat,
+      lng: spawnLng,
+      offsetX: spawnOx,
+      offsetY: spawnOy,
       hasHvac: false,
       hasSkylight: false,
       modulePower: activeFacet.modulePower || 550,
@@ -2431,20 +2503,15 @@ function StudioPageContent() {
     setFacets((prev) => [...prev, newFacet]);
     setActiveFacetId(newId);
     showToast(`Bidang Atap #${newNum} berhasil ditambahkan`);
-  }, [facets.length, activeFacet, showToast]);
+  }, [facets.length, activeFacet, setActiveFacetId, showToast]);
 
   const deleteFacet = useCallback((id: string) => {
-    if (facets.length <= 1) {
-      showToast("Minimal harus ada 1 bidang atap aktif!");
-      return;
-    }
-    setFacets((prev) => {
-      const next = prev.filter((f) => f.id !== id);
-      return next;
-    });
+    setServerMetrics(null);
+    setServerDetail(null);
+    setFacets((prev) => prev.filter((f) => f.id !== id));
     setSelectedFacetIds((prev) => prev.filter((fid) => fid !== id));
     showToast("Bidang atap dihapus");
-  }, [facets.length, showToast]);
+  }, [showToast]);
 
   // Backward-compatible field accessors mapped to active facet
   const ridge = activeFacet.ridge;
@@ -2736,6 +2803,10 @@ function StudioPageContent() {
       name: proj.name,
     });
     setAddressInput(proj.address);
+    searchAnchorRef.current = { label: proj.address, lat: proj.lat, lng: proj.lon };
+    if (!hasCustomProjectNameRef.current) {
+      setProjectName(proj.address);
+    }
     showToast(`Beralih ke proyek: ${proj.name}`);
   };
 
@@ -2764,11 +2835,17 @@ function StudioPageContent() {
     );
   };
 
+  const lastAppliedWindowSearchRef = useRef<string | null>(null);
+
   useEffect(() => {
     const bio = getStoredBiodata();
     setBiodata(bio);
     if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
+      const rawSearch = window.location.search;
+      if (lastAppliedWindowSearchRef.current === rawSearch) return;
+      lastAppliedWindowSearchRef.current = rawSearch;
+
+      const sp = new URLSearchParams(rawSearch);
       const mode = sp.get("mode");
       const latParam = sp.get("lat");
       const lngParam = sp.get("lng");
@@ -2807,13 +2884,17 @@ function StudioPageContent() {
     }
   }, [triggerGpsDetectionFlow]);
 
-  // Initialize Dynamic OpenStreetMap & Real Earth Satellite Map (CDN, zero npm packages)
+  // Initialize Dynamic OpenStreetMap & Real Earth Satellite Map from local bundled Leaflet
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let cancelled = false;
+    let moveRafId: number | null = null;
 
-    const initMap = () => {
-      const L = (window as any).L;
-      if (!L) return;
+    const initMap = async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const L = ((window as any).L ?? (await import("leaflet")).default) as any;
+      if (!L || cancelled) return;
+      (window as any).L = L;
 
       const container = document.getElementById("studio-leaflet-map");
       if (!container || mapInstanceRef.current) return;
@@ -2826,6 +2907,7 @@ function StudioPageContent() {
           zoom: GEOCODE_TARGET_ZOOM,
           maxZoom: 21,
           minZoom: 16,
+          preferCanvas: true,
           zoomControl: false,
           attributionControl: false,
         });
@@ -2837,23 +2919,40 @@ function StudioPageContent() {
         );
         map.setMaxBounds(bogorBounds);
 
-        // Update positions & live viewport meter scale on all map pan, zoom, and resize events
-        const syncMapViewport = () => {
-          setMapTick((t: number) => (t + 1) % 1000000);
+        // Throttle polygon sync to RAF only when polygons exist; update meter scale only when pan/zoom settles
+        const schedulePolygonSync = () => {
+          if (facetsCountRef.current === 0 || moveRafId !== null) return;
+          moveRafId = requestAnimationFrame(() => {
+            moveRafId = null;
+            setMapTick((t: number) => (t + 1) % 1000000);
+          });
+        };
+        const syncMapSettled = () => {
+          if (facetsCountRef.current > 0) {
+            setMapTick((t: number) => (t + 1) % 1000000);
+          }
           const nextScale = measureMapViewportScale(map);
           setViewportScale(nextScale);
           if (nextScale?.status === "optimal") {
             setScanConfirm(null);
           }
         };
-        map.on("move zoom viewreset resize", syncMapViewport);
+        map.on("move zoom", schedulePolygonSync);
+        map.on("moveend zoomend viewreset resize", syncMapSettled);
 
         // Real Earth Esri World Imagery (High-resolution satellite nadir tiles)
         // `crossOrigin` wajib: tanpa itu kanvas tangkapan menjadi tainted dan
         // ekspor JPEG untuk deteksi atap akan gagal.
         const esriSatellite = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          { maxNativeZoom: 19, maxZoom: 22, crossOrigin: true }
+          {
+            maxNativeZoom: 19,
+            maxZoom: 22,
+            crossOrigin: true,
+            updateWhenIdle: true,
+            updateWhenZooming: false,
+            keepBuffer: 2,
+          }
         );
 
         // OpenStreetMap (OSM) standard vector road tile layer
@@ -2861,12 +2960,22 @@ function StudioPageContent() {
           maxNativeZoom: 19,
           maxZoom: 22,
           crossOrigin: true,
+          updateWhenIdle: true,
+          updateWhenZooming: false,
+          keepBuffer: 2,
         });
 
         // Hybrid labels layer (Street & City reference)
         const labelsLayer = L.tileLayer(
           "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-          { maxNativeZoom: 19, maxZoom: 22, crossOrigin: true }
+          {
+            maxNativeZoom: 19,
+            maxZoom: 22,
+            crossOrigin: true,
+            updateWhenIdle: true,
+            updateWhenZooming: false,
+            keepBuffer: 1,
+          }
         );
 
         esriSatellite.addTo(map);
@@ -2883,20 +2992,11 @@ function StudioPageContent() {
       }
     };
 
-    if (!(window as any).L) {
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.async = true;
-      script.onload = () => initMap();
-      script.onerror = () => {
-        console.warn("Failed to load Leaflet CDN, satellite fallback will remain.");
-      };
-      document.body.appendChild(script);
-    } else {
-      initMap();
-    }
+    void initMap();
 
     return () => {
+      cancelled = true;
+      if (moveRafId !== null) cancelAnimationFrame(moveRafId);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -2940,7 +3040,7 @@ function StudioPageContent() {
     };
   }, [mapLoaded]);
 
-  // Sync Map Layers
+  // Sync Map Base Layer (Esri Satellite vs OSM Street) & Street Labels
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -2949,20 +3049,20 @@ function StudioPageContent() {
     const labels = labelsLayerRef.current;
     if (!esri || !osm || !labels) return;
 
-    if (activeLayer === "satellite") {
+    if (baseMap === "osm") {
+      if (map.hasLayer(esri)) map.removeLayer(esri);
+      if (!map.hasLayer(osm)) osm.addTo(map);
+      if (map.hasLayer(labels)) map.removeLayer(labels);
+    } else {
       if (map.hasLayer(osm)) map.removeLayer(osm);
       if (!map.hasLayer(esri)) esri.addTo(map);
-      if (!map.hasLayer(labels)) labels.addTo(map);
-    } else if (activeLayer === "cv") {
-      if (map.hasLayer(osm)) map.removeLayer(osm);
-      if (!map.hasLayer(esri)) esri.addTo(map);
-      if (!map.hasLayer(labels)) labels.addTo(map);
-    } else if (activeLayer === "heatmap") {
-      if (map.hasLayer(osm)) map.removeLayer(osm);
-      if (!map.hasLayer(esri)) esri.addTo(map);
-      if (!map.hasLayer(labels)) labels.addTo(map);
+      if (showStreetLabels) {
+        if (!map.hasLayer(labels)) labels.addTo(map);
+      } else {
+        if (map.hasLayer(labels)) map.removeLayer(labels);
+      }
     }
-  }, [activeLayer, mapLoaded]);
+  }, [baseMap, showStreetLabels, mapLoaded]);
 
   /**
    * Pratinjau tangkapan: gambar berkas yang benar-benar dikirim ke model pada
@@ -3067,6 +3167,65 @@ function StudioPageContent() {
     };
   }, []);
 
+  const formatProjectLocationLabel = useCallback((rawLabel: string): string => {
+    const parts = rawLabel
+      .split(",")
+      .map((part) => part.trim())
+      .filter(
+        (part) =>
+          part !== "" &&
+          !/^(kota bogor|jawa barat|indonesia|\d{5})$/i.test(part)
+      );
+    const concise = parts.slice(0, 2).join(", ");
+    return (concise || rawLabel.trim()).slice(0, 120);
+  }, []);
+
+  const getTargetFacetsCentroid = useCallback((targetFacets: RoofFacet[]): { lat: number; lng: number } => {
+    const valid = targetFacets.filter(
+      (facet) => typeof facet.lat === "number" && Number.isFinite(facet.lat) && typeof facet.lng === "number" && Number.isFinite(facet.lng)
+    );
+    if (valid.length > 0) {
+      const sumLat = valid.reduce((sum, facet) => sum + (facet.lat as number), 0);
+      const sumLng = valid.reduce((sum, facet) => sum + (facet.lng as number), 0);
+      return { lat: sumLat / valid.length, lng: sumLng / valid.length };
+    }
+    if (mapInstanceRef.current) {
+      try {
+        const center = mapInstanceRef.current.getCenter();
+        return { lat: center.lat, lng: center.lng };
+      } catch {}
+    }
+    return { lat: -6.611, lng: 106.815 };
+  }, []);
+
+  const resolveDefaultProjectName = useCallback(
+    async (targetFacets: RoofFacet[], forceReverse = false): Promise<string> => {
+      const { lat, lng } = getTargetFacetsCentroid(targetFacets);
+      const anchor = searchAnchorRef.current;
+
+      if (!forceReverse && anchor) {
+        const dLat = (lat - anchor.lat) * 111_320;
+        const dLng = (lng - anchor.lng) * 111_320 * Math.cos((lat * Math.PI) / 180);
+        if (Math.hypot(dLat, dLng) < 350 && anchor.label.trim() !== "") {
+          return anchor.label.trim();
+        }
+      }
+
+      try {
+        const rev = await api.reverseGeocode(lat, lng);
+        if (rev.label && rev.label.trim() !== "") {
+          return rev.label.trim();
+        }
+      } catch {
+        // Fallback smoothly below if reverse geocode is temporarily unreachable.
+      }
+
+      const fallback = formatProjectLocationLabel(addressInput);
+      return fallback !== "" ? fallback : "Proyek PLTS Bogor";
+    },
+    [addressInput, formatProjectLocationLabel, getTargetFacetsCentroid]
+  );
+
   // OSM Nominatim Geocoding & Preset Search handler (Focused on Kota Bogor & presets)
   /**
    * Mengeksekusi hasil pencarian alamat: peta digeser ke titik itu.
@@ -3080,14 +3239,19 @@ function StudioPageContent() {
         mapInstanceRef.current.flyTo([result.lat, result.lng], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
       }
 
+      const concise = formatProjectLocationLabel(result.label);
       setAddressInput(result.label);
+      searchAnchorRef.current = { label: concise, lat: result.lat, lng: result.lng };
+      if (!hasCustomProjectNameRef.current) {
+        setProjectName(concise);
+      }
       setGeocodeResults([]);
       setSearchOpen(false);
 
       const firstPart = result.label.split(",")[0];
       showToast(`Peta digeser ke ${firstPart}. Tekan pindai untuk memilih bidang atap.`);
     },
-    [showToast]
+    [formatProjectLocationLabel, showToast]
   );
 
   /**
@@ -3121,6 +3285,10 @@ function StudioPageContent() {
         name: matchedPreset.label,
       });
       setAddressInput(matchedPreset.label);
+      searchAnchorRef.current = { label: matchedPreset.label, lat: matchedPreset.lat, lng: matchedPreset.lon };
+      if (!hasCustomProjectNameRef.current) {
+        setProjectName(matchedPreset.label);
+      }
       setGeocodeResults([]);
       showToast(`Lokasi diterapkan: ${matchedPreset.label}`);
       return;
@@ -3166,6 +3334,9 @@ function StudioPageContent() {
     const defaultLat = -6.6110;
     const defaultLng = 106.8150;
     setAddressInput(defaultAddress);
+    searchAnchorRef.current = null;
+    setProjectName("");
+    setHasCustomProjectName(false);
     updateActiveFacet({
       lat: defaultLat,
       lng: defaultLng,
@@ -3304,8 +3475,66 @@ function StudioPageContent() {
   // Save Simulation to Server State & Action
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveModalName, setSaveModalName] = useState("");
+  const [isResolvingProjectName, setIsResolvingProjectName] = useState(false);
+  const saveModalDirtyRef = useRef(false);
 
-  const handleSaveSimulation = async () => {
+  // Resolves a smart default name automatically when roof facets are created/detected
+  useEffect(() => {
+    if (facets.length === 0 || hasCustomProjectNameRef.current) return;
+    const targetFacets =
+      selectedFacets.length > 0
+        ? selectedFacets
+        : facets.filter((facet) => facet.id === activeFacetId);
+    if (targetFacets.length === 0) return;
+
+    let cancelled = false;
+    void resolveDefaultProjectName(targetFacets).then((resolved) => {
+      if (cancelled || hasCustomProjectNameRef.current) return;
+      setProjectName(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [facets.length, activeFacetId, selectedFacetIds.length, resolveDefaultProjectName]);
+
+  const openSaveModal = () => {
+    const targetFacets =
+      selectedFacets.length > 0
+        ? selectedFacets
+        : facets.filter((facet) => facet.id === activeFacetId);
+
+    if (targetFacets.length === 0) {
+      showToast("Belum ada bidang atap untuk disimpan. Pilih minimal satu bidang.");
+      return;
+    }
+
+    saveModalDirtyRef.current = false;
+    const immediateName =
+      projectName.trim() ||
+      searchAnchorRef.current?.label ||
+      formatProjectLocationLabel(addressInput) ||
+      "Proyek PLTS Bogor";
+    setSaveModalName(immediateName);
+    setSaveModalOpen(true);
+
+    if (!hasCustomProjectName) {
+      setIsResolvingProjectName(true);
+      void resolveDefaultProjectName(targetFacets)
+        .then((resolved) => {
+          if (!saveModalDirtyRef.current && resolved.trim() !== "") {
+            setSaveModalName(resolved);
+            setProjectName(resolved);
+          }
+        })
+        .finally(() => {
+          setIsResolvingProjectName(false);
+        });
+    }
+  };
+
+  const performSaveSimulation = async (explicitName: string) => {
     // Bidang boleh digambar sendiri tanpa memindai atap. Simpan tetap membutuhkan
     // acuan tangkapan untuk mengubah poligon layar menjadi meter, jadi acuan itu
     // dicatat dari tampilan peta saat ini lewat `POST /captures` — tanpa model dan
@@ -3428,9 +3657,15 @@ function StudioPageContent() {
       return;
     }
 
+    const finalProjectName =
+      explicitName.trim() ||
+      projectName.trim() ||
+      formatProjectLocationLabel(addressInput) ||
+      "Proyek PLTS Bogor";
+
     const payload: SimulationRequest = {
       image_id: activeDetection.image_id,
-      address: addressInput.trim() === "" ? null : addressInput.trim(),
+      address: finalProjectName.slice(0, 160),
       roofs,
       inverter_type: inverterType,
       monthly_bill_idr: monthlyBill,
@@ -3450,9 +3685,13 @@ function StudioPageContent() {
           : await api.saveSimulation(payload);
 
       setSaveSuccess(true);
+      setSaveModalOpen(false);
       setOpenedSimulationId(res.id);
       setServerMetrics(res.result);
       setServerDetail(res);
+      setProjectName(finalProjectName);
+      setHasCustomProjectName(true);
+      setAddressInput(finalProjectName);
 
       // Penanda tur aplikasi; tidak ada data proyek yang ditulis ke peramban.
       if (typeof window !== "undefined") {
@@ -3466,7 +3705,7 @@ function StudioPageContent() {
       const verb = openedSimulationId !== null ? "diperbarui" : "tersimpan";
 
       showToast(
-        `Simulasi #${res.id} ${verb} — ${res.result.capacity_kwp.toLocaleString("id-ID")} kWp, ${
+        `Proyek "${finalProjectName}" ${verb} — ${res.result.capacity_kwp.toLocaleString("id-ID")} kWp, ${
           Math.round(res.result.annual_production_kwh).toLocaleString("id-ID")
         } kWh/tahun.${skippedNote}`
       );
@@ -3474,7 +3713,7 @@ function StudioPageContent() {
       // perubahan berikutnya tetap terdeteksi sebagai belum tersimpan.
       savedDesignSignatureRef.current = designSignatureOf({
         facets,
-        addressInput,
+        addressInput: finalProjectName,
         monthlyBill,
         plnTariff,
         inverterType,
@@ -3826,6 +4065,8 @@ function StudioPageContent() {
     setRoiHoverYear(Math.round(t * 10) / 10);
   };
 
+  const dragMovedRef = useRef(false);
+
   const startDrag = (
     e: ReactMouseEvent,
     facetId: string,
@@ -3840,7 +4081,29 @@ function StudioPageContent() {
   ) => {
     e.stopPropagation();
     e.preventDefault();
-    setActiveFacetId(facetId);
+    dragMovedRef.current = false;
+
+    const isMultiMove =
+      mode === "move" &&
+      selectedFacetIds.includes(facetId) &&
+      selectedFacetIds.length > 1;
+
+    if (!isMultiMove) {
+      setActiveFacetId(facetId);
+    }
+
+    const groupTargets: DragGroupTarget[] | undefined = isMultiMove
+      ? facets
+          .filter((f) => selectedFacetIds.includes(f.id))
+          .map((f) => ({
+            id: f.id,
+            initOx: f.offsetX,
+            initOy: f.offsetY,
+            initLat: f.lat,
+            initLng: f.lng,
+          }))
+      : undefined;
+
     setDragState({
       facetId,
       mode,
@@ -3853,6 +4116,7 @@ function StudioPageContent() {
       initOy,
       initLat,
       initLng,
+      groupTargets,
     });
   };
 
@@ -3865,7 +4129,52 @@ function StudioPageContent() {
 
     if (activeLayer === "heatmap") {
       const rect = currentTarget.getBoundingClientRect();
-      setProbePos({ x: clientX - rect.left, y: clientY - rect.top });
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+
+      // Real solar irradiance computed from Bogor NASA POWER baseline & sunHour curve
+      const baseGhi = sunHour === 9 ? 3.8 : sunHour === 15 ? 3.9 : 4.85;
+      const rackingBonus = 1.0 + (extraTilt / 20) * 0.02;
+
+      // Hit-test cursor against existing roof polygons (world meters -> screen pixels)
+      const hitFacet = facets.find((facet) => {
+        const sp = getFacetScreenPosition(facet);
+        const cx = sp ? sp.x : rect.width / 2 + facet.offsetX;
+        const cy = sp ? sp.y : rect.height / 2 + facet.offsetY;
+        const rotRad = (-facet.rotation * Math.PI) / 180;
+        const dx = (px - cx) / pixelsPerMeter;
+        const dy = (py - cy) / pixelsPerMeter;
+        const localPt = {
+          x: dx * Math.cos(rotRad) - dy * Math.sin(rotRad),
+          y: dx * Math.sin(rotRad) + dy * Math.cos(rotRad),
+        };
+        return pointInPolygon(localPt, getFacetVertices(facet));
+      });
+
+      if (hitFacet) {
+        const pitchFactor = Math.cos(((hitFacet.pitch - 22) * Math.PI) / 180);
+        const pitchEff = Math.max(0.85, Math.min(1.0, 0.92 + pitchFactor * 0.08));
+        const azDev = Math.abs(hitFacet.azimuth - 188);
+        const azEff = Math.max(0.82, Math.min(1.0, 1.0 - (azDev / 180) * 0.15));
+        const factor = pitchEff * azEff * rackingBonus;
+        setProbePos({
+          x: px,
+          y: py,
+          ghi: Math.round(baseGhi * factor * 100) / 100,
+          pct: Math.min(100, Math.round(factor * 100)),
+          label: `${hitFacet.name} (${hitFacet.pitch}°)`,
+        });
+      } else {
+        setProbePos({
+          x: px,
+          y: py,
+          ghi: baseGhi,
+          pct: Math.round((baseGhi / 4.85) * 100),
+          label: `Permukaan Datar (${sunHour}:00)`,
+        });
+      }
+    } else if (probePos !== null) {
+      setProbePos(null);
     }
 
     if (edgeDragState) {
@@ -3956,27 +4265,65 @@ function StudioPageContent() {
       const dx = clientX - dragState.startX;
       const dy = clientY - dragState.startY;
 
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        dragMovedRef.current = true;
+      }
+
       if (dragState.mode === "move") {
+        // Jika beberapa bidang terpilih sekaligus, geser semua bidang terpilih bersama-sama.
+        if (dragState.groupTargets && dragState.groupTargets.length > 1) {
+          const map = mapInstanceRef.current;
+          const L = (window as any).L;
+          const updates = new Map<string, Partial<RoofFacet>>();
+          for (const item of dragState.groupTargets) {
+            let nextLat = item.initLat;
+            let nextLng = item.initLng;
+            if (map && L && item.initLat && item.initLng) {
+              try {
+                const startPt = map.latLngToContainerPoint([item.initLat, item.initLng]);
+                const targetLatLng = map.containerPointToLatLng(L.point(startPt.x + dx, startPt.y + dy));
+                nextLat = targetLatLng.lat;
+                nextLng = targetLatLng.lng;
+              } catch {}
+            }
+            updates.set(item.id, {
+              lat: nextLat,
+              lng: nextLng,
+              offsetX: Math.round(item.initOx + dx),
+              offsetY: Math.round(item.initOy + dy),
+            });
+          }
+          setServerMetrics(null);
+          setServerDetail(null);
+          setFacets((prev) =>
+            prev.map((f) => {
+              const patch = updates.get(f.id);
+              return patch ? { ...f, ...patch } : f;
+            })
+          );
+          return;
+        }
+
         if (mapInstanceRef.current && (window as any).L && dragState.initLat && dragState.initLng) {
           try {
             const L = (window as any).L;
             const startPt = mapInstanceRef.current.latLngToContainerPoint([dragState.initLat, dragState.initLng]);
             const targetPt = L.point(startPt.x + dx, startPt.y + dy);
             const targetLatLng = mapInstanceRef.current.containerPointToLatLng(targetPt);
-            updateActiveFacet({
+            updateFacetById(dragState.facetId, {
               lat: targetLatLng.lat,
               lng: targetLatLng.lng,
               offsetX: Math.round(dragState.initOx + dx),
               offsetY: Math.round(dragState.initOy + dy),
             });
           } catch {
-            updateActiveFacet({
+            updateFacetById(dragState.facetId, {
               offsetX: Math.round(dragState.initOx + dx),
               offsetY: Math.round(dragState.initOy + dy),
             });
           }
         } else {
-          updateActiveFacet({
+          updateFacetById(dragState.facetId, {
             offsetX: Math.round(dragState.initOx + dx),
             offsetY: Math.round(dragState.initOy + dy),
           });
@@ -4014,17 +4361,8 @@ function StudioPageContent() {
       rafRef.current = null;
     }
     if (edgeDragState) {
-      if (!edgeDragMovedRef.current && edgeDragState.mode === "insert") {
-        // Tanpa perpindahan, maksud pengguna adalah menambah simpul di titik sisi
-        // yang barusan ia tunjuk. Mode `resize` tidak menyisipkan apa pun: klik
-        // biasa di sana memang bukan permintaan menambah simpul.
-        insertVertexOnEdge(edgeDragState.facetId, edgeDragState.edgeIdx, edgeDragState.insertAt);
-      } else if (edgeDragMovedRef.current) {
-        showToast(
-          edgeDragState.mode === "resize"
-            ? "Ukuran sisi poligon diperbarui"
-            : "Sisi poligon digeser"
-        );
+      if (edgeDragMovedRef.current) {
+        showToast("Ukuran sisi poligon diperbarui");
       }
 
       edgeDragMovedRef.current = false;
@@ -4035,8 +4373,12 @@ function StudioPageContent() {
       showToast("Bentuk simpul poligon diperbarui");
     }
     if (dragState) {
+      const moved = dragMovedRef.current;
+      const wasGroup = Boolean(dragState.groupTargets && dragState.groupTargets.length > 1);
       setDragState(null);
-      showToast("Geometri poligon berhasil diperbarui");
+      if (moved) {
+        showToast(wasGroup ? "Posisi bidang terpilih diperbarui bersama" : "Geometri poligon berhasil diperbarui");
+      }
     }
   };
 
@@ -4266,7 +4608,7 @@ function StudioPageContent() {
                   <div className="flex items-center justify-between px-2 pt-2.5 pb-1 gap-2">
                     <p className="flex items-center gap-1 text-[11px] text-slate-400 truncate min-w-0">
                       <span className="material-symbols-outlined text-[13px] text-amber-600 shrink-0">location_on</span>
-                      <span className="truncate">{activeFacet.name || addressInput || "Kota Bogor, Jawa Barat"}</span>
+                      <span className="truncate">{projectName || activeFacet.name || addressInput || "Kota Bogor, Jawa Barat"}</span>
                     </p>
                     <button
                       type="button"
@@ -4390,7 +4732,7 @@ function StudioPageContent() {
             )}
           </div>
 
-          {/* Pill 3: Filter Lapisan (Frosted Glass & Golden Radiant Active) */}
+          {/* Pill 3: Filter Lapisan & Tampilan (Apple Glass + Soft Radiant Glow) */}
           <div className="relative shrink-0">
             <button
               type="button"
@@ -4403,7 +4745,7 @@ function StudioPageContent() {
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
                   : "bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-900 border-white/80 hover:border-amber-300/70"
               }`}
-              title="Filter Lapisan Peta & CAD"
+              title="Filter Peta & Lapisan Analisis"
               aria-expanded={filterOpen}
             >
               <span className="material-symbols-outlined text-[18px]">layers</span>
@@ -4413,11 +4755,17 @@ function StudioPageContent() {
                   ? "bg-white/90 text-amber-950 border-amber-300/80"
                   : "bg-amber-100 text-amber-900 border-amber-200"
               }`}>
-                {activeLayer === "satellite" ? "Satelit" : activeLayer === "cv" ? "AI" : "Heatmap"}
+                {baseMap === "osm"
+                  ? "OSM"
+                  : activeLayer === "cv"
+                    ? "AI"
+                    : activeLayer === "heatmap"
+                      ? "Radiasi"
+                      : "Satelit"}
               </span>
             </button>
 
-            {/* Filter Popover (Modern Frosted Glass) */}
+            {/* Filter Popover (Real Controls — Apple Glass & Soft Radiant Glow) */}
             {filterOpen && (
               <>
                 <button
@@ -4426,107 +4774,173 @@ function StudioPageContent() {
                   className="fixed inset-0 z-30 cursor-default"
                   onClick={() => setFilterOpen(false)}
                 />
-                <div className="absolute left-0 top-14 z-40 w-60 bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_4px_24px_rgba(245,158,11,0.10)] border border-white/90 p-2.5 animate-fadeIn space-y-1">
-                  <div className="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    Lapisan Tampilan
+                <div className="absolute left-0 top-14 z-40 w-68 bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_8px_28px_rgba(253,224,71,0.14),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/90 p-3 animate-fadeIn space-y-3">
+                  {/* 1. Peta Dasar */}
+                  <div className="space-y-1.5">
+                    <span className="px-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                      Peta Dasar
+                    </span>
+                    <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-900/[0.04] border border-slate-200/60">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBaseMap("satellite");
+                          showToast("Peta dasar: Citra Satelit");
+                        }}
+                        className={`h-8 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          baseMap === "satellite"
+                            ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 shadow-[0_2px_8px_rgba(251,191,36,0.2)] border border-amber-200/90"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">satellite_alt</span>
+                        <span>Satelit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBaseMap("osm");
+                          showToast("Peta dasar: Peta Jalan (OpenStreetMap)");
+                        }}
+                        className={`h-8 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          baseMap === "osm"
+                            ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 shadow-[0_2px_8px_rgba(251,191,36,0.2)] border border-amber-200/90"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">map</span>
+                        <span>Peta OSM</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Overlay Analisis */}
+                  <div className="space-y-1">
+                    <span className="px-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                      Overlay Analisis
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = activeLayer === "cv" ? "satellite" : "cv";
+                        setActiveLayer(next);
+                        if (next === "cv") {
+                          if (detectedRoofs.length > 0) {
+                            setShowDetectedRoofs(true);
+                            showToast(`Overlay AI aktif (${detectedRoofs.length} kontur terdeteksi)`);
+                          } else {
+                            showToast("Overlay AI aktif — tekan Pindai AI di toolbar kiri untuk memindai");
+                          }
+                        } else {
+                          showToast("Overlay AI dinonaktifkan");
+                        }
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
+                        activeLayer === "cv"
+                          ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/85 to-amber-100/95 text-amber-950 border border-amber-200/90 shadow-2xs"
+                          : "text-slate-700 hover:bg-slate-900/[0.04]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[16px] text-emerald-600">psychology</span>
+                        <span>Kontur Deteksi AI</span>
+                      </span>
+                      <span className={`w-2 h-2 rounded-full ${activeLayer === "cv" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" : "bg-slate-300"}`} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = activeLayer === "heatmap" ? "satellite" : "heatmap";
+                        setActiveLayer(next);
+                        if (next === "heatmap") {
+                          showToast("Radiometer Surya aktif — arahkan kursor ke atap");
+                        } else {
+                          setProbePos(null);
+                          showToast("Radiometer Surya dinonaktifkan");
+                        }
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
+                        activeLayer === "heatmap"
+                          ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/85 to-amber-100/95 text-amber-950 border border-amber-200/90 shadow-2xs"
+                          : "text-slate-700 hover:bg-slate-900/[0.04]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[16px] text-amber-600">wb_sunny</span>
+                        <span>Radiasi Surya (POA)</span>
+                      </span>
+                      <span className={`w-2 h-2 rounded-full ${activeLayer === "heatmap" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]" : "bg-slate-300"}`} />
+                    </button>
+                  </div>
+
+                  {/* 3. Elemen Kanvas */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200/70">
+                    <span className="px-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                      Tampilan Kanvas
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={baseMap === "osm"}
+                        onClick={() => {
+                          setShowStreetLabels((prev) => {
+                            const next = !prev;
+                            showToast(next ? "Label jalan ditampilkan" : "Label jalan disembunyikan");
+                            return next;
+                          });
+                        }}
+                        className={`flex-1 h-8 px-2.5 rounded-xl text-[11px] font-semibold border transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          showStreetLabels && baseMap === "satellite"
+                            ? "bg-white text-slate-800 border-amber-200/90 shadow-2xs"
+                            : "bg-slate-900/[0.03] text-slate-500 border-transparent hover:text-slate-800"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">signpost</span>
+                        <span>Label Jalan</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCadGrid((prev) => {
+                            const next = !prev;
+                            showToast(next ? "Grid referensi CAD aktif" : "Grid referensi CAD disembunyikan");
+                            return next;
+                          });
+                        }}
+                        className={`flex-1 h-8 px-2.5 rounded-xl text-[11px] font-semibold border transition flex items-center justify-center gap-1 cursor-pointer ${
+                          showCadGrid
+                            ? "bg-white text-slate-800 border-amber-200/90 shadow-2xs"
+                            : "bg-slate-900/[0.03] text-slate-500 border-transparent hover:text-slate-800"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">grid_4x4</span>
+                        <span>Grid CAD</span>
+                      </button>
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => {
+                      setBaseMap("satellite");
                       setActiveLayer("satellite");
-                      showToast("Lapisan: Satelit Normal");
-                      setFilterOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
-                      activeLayer === "satellite"
-                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
-                        : "text-slate-700 hover:bg-amber-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-amber-700">satellite_alt</span>
-                      <span>Satelit Normal</span>
-                    </div>
-                    {activeLayer === "satellite" && (
-                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveLayer("cv");
-                      setShowDetectedRoofs(true);
-                      showToast(
-                        detection !== null
-                          ? "Lapisan: Overlay Deteksi AI (YOLOv8n-seg)"
-                          : "Mode Deteksi AI aktif — tekan Pindai AI di toolbar kiri"
-                      );
-                      setFilterOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
-                      activeLayer === "cv"
-                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
-                        : "text-slate-700 hover:bg-amber-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-emerald-600">psychology</span>
-                      <span>Deteksi AI (CV)</span>
-                    </div>
-                    {activeLayer === "cv" && (
-                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveLayer("heatmap");
-                      showToast("Lapisan: Radiasi Sinar Matahari");
-                      setFilterOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
-                      activeLayer === "heatmap"
-                        ? "bg-gradient-to-r from-amber-200 to-amber-300 text-amber-950 font-bold shadow-2xs"
-                        : "text-slate-700 hover:bg-amber-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-rose-500">wb_sunny</span>
-                      <span>Heatmap Radiasi</span>
-                    </div>
-                    {activeLayer === "heatmap" && (
-                      <span className="material-symbols-outlined text-[16px] text-amber-950">check</span>
-                    )}
-                  </button>
-
-                  <div className="w-full h-px bg-slate-100 my-1" />
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateActiveFacet({
-                        ridge: 12.48,
-                        slope: 7.28,
-                        pitch: 22,
-                        rotation: -4,
-                        setback: 0.5,
-                        gutter: 0.6,
-                        lat: -6.6110,
-                        lng: 106.8150,
-                      });
+                      setShowStreetLabels(true);
+                      setShowCadGrid(true);
+                      setProbePos(null);
                       if (mapInstanceRef.current) {
-                        mapInstanceRef.current.setView([-6.6110, 106.8150], GEOCODE_TARGET_ZOOM);
+                        const targetLat = activeFacet?.lat || -6.6110;
+                        const targetLng = activeFacet?.lng || 106.8150;
+                        mapInstanceRef.current.setView([targetLat, targetLng], GEOCODE_TARGET_ZOOM);
                       }
-                      showToast("Parameter & poligon direset ke standar");
+                      showToast("Tampilan peta & lapisan direset ke standar");
                       setFilterOpen(false);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-2xl text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-900/[0.04] border-t border-slate-100 transition cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">restart_alt</span>
-                    <span>Reset Parameter Atap</span>
+                    <span className="material-symbols-outlined text-[15px] text-slate-500">restart_alt</span>
+                    <span>Reset Tampilan Peta</span>
                   </button>
                 </div>
               </>
@@ -4547,7 +4961,7 @@ function StudioPageContent() {
           {/* Pill 5: Simpan Desain (Radiant Soft Glow Glass) */}
           <button
             type="button"
-            onClick={handleSaveSimulation}
+            onClick={openSaveModal}
             disabled={isSaving}
             className={`h-11 px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer border ${
               saveSuccess
@@ -4589,6 +5003,9 @@ function StudioPageContent() {
           }`}
           onMouseMove={onViewportMouseMove}
           onMouseUp={onViewportMouseUp}
+          onMouseLeave={() => {
+            if (probePos !== null) setProbePos(null);
+          }}
           onClick={(e) => {
             if (e.target === e.currentTarget || (e.target as HTMLElement).id === "studio-leaflet-map") {
               if (cadTool === "select") {
@@ -4646,10 +5063,12 @@ function StudioPageContent() {
             </button>
           </div>
 
-          {/* Pen Tool Interactive Drawing Overlay */}
+          {/* Pen Tool Interactive Drawing Overlay (Sits below selected edges when idle so '+' hover works, above facets once drawing starts) */}
           {cadTool === "pen" && (
             <div
-              className="absolute inset-0 z-20 pointer-events-auto cursor-crosshair"
+              className={`absolute inset-0 pointer-events-auto cursor-crosshair ${
+                penPoints.length > 0 ? "z-[28]" : "z-20"
+              }`}
               onClick={handleCanvasPenClick}
               onMouseMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -4662,67 +5081,104 @@ function StudioPageContent() {
               <svg className="w-full h-full overflow-visible pointer-events-none">
                 {penPoints.length > 0 && (
                   <>
-                    {/* Polyline connecting placed points */}
-                    <polyline
-                      points={penPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                      fill="rgba(34, 211, 238, 0.15)"
-                      stroke="#22d3ee"
-                      strokeWidth="2.5"
-                      strokeDasharray="6 3"
-                    />
-
-                    {/* Rubberband line to mouse position */}
-                    {penMousePos && penPoints.length > 0 && (
-                      <line
-                        x1={penPoints[penPoints.length - 1].x}
-                        y1={penPoints[penPoints.length - 1].y}
-                        x2={penMousePos.x}
-                        y2={penMousePos.y}
-                        stroke="#06b6d4"
-                        strokeWidth="2"
-                        strokeDasharray="4 4"
+                    {/* Polyline & soft blue polygon fill matching Penggaris CAD dashed style */}
+                    {penPoints.length >= 3 && (
+                      <polygon
+                        points={penPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                        fill="rgba(56, 189, 248, 0.12)"
+                        stroke="none"
                       />
                     )}
+                    <polyline
+                      points={penPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="2.5"
+                      strokeDasharray="6 3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
 
-                    {/* Live distance badge on the rubberband line */}
-                    {penMousePos && penPoints.length > 0 && (
-                      <g
-                        transform={`translate(${
-                          (penPoints[penPoints.length - 1].x + penMousePos.x) / 2
-                        }, ${
-                          (penPoints[penPoints.length - 1].y + penMousePos.y) / 2 - 12
-                        })`}
-                      >
-                        <rect
-                          x="-30"
-                          y="-10"
-                          width="60"
-                          height="20"
-                          rx="6"
-                          fill="#0f172a"
-                          fillOpacity="0.85"
-                          stroke="#22d3ee"
-                          strokeWidth="1"
-                        />
+                    {/* Rubberband line to mouse position with snap-to-close preview (Penggaris style, blue theme) */}
+                    {penMousePos && (() => {
+                      const pLast = penPoints[penPoints.length - 1];
+                      const isNearStart = Boolean(
+                        penPoints.length >= 3 &&
+                        Math.hypot(penMousePos.x - penPoints[0].x, penMousePos.y - penPoints[0].y) < 22
+                      );
+                      const targetX = isNearStart ? penPoints[0].x : penMousePos.x;
+                      const targetY = isNearStart ? penPoints[0].y : penMousePos.y;
+                      const distM = (Math.hypot(targetX - pLast.x, targetY - pLast.y) / pixelsPerMeter).toFixed(1);
+
+                      return (
+                        <>
+                          <line
+                            x1={pLast.x}
+                            y1={pLast.y}
+                            x2={targetX}
+                            y2={targetY}
+                            stroke={isNearStart ? "#10b981" : "#67e8f9"}
+                            strokeWidth={isNearStart ? "2.5" : "2"}
+                            strokeDasharray={isNearStart ? "none" : "4 4"}
+                            strokeLinecap="round"
+                          />
+                          <text
+                            x={(pLast.x + targetX) / 2}
+                            y={(pLast.y + targetY) / 2 - 10}
+                            textAnchor="middle"
+                            fill={isNearStart ? "#6ee7b7" : "#ffffff"}
+                            fontSize="10"
+                            fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                            fontWeight="700"
+                            letterSpacing="0.02em"
+                            stroke="#0f172a"
+                            strokeWidth="2.4"
+                            strokeLinejoin="round"
+                            paintOrder="stroke"
+                            className="pointer-events-none"
+                          >
+                            {isNearStart ? (
+                              <>
+                                Tutup ({distM}
+                                <tspan dx="2" fontSize="9" fontWeight="600">m</tspan>)
+                              </>
+                            ) : (
+                              <>
+                                {distM}
+                                <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
+                              </>
+                            )}
+                          </text>
+                        </>
+                      );
+                    })()}
+
+                    {/* Pill-less segment distances along placed blue lines (matching Penggaris style) */}
+                    {penPoints.slice(0, -1).map((p1, idx) => {
+                      const p2 = penPoints[idx + 1];
+                      const lenM = Math.hypot(p2.x - p1.x, p2.y - p1.y) / pixelsPerMeter;
+                      return (
                         <text
-                          x="0"
-                          y="3"
+                          key={`pen-seg-${idx}`}
+                          x={(p1.x + p2.x) / 2}
+                          y={(p1.y + p2.y) / 2 - 9}
                           textAnchor="middle"
-                          fill="#67e8f9"
+                          fill="#ffffff"
                           fontSize="10"
-                          fontFamily="monospace"
-                          fontWeight="bold"
+                          fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                          fontWeight="700"
+                          letterSpacing="0.02em"
+                          stroke="#0f172a"
+                          strokeWidth="2.4"
+                          strokeLinejoin="round"
+                          paintOrder="stroke"
+                          className="pointer-events-none"
                         >
-                          {(
-                            Math.hypot(
-                              penMousePos.x - penPoints[penPoints.length - 1].x,
-                              penMousePos.y - penPoints[penPoints.length - 1].y
-                            ) / pixelsPerMeter
-                          ).toFixed(2)}
-                          m
+                          {lenM.toFixed(1)}
+                          <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
                         </text>
-                      </g>
-                    )}
+                      );
+                    })}
 
                     {/* Placed point vertices */}
                     {penPoints.map((p, idx) => {
@@ -4877,99 +5333,88 @@ function StudioPageContent() {
                             strokeWidth={isNearStart ? "2.5" : "2"}
                             strokeDasharray={isNearStart ? "none" : "4 4"}
                           />
-                          <g transform={`translate(${(pLast.x + targetX) / 2}, ${(pLast.y + targetY) / 2 - 12})`}>
-                            <rect
-                              x={isNearStart ? "-44" : "-28"}
-                              y="-10"
-                              width={isNearStart ? "88" : "56"}
-                              height="20"
-                              rx="6"
-                              fill="#ffffff"
-                              fillOpacity="0.95"
-                              stroke={isNearStart ? "#10b981" : "#f59e0b"}
-                              strokeWidth="1.2"
-                            />
-                            <text
-                              x="0"
-                              y="3"
-                              textAnchor="middle"
-                              fill={isNearStart ? "#065f46" : "#78350f"}
-                              fontSize={isNearStart ? "9" : "10"}
-                              fontFamily="monospace"
-                              fontWeight="bold"
-                            >
-                              {isNearStart ? `Tutup (${distM}m)` : `${distM}m`}
-                            </text>
-                          </g>
+                          <text
+                            x={(pLast.x + targetX) / 2}
+                            y={(pLast.y + targetY) / 2 - 10}
+                            textAnchor="middle"
+                            fill={isNearStart ? "#6ee7b7" : "#ffffff"}
+                            fontSize="10"
+                            fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                            fontWeight="700"
+                            letterSpacing="0.02em"
+                            stroke="#0f172a"
+                            strokeWidth="2.4"
+                            strokeLinejoin="round"
+                            paintOrder="stroke"
+                            className="pointer-events-none"
+                          >
+                            {isNearStart ? (
+                              <>
+                                Tutup ({distM}
+                                <tspan dx="2" fontSize="9" fontWeight="600">m</tspan>)
+                              </>
+                            ) : (
+                              <>
+                                {distM}
+                                <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
+                              </>
+                            )}
+                          </text>
                         </>
                       );
                     })()}
 
-                    {/* Segment distances along completed lines */}
+                    {/* Segment distances along completed lines (pill-less, Pen Tool style) */}
                     {measurePoints.slice(0, -1).map((p1, idx) => {
                       const p2 = measurePoints[idx + 1];
                       const segDist = Math.hypot(p2.x - p1.x, p2.y - p1.y) / pixelsPerMeter;
                       return (
-                        <g
+                        <text
                           key={`seg-dist-${idx}`}
-                          transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2 - 12})`}
+                          x={(p1.x + p2.x) / 2}
+                          y={(p1.y + p2.y) / 2 - 9}
+                          textAnchor="middle"
+                          fill="#ffffff"
+                          fontSize="10"
+                          fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                          fontWeight="700"
+                          letterSpacing="0.02em"
+                          stroke="#0f172a"
+                          strokeWidth="2.4"
+                          strokeLinejoin="round"
+                          paintOrder="stroke"
+                          className="pointer-events-none"
                         >
-                          <rect
-                            x="-22"
-                            y="-9"
-                            width="44"
-                            height="18"
-                            rx="5"
-                            fill="#ffffff"
-                            fillOpacity="0.95"
-                            stroke="#f59e0b"
-                            strokeWidth="1"
-                          />
-                          <text
-                            x="0"
-                            y="3"
-                            textAnchor="middle"
-                            fill="#78350f"
-                            fontSize="9"
-                            fontFamily="monospace"
-                            fontWeight="bold"
-                          >
-                            {segDist.toFixed(1)}m
-                          </text>
-                        </g>
+                          {segDist.toFixed(1)}
+                          <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
+                        </text>
                       );
                     })}
 
-                    {/* Closing segment distance (if closed) */}
+                    {/* Closing segment distance (if closed, pill-less) */}
                     {isMeasureClosed && measurePoints.length >= 3 && (() => {
                       const pLast = measurePoints[measurePoints.length - 1];
                       const p0 = measurePoints[0];
                       const closingDist = Math.hypot(p0.x - pLast.x, p0.y - pLast.y) / pixelsPerMeter;
                       return (
-                        <g transform={`translate(${(pLast.x + p0.x) / 2}, ${(pLast.y + p0.y) / 2 - 12})`}>
-                          <rect
-                            x="-22"
-                            y="-9"
-                            width="44"
-                            height="18"
-                            rx="5"
-                            fill="#ffffff"
-                            fillOpacity="0.95"
-                            stroke="#10b981"
-                            strokeWidth="1"
-                          />
-                          <text
-                            x="0"
-                            y="3"
-                            textAnchor="middle"
-                            fill="#065f46"
-                            fontSize="9"
-                            fontFamily="monospace"
-                            fontWeight="bold"
-                          >
-                            {closingDist.toFixed(1)}m
-                          </text>
-                        </g>
+                        <text
+                          x={(pLast.x + p0.x) / 2}
+                          y={(pLast.y + p0.y) / 2 - 9}
+                          textAnchor="middle"
+                          fill="#6ee7b7"
+                          fontSize="10"
+                          fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                          fontWeight="700"
+                          letterSpacing="0.02em"
+                          stroke="#0f172a"
+                          strokeWidth="2.4"
+                          strokeLinejoin="round"
+                          paintOrder="stroke"
+                          className="pointer-events-none"
+                        >
+                          {closingDist.toFixed(1)}
+                          <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
+                        </text>
                       );
                     })()}
 
@@ -5024,27 +5469,8 @@ function StudioPageContent() {
                 )}
               </svg>
 
-              {/* Centroid Area Card for Closed Polygon */}
-              {isMeasureClosed && measureCentroid && (
-                <div
-                  className="absolute -translate-x-1/2 -translate-y-1/2 z-35 p-2.5 px-3.5 rounded-2xl bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_24px_rgba(245,158,11,0.22)] text-center pointer-events-none select-none animate-fadeIn"
-                  style={{ left: `${measureCentroid.x}px`, top: `${measureCentroid.y}px` }}
-                >
-                  <div className="flex items-center justify-center gap-1 text-[8.5px] font-bold text-amber-800 uppercase tracking-wider">
-                    <span className="material-symbols-outlined text-[13px] text-amber-600">square_foot</span>
-                    <span>Luas Area Terukur</span>
-                  </div>
-                  <div className="font-title text-base font-extrabold text-slate-900 font-code-metric mt-0.5">
-                    {measureArea.toFixed(1)} <span className="text-xs font-normal text-slate-500">m²</span>
-                  </div>
-                  <div className="text-[9px] font-bold text-slate-500 font-code-metric mt-0.5">
-                    Keliling: {measureTotalDistance.toFixed(1)}m • {measurePoints.length} Sisi
-                  </div>
-                </div>
-              )}
-
-              {/* Floating Action Bar */}
-              {measurePoints.length > 0 && (
+              {/* Floating Action Bar (sembunyikan setelah poligon ditutup agar tidak ganda dengan pil bawah) */}
+              {measurePoints.length > 0 && !isMeasureClosed && (
                 <div
                   className="absolute z-35 flex items-center gap-1.5 p-1.5 rounded-full bg-white/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(245,158,11,0.18)] border border-amber-200/90 pointer-events-auto animate-fadeIn select-none"
                   style={{
@@ -5158,70 +5584,79 @@ function StudioPageContent() {
 
           {/* Subtle Grid Tint when CV / Detection Overlay Mode is Selected */}
           <div
-            className={`absolute inset-0 pointer-events-none transition-opacity duration-500 z-10 bg-sky-950/10 ${
+            className={`absolute inset-0 pointer-events-none transition-opacity duration-500 z-10 bg-sky-950/15 ${
               activeLayer === "cv" ? "opacity-100" : "opacity-0"
             }`}
           />
 
-          {/* Heatmap Overlay */}
+          {/* Solar Irradiance Canopy Tint driven by active sunHour */}
           <div
-            className={`absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-500/40 via-rose-500/20 to-transparent mix-blend-overlay transition-opacity duration-700 pointer-events-none z-10 ${
-              activeLayer === "heatmap" ? "opacity-100" : "opacity-0"
+            className={`absolute inset-0 transition-opacity duration-500 pointer-events-none z-10 mix-blend-soft-light ${
+              activeLayer === "heatmap"
+                ? sunHour >= 11 && sunHour <= 13
+                  ? "opacity-100 bg-gradient-to-tr from-amber-400/35 via-yellow-300/25 to-orange-400/30"
+                  : "opacity-100 bg-gradient-to-tr from-sky-300/25 via-amber-300/25 to-rose-300/25"
+                : "opacity-0"
             }`}
           />
 
-          {/* Live Cursor Radiometer Probe HUD */}
+          {/* Live Cursor Radiometer Probe HUD (Real GHI & Facet POA Efficiency) */}
           {activeLayer === "heatmap" && probePos && (
             <div
-              className="absolute z-30 pointer-events-none px-3 py-1.5 rounded-xl bg-white/95 text-amber-900 font-semibold tracking-tight text-[11px] border border-amber-300 shadow-xl backdrop-blur-md flex items-center gap-2 -translate-x-1/2 -translate-y-12 transition-transform duration-75"
+              className="absolute z-30 pointer-events-none px-3 py-1.5 rounded-full bg-white/88 bg-gradient-to-r from-white/95 via-amber-50/50 to-sky-50/40 text-slate-800 font-medium tracking-tight text-[11px] border border-white/90 shadow-[0_8px_24px_rgba(251,191,36,0.20),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur-2xl flex items-center gap-2 -translate-x-1/2 -translate-y-11 transition-transform duration-75 whitespace-nowrap"
               style={{ left: probePos.x, top: probePos.y }}
             >
-              <span className="material-symbols-outlined text-[16px] text-amber-600">wb_sunny</span>
-              <span>4.85 kWh/m²/hari</span>
-              <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300">
-                98.4% Puncak
+              <span className="material-symbols-outlined text-[15px] text-amber-600">wb_sunny</span>
+              <span className="font-code-metric font-bold text-slate-900">
+                {probePos.ghi.toFixed(2)} kWh/m²
+              </span>
+              <span className="text-[10px] text-slate-500">· {probePos.label}</span>
+              <span className="text-[10px] font-semibold text-emerald-700">
+                {probePos.pct}%
               </span>
             </div>
           )}
 
-          {/* Blueprint CAD Grid */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-25 z-10">
-            <defs>
-              <pattern id="cadGrid2" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.75" className="text-sky-300/30" />
-                <circle cx="0" cy="0" r="1" className="fill-sky-400/50" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#cadGrid2)" />
-          </svg>
+          {/* Blueprint CAD Grid (Toggleable via Filter) */}
+          {showCadGrid && (
+            <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-25 z-10">
+              <defs>
+                <pattern id="cadGrid2" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.75" className="text-sky-300/30" />
+                  <circle cx="0" cy="0" r="1" className="fill-sky-400/50" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#cadGrid2)" />
+            </svg>
+          )}
 
           {/* Floating Toast Notification */}
           {cadToast && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md text-slate-800 border border-amber-200/80 shadow-[0_4px_20px_rgba(245,158,11,0.12)] text-xs font-semibold flex items-center gap-2 animate-fadeIn">
-              <span className="material-symbols-outlined text-amber-500 text-[15px]">info</span>
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 text-slate-800 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-xs font-medium flex items-center gap-2 animate-fadeIn">
+              <span className="material-symbols-outlined text-amber-600 text-[15px]">info</span>
               <span>{cadToast}</span>
             </div>
           )}
 
           {/* Floating Tool Banner: Delete Vertex Mode */}
           {cadTool === "delete_vertex" && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-rose-200/90 shadow-[0_8px_30px_rgba(244,63,94,0.12),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
-              <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-rose-50/35 to-amber-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(244,63,94,0.12),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-5 h-5 rounded-full bg-rose-100/90 text-rose-700 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">remove_circle</span>
-              </div>
+              </span>
               <span className="font-medium text-slate-700">
-                Hapus Simpul • <strong className="text-rose-900 font-bold">{getFacetVertices(activeFacet).length} titik</strong> (klik sisi atau simpul merah)
+                Hapus Simpul · <strong className="text-slate-900 font-semibold">{getFacetVertices(activeFacet).length} titik</strong>
               </span>
               <button
                 type="button"
                 disabled={getFacetVertices(activeFacet).length <= 3}
                 onClick={() => deleteLastVertex()}
-                className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold transition flex items-center gap-1 ${
+                className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold transition flex items-center gap-1 ${
                   getFacetVertices(activeFacet).length > 3
-                    ? "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 cursor-pointer"
+                    ? "bg-rose-50/90 text-rose-700 border border-rose-200/80 hover:bg-rose-100 cursor-pointer"
                     : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
                 }`}
-                title="Hapus simpul terakhir yang dibuat"
+                title="Hapus simpul terakhir"
               >
                 <span className="material-symbols-outlined text-[12px]">backspace</span>
                 <span>Hapus Terakhir</span>
@@ -5229,27 +5664,45 @@ function StudioPageContent() {
               <button
                 type="button"
                 onClick={() => setCadTool("select")}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
               >
                 Selesai
               </button>
             </div>
           )}
 
-          {/* Floating Tool Banner: Resize Edge Mode */}
-          {cadTool === "resize_edge" && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
-              <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-                <span className="material-symbols-outlined text-[13px]">open_with</span>
-              </div>
+          {/* Floating Tool Banner: Multi-Select Move Hint */}
+          {cadTool === "select" && selectedFacetIds.length > 1 && !showDetectedRoofs && !scanConfirm && (
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-5 h-5 rounded-full bg-amber-100/90 text-amber-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[13px]">select_all</span>
+              </span>
               <span className="font-medium text-slate-700">
-                Ubah Ukuran • seret sisi untuk menggeser{" "}
-                <strong className="text-amber-900 font-bold">2 simpul sekaligus</strong>
+                <strong className="text-slate-900 font-semibold">{selectedFacetIds.length} bidang dipilih</strong> · Seret untuk geser
+              </span>
+              <button
+                type="button"
+                onClick={unselectAllFacets}
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 text-[10.5px] font-semibold transition cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          )}
+
+          {/* Floating Tool Banner: Edit Polygon Hint */}
+          {cadTool === "edit_polygon" && !showDetectedRoofs && !scanConfirm && (
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 text-amber-900 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[13px]">polyline</span>
+              </span>
+              <span className="font-medium text-slate-700">
+                Edit Poligon · Seret sudut atau garis
               </span>
               <button
                 type="button"
                 onClick={() => setCadTool("select")}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
               >
                 Selesai
               </button>
@@ -5258,37 +5711,37 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Measure / CAD Overview Mode */}
           {cadTool === "measure" && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
-              <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+              <span className="w-5 h-5 rounded-full bg-amber-100/90 text-amber-800 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">straighten</span>
-              </div>
-              <span className="font-medium text-slate-700">
+              </span>
+              <span className="font-medium text-slate-700 truncate">
                 {isMeasureClosed ? (
                   <>
-                    Poligon Terukur • Luas: <strong className="font-code-metric text-emerald-800 font-bold">{measureArea.toFixed(1)} m²</strong> • Keliling: <strong className="font-code-metric text-amber-900 font-bold">{measureTotalDistance.toFixed(1)}m</strong>
+                    Luas Terukur <strong className="font-code-metric text-emerald-700 font-semibold">{measureArea.toFixed(1)} m²</strong> · Keliling <strong className="font-code-metric text-slate-900 font-semibold">{measureTotalDistance.toFixed(1)} m</strong> · <strong className="font-code-metric text-slate-900 font-semibold">{measurePoints.length}</strong> sisi
                   </>
                 ) : measurePoints.length > 0 ? (
                   <>
-                    Ukur Garis Bebas • Jarak: <strong className="font-code-metric text-amber-900 font-bold">{measureTotalDistance.toFixed(1)}m</strong>
+                    Jarak <strong className="font-code-metric text-slate-900 font-semibold">{measureTotalDistance.toFixed(1)} m</strong>
                     {measurePoints.length >= 3 && (
-                      <span className="text-[11px] text-slate-500 ml-1">(Klik titik awal untuk menutup area)</span>
+                      <span className="text-[11px] text-slate-500 ml-1">· Klik titik awal untuk tutup</span>
                     )}
                   </>
                 ) : selectedFacetIds.length > 0 ? (
                   <>
-                    Dimensi CAD • <strong className="text-slate-900">{activeFacet.name}</strong>
+                    Dimensi · <strong className="text-slate-900 font-semibold">{activeFacet.name}</strong>
                   </>
                 ) : (
-                  "Mode Penggaris • Klik peta untuk ukur panjang/luas atau pilih bidang atap"
+                  "Penggaris · Klik peta untuk ukur"
                 )}
               </span>
               {isMeasureClosed && measurePoints.length >= 3 && (
                 <button
                   type="button"
                   onClick={handleConvertMeasureToFacet}
-                  className="px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-500 text-amber-950 text-[10.5px] font-bold transition cursor-pointer border border-amber-300"
+                  className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 text-[10.5px] font-semibold transition cursor-pointer border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]"
                 >
-                  + Jadikan Bidang Atap
+                  + Jadikan Atap
                 </button>
               )}
               {measurePoints.length > 0 && (
@@ -5298,7 +5751,7 @@ function StudioPageContent() {
                     setMeasurePoints([]);
                     setIsMeasureClosed(false);
                   }}
-                  className="px-2 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10.5px] font-semibold transition cursor-pointer"
+                  className="px-2 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-600 text-[10.5px] font-semibold transition cursor-pointer"
                 >
                   Reset
                 </button>
@@ -5310,73 +5763,78 @@ function StudioPageContent() {
                   setIsMeasureClosed(false);
                   setCadTool("select");
                 }}
-                className="px-2.5 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300/80 text-[10.5px] font-bold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
               >
-                Tutup
+                Selesai
               </button>
             </div>
           )}
 
-          {/* Floating Scale Meter & Live Scan Range Indicator */}
+          {/* Minimalist Apple Glass Scale Pill (Soft Radiant Glow) */}
           {viewportScale && (
-            <div className="absolute bottom-3 left-3 z-25 pointer-events-none select-none flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/85 backdrop-blur-2xl border border-white/95 shadow-[0_8px_28px_rgba(251,191,36,0.12),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.95)] text-slate-800">
-              {/* Architectural Scale Ruler */}
-              <div className="flex flex-col items-center gap-0.5 pr-2.5 border-r border-slate-200/90">
-                <span className="font-code-metric text-[9.5px] font-bold text-slate-700 leading-none">
+            <div
+              className="absolute bottom-3 left-3 z-25 pointer-events-auto select-none flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/75 bg-gradient-to-r from-white/88 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_6px_22px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 cursor-default"
+              title={
+                viewportScale.status === "optimal"
+                  ? `Cakupan ~${viewportScale.footprintM} m • Skala optimal untuk pindai atap`
+                  : viewportScale.status === "too-close"
+                    ? `Cakupan ~${viewportScale.footprintM} m • Terlalu dekat, zoom out agar atap utuh`
+                    : viewportScale.status === "too-wide-warn"
+                      ? `Cakupan ~${viewportScale.footprintM} m • Terlalu jauh, zoom in agar detail tajam`
+                      : `Cakupan ~${viewportScale.footprintM} m • Terlalu jauh (maks. ${MAX_FOOTPRINT_M} m), zoom in terlebih dahulu`
+              }
+            >
+              {/* Hairline Architectural Scale Bar */}
+              <div className="flex flex-col items-center gap-[3px] pr-2.5 border-r border-slate-900/10">
+                <span className="font-code-metric text-[10px] font-semibold text-slate-700 leading-none tracking-tight">
                   {viewportScale.barMeters} m
                 </span>
                 <div
-                  className="h-1.5 border-x-2 border-b-2 border-slate-800/85 rounded-b-[1px]"
+                  className="h-[3.5px] border-x border-b border-slate-700/75"
                   style={{ width: `${viewportScale.barPx}px` }}
                 />
               </div>
 
-              {/* Viewport Footprint vs Bounding Box Target */}
-              <div className="flex items-center gap-1.5 text-[10.5px] leading-none">
+              {/* Minimal Scan Readiness Status */}
+              <div className="flex items-center gap-1.5 text-[11px] leading-none">
                 <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                     viewportScale.status === "optimal"
-                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]"
+                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.55)]"
                       : viewportScale.status === "too-wide-blocked"
-                        ? "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]"
-                        : "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]"
+                        ? "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.6)]"
+                        : "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"
                   }`}
                 />
-                <span className="font-code-metric font-bold text-slate-900">
-                  {viewportScale.footprintM} m
-                </span>
                 <span
-                  className={`hidden sm:inline font-medium ${
+                  className={`font-medium tracking-tight ${
                     viewportScale.status === "optimal"
-                      ? "text-emerald-700"
+                      ? "text-emerald-800"
                       : viewportScale.status === "too-wide-blocked"
-                        ? "text-rose-700"
-                        : "text-amber-800"
+                        ? "text-rose-800"
+                        : "text-amber-900"
                   }`}
                 >
                   {viewportScale.status === "optimal"
-                    ? `• Ideal pindai (${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`
+                    ? "Optimal"
                     : viewportScale.status === "too-close"
-                      ? "• Terlalu dekat (perkecil zoom)"
-                      : viewportScale.status === "too-wide-warn"
-                        ? "• Agak luas (perbesar zoom)"
-                        : `• Melebihi batas (${MAX_FOOTPRINT_M} m)`}
+                      ? "Too close"
+                      : "Too far"}
                 </span>
               </div>
             </div>
           )}
 
-          {/* Non-blocking Floating Pill: Peringatan Cakupan Bounding Box di Luar Rentang Optimal (Soft Radiant Glow) */}
+          {/* Non-blocking Floating Pill: Konfirmasi Cakupan di Luar Rentang Ideal (Apple Glass + Soft Radiant Glow) */}
           {scanConfirm !== null && !isAiScanning && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex flex-wrap sm:flex-nowrap items-center gap-2 px-3.5 py-2 rounded-full bg-white/88 backdrop-blur-2xl border border-white/95 shadow-[0_12px_36px_rgba(251,191,36,0.18),0_4px_16px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
-              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-100 via-yellow-100 to-amber-200/80 text-amber-900 border border-white/90 shadow-[0_2px_8px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[15px]">straighten</span>
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex flex-wrap sm:flex-nowrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_36px_rgba(251,191,36,0.18),0_4px_16px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+              <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 via-yellow-100 to-amber-200/80 text-amber-900 border border-white/90 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[13px]">straighten</span>
               </span>
               <span className="font-medium text-slate-700 truncate">
-                Cakupan <strong className="font-code-metric text-slate-900">{scanConfirm.capture.footprintM} m</strong>{" "}
                 {scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
-                  ? `terlalu dekat (ideal ${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`
-                  : `agak luas (ideal ${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`}
+                  ? "Terlalu dekat untuk pindai"
+                  : "Area terlalu luas untuk pindai"}
               </span>
               <button
                 type="button"
@@ -5392,14 +5850,14 @@ function StudioPageContent() {
                     }
                     showToast(
                       isTooClose
-                        ? "Zoom diperkecil agar cakupan mendekati 150–260 m."
-                        : "Zoom diperbesar agar cakupan mendekati 150–260 m."
+                        ? "Zoom diperkecil mendekati rentang ideal"
+                        : "Zoom diperbesar mendekati rentang ideal"
                     );
                   }
                 }}
-                className="px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-2xs text-[11px] font-semibold transition cursor-pointer shrink-0"
+                className="px-2.5 py-1 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 hover:text-slate-900 text-[11px] font-semibold transition cursor-pointer shrink-0"
               >
-                {scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ? "Perkecil Zoom" : "Perbesar Zoom"}
+                {scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ? "Zoom Out" : "Zoom In"}
               </button>
               <button
                 type="button"
@@ -5410,14 +5868,14 @@ function StudioPageContent() {
                 }}
                 className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] text-[11px] font-bold transition cursor-pointer shrink-0"
               >
-                Pindai Tetap
+                Tetap Pindai
               </button>
               <button
                 type="button"
                 onClick={() => setScanConfirm(null)}
-                title="Tutup peringatan"
-                aria-label="Tutup peringatan cakupan"
-                className="w-6 h-6 rounded-full hover:bg-slate-100/80 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+                title="Tutup"
+                aria-label="Tutup"
+                className="w-6 h-6 rounded-full hover:bg-slate-900/5 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
               >
                 <span className="material-symbols-outlined text-[15px]">close</span>
               </button>
@@ -5427,16 +5885,16 @@ function StudioPageContent() {
           {/* AI Model Scanning Radar Animation Overlay */}
           {isAiScanning && (
             <div className="absolute inset-0 pointer-events-none z-35 flex flex-col items-center justify-center bg-slate-950/20 backdrop-blur-[1.5px] animate-fadeIn">
-              <div className="flex flex-col items-center gap-3 p-5 rounded-3xl bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_12px_40px_rgba(245,158,11,0.25)] text-slate-800 text-center max-w-xs animate-scaleIn">
-                <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-700 shadow-inner">
-                  <span className="material-symbols-outlined text-[28px] animate-spin">radar</span>
+              <div className="flex flex-col items-center gap-3 p-5 rounded-3xl bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_16px_44px_rgba(251,191,36,0.22),0_4px_18px_rgba(15,23,42,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] text-slate-800 text-center max-w-xs animate-scaleIn">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-100 to-yellow-200/80 flex items-center justify-center text-amber-800 border border-white/90 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9)]">
+                  <span className="material-symbols-outlined text-[24px] animate-spin">radar</span>
                 </div>
                 <div>
-                  <h4 className="font-title font-extrabold text-sm text-slate-900 m-0">Memindai Citra Satelit AI...</h4>
-                  <p className="text-[11px] text-slate-500 m-0 mt-0.5">Mendeteksi kontur dan luas bidang atap secara otomatis</p>
+                  <h4 className="font-title font-bold text-sm text-slate-900 m-0">Memindai Atap...</h4>
+                  <p className="text-[11px] text-slate-500 m-0 mt-0.5">Mendeteksi kontur bidang dari citra satelit</p>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                  <div className="bg-amber-500 h-full w-2/3 animate-pulse rounded-full" />
+                <div className="w-full bg-slate-200/70 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-300 h-full w-2/3 animate-pulse rounded-full" />
                 </div>
               </div>
             </div>
@@ -5444,41 +5902,50 @@ function StudioPageContent() {
 
           {/* Panduan seleksi bidang hasil deteksi model */}
           {showDetectedRoofs && remainingDetectedRoofs.length > 0 && !isAiScanning && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-3 px-4 py-1.5 rounded-full bg-white/95 backdrop-blur-xl border border-amber-300 shadow-[0_8px_30px_rgba(245,158,11,0.2)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
-              <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs shrink-0">
-                <span className="material-symbols-outlined text-[15px]">psychology</span>
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_10px_32px_rgba(251,191,36,0.18),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+              <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200/90 text-amber-900 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[13px]">psychology</span>
               </span>
-              <span className="font-medium text-slate-800 truncate">
-                <strong>{remainingDetectedRoofs.length} bidang atap terdeteksi</strong>
+              <span className="font-medium text-slate-700 truncate">
+                <strong className="text-slate-900 font-semibold">{remainingDetectedRoofs.length} atap terdeteksi</strong>
                 {selectedDetectedIds.length > 0
                   ? ` · ${selectedDetectedIds.length} dipilih`
-                  : " · klik bidang pada peta untuk memilih"}
+                  : " · Klik atap pada peta"}
               </span>
               <button
                 type="button"
                 onClick={commitDetectedSelection}
                 disabled={selectedDetectedIds.length === 0}
-                className={`px-3 py-1 rounded-xl font-bold text-[11px] shadow-xs border transition shrink-0 ${
+                className={`px-3 py-1 rounded-full font-semibold text-[11px] border transition shrink-0 ${
                   selectedDetectedIds.length > 0
-                    ? "bg-amber-400 hover:bg-amber-500 active:scale-95 text-amber-950 border-amber-300 cursor-pointer"
-                    : "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                    ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-95 text-amber-950 border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] cursor-pointer"
+                    : "bg-slate-900/5 text-slate-400 border-transparent cursor-not-allowed"
                 }`}
-                title="Jadikan bidang terpilih sebagai bidang atap proyek"
+                title="Terapkan bidang terpilih ke kanvas"
               >
-                Selesai Memilih
+                Terapkan
               </button>
             </div>
           )}
 
-          {/* Deteksi selesai tanpa bidang: peta tetap bisa dipakai */}
+          {/* Deteksi selesai tanpa bidang */}
           {detection !== null && detectedRoofs.length === 0 && !isAiScanning && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/95 backdrop-blur-xl border border-slate-300 shadow-[0_8px_30px_rgba(15,23,42,0.12)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
-              <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-xs shrink-0">
-                <span className="material-symbols-outlined text-[15px]">search_off</span>
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/30 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(15,23,42,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+              <span className="w-5 h-5 rounded-full bg-slate-900/5 text-slate-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[13px]">search_off</span>
               </span>
-              <span className="font-medium text-slate-700">
-                Model tidak menemukan bidang atap di area ini. Geser peta ke atas atap, lalu tekan tombol pindai AI.
+              <span className="font-medium text-slate-700 truncate">
+                Tidak ada atap ditemukan · Arahkan peta ke area atap
               </span>
+              <button
+                type="button"
+                onClick={() => setDetection(null)}
+                title="Tutup"
+                aria-label="Tutup"
+                className="w-6 h-6 rounded-full hover:bg-slate-900/5 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
+              </button>
             </div>
           )}
 
@@ -5537,7 +6004,9 @@ function StudioPageContent() {
                 <div
                   key={facet.id}
                   id={isActive ? "studio-roof-facet" : undefined}
-                  className="absolute pointer-events-auto select-none"
+                  className={`absolute select-none ${
+                    cadTool === "pen" ? "pointer-events-none" : "pointer-events-auto"
+                  }`}
                   style={{
                     left: styleLeft,
                     top: styleTop,
@@ -5555,7 +6024,7 @@ function StudioPageContent() {
                     zIndex: isSelected ? 25 : 15,
                   }}
                   onMouseDown={(e) => {
-                    if (cadTool === "select" || cadTool === "edit_polygon") {
+                    if ((cadTool === "select" || cadTool === "edit_polygon") && !e.shiftKey) {
                       startDrag(
                         e,
                         facet.id,
@@ -5565,15 +6034,26 @@ function StudioPageContent() {
                         facet.rotation,
                         facet.offsetX,
                         facet.offsetY,
-                        facet.lat || -6.595038,
-                        facet.lng || 106.797241
+                        facet.lat || -6.6110,
+                        facet.lng || 106.8150
                       );
                     }
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
-                    setActiveFacetId(facet.id);
+                    if (dragMovedRef.current) {
+                      dragMovedRef.current = false;
+                      return;
+                    }
+                    if (e.shiftKey) {
+                      toggleFacetSelection(facet.id);
+                      return;
+                    }
+                    if (!selectedFacetIds.includes(facet.id)) {
+                      setSelectedFacetIds([facet.id]);
+                    } else {
+                      setActiveFacetId(facet.id);
+                    }
                     if (facet.isSolarPopulated === false) {
                       populateFacetWithSolar(facet.id);
                     } else {
@@ -5582,7 +6062,11 @@ function StudioPageContent() {
                   }}
                 >
                   {/* Outer Roof Boundary */}
-                  <div className="absolute inset-0 transition-all duration-200 pointer-events-auto">
+                  <div
+                    className={`absolute inset-0 transition-all duration-200 ${
+                      cadTool === "pen" ? "pointer-events-none" : "pointer-events-auto"
+                    }`}
+                  >
                     {/* SVG Outline for the exact polygon boundary (Universal for Rectangle, Trapezoid, L-shape, Custom Polygon) */}
                     <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none z-10">
                       {/* Exact Roof Perimeter Polygon */}
@@ -5655,35 +6139,41 @@ function StudioPageContent() {
                       })()}
 
                       {/*
-                        Sisi edit dan simpul hanya ditampilkan ketika mode pengeditan poligon aktif
-                        (`edit_polygon`, `pen`, `delete_vertex`, `resize_edge`) agar tampilan atap di
-                        mode `select` tetap bersih tanpa titik pengganggu di atas poligon.
+                        Sisi & simpul tampil di mode `edit_polygon`, `pen`, `delete_vertex`, dan `measure`:
+                        - `edit_polygon`: geser simpul sudut & seret sisi/kotak tengah garis (tanpa +)
+                        - `pen`: tampilkan simpul poligon yang ada + indikator `+` saat hover sisi untuk tambah titik
+                        - `delete_vertex`: hapus simpul atau sisi
+                        - `measure`: tampilkan garis, angka sisi tanpa pil, dan titik sudut identik dengan Pen Tool (hanya baca, titik tidak bisa digeser)
                       */}
                       {(isSelected || isActive) &&
                         (cadTool === "edit_polygon" ||
                           cadTool === "pen" ||
                           cadTool === "delete_vertex" ||
-                          cadTool === "resize_edge") && (
+                          cadTool === "measure") && (
                         <g>
                           {facetVerts.map((_, edgeIdx) => {
                             const from = facetPoints[edgeIdx];
                             const to = facetPoints[(edgeIdx + 1) % facetPoints.length];
+                            const midX = (from.x + to.x) / 2;
+                            const midY = (from.y + to.y) / 2;
+                            const edgeAngleDeg = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+                            const edgeLenM = Math.hypot(to.x - from.x, to.y - from.y) / pixelsPerMeter;
                             const canDeleteEdge =
                               cadTool === "delete_vertex" && facetVerts.length > 3;
-                            // Pen tool ikut menampilkan sisi dan simpul: pengguna sering
-                            // menggambar bidang baru tepat di sebelah bidang lama, dan
-                            // tanpa simpul yang terlihat ia tidak tahu batas bidang itu.
-                            const canAddVertex =
-                              cadTool === "edit_polygon" || cadTool === "pen";
-                            // Mode Ubah Ukuran memakai sisi yang sama, tetapi tarikannya
-                            // tidak pernah menyisipkan simpul.
-                            const canResizeEdge = cadTool === "resize_edge";
+                            const canResizeEdge = cadTool === "edit_polygon";
+                            const canInsertVertex = cadTool === "pen";
+                            const isMeasureEdgeView = cadTool === "measure";
                             const hoveredEdge =
                               edgeHover !== null &&
                               edgeHover.facetId === facet.id &&
                               edgeHover.edgeIdx === edgeIdx
                                 ? edgeHover
                                 : null;
+                            const isEdgeHovered =
+                              hoveredEdge !== null ||
+                              (edgeDragState !== null &&
+                                edgeDragState.facetId === facet.id &&
+                                edgeDragState.edgeIdx === edgeIdx);
 
                             return (
                               <g key={`edge-${facet.id}-${edgeIdx}`}>
@@ -5692,12 +6182,19 @@ function StudioPageContent() {
                                   y1={from.y}
                                   x2={to.x}
                                   y2={to.y}
-                                  stroke={cadTool === "delete_vertex" ? "#fb7185" : "#fbbf24"}
-                                  strokeWidth={3}
+                                  stroke={
+                                    cadTool === "delete_vertex"
+                                      ? "#fb7185"
+                                      : isEdgeHovered
+                                        ? "#0ea5e9"
+                                        : "#fbbf24"
+                                  }
+                                  strokeWidth={isEdgeHovered ? 3.5 : 2.5}
                                   strokeLinecap="round"
-                                  opacity={cadTool === "delete_vertex" ? 0.95 : 0.75}
-                                  className="pointer-events-none"
+                                  opacity={cadTool === "delete_vertex" ? 0.95 : 0.85}
+                                  className="pointer-events-none transition-colors"
                                 />
+
                                 {canDeleteEdge && (
                                   <line
                                     x1={from.x}
@@ -5716,142 +6213,195 @@ function StudioPageContent() {
                                     }}
                                   />
                                 )}
-                                {/*
-                                  Satu area sentuh untuk dua maksud. Di mode Edit Simpul
-                                  kursor yang mendekat ke sisi memunculkan penanda `+` pada
-                                  titik terdekat sisi itu, dan klik menyisipkan simpul di
-                                  titik tersebut. Di mode Ubah Ukuran sisi itu cukup
-                                  ditarik. `onMouseDown` dihentikan supaya klik ini tidak
-                                  sekaligus memulai geser seluruh bidang.
-                                */}
-                                {(canAddVertex || canResizeEdge) && (
-                                  <line
-                                    x1={from.x}
-                                    y1={from.y}
-                                    x2={to.x}
-                                    y2={to.y}
-                                    stroke="transparent"
-                                    strokeWidth={12}
-                                    strokeLinecap="round"
-                                    style={{ cursor: canResizeEdge ? "move" : "grab" }}
-                                    className="pointer-events-auto"
-                                    onMouseMove={(e: ReactMouseEvent<SVGLineElement>) => {
-                                      // Penanda sisip tidak diperlukan saat mengubah ukuran.
-                                      if (!canAddVertex) return;
 
-                                      const svg = e.currentTarget.ownerSVGElement;
-                                      const ctm = svg?.getScreenCTM();
+                                {/* Mode Pen Tool: hover sisi memunculkan tanda `+` dan klik menyisipkan titik baru */}
+                                {canInsertVertex && (
+                                  <>
+                                    <line
+                                      x1={from.x}
+                                      y1={from.y}
+                                      x2={to.x}
+                                      y2={to.y}
+                                      stroke="transparent"
+                                      strokeWidth={14}
+                                      strokeLinecap="round"
+                                      style={{ cursor: "crosshair" }}
+                                      className="pointer-events-auto"
+                                      onMouseMove={(e: ReactMouseEvent<SVGLineElement>) => {
+                                        const svg = e.currentTarget.ownerSVGElement;
+                                        const ctm = svg?.getScreenCTM();
+                                        if (!svg || !ctm) return;
 
-                                      if (!svg || !ctm) return;
+                                        const cursor = svg.createSVGPoint();
+                                        cursor.x = e.clientX;
+                                        cursor.y = e.clientY;
+                                        const local = cursor.matrixTransform(ctm.inverse());
 
-                                      const cursor = svg.createSVGPoint();
-                                      cursor.x = e.clientX;
-                                      cursor.y = e.clientY;
-                                      const local = cursor.matrixTransform(ctm.inverse());
+                                        const dx = to.x - from.x;
+                                        const dy = to.y - from.y;
+                                        const lenSq = dx * dx + dy * dy;
+                                        const t =
+                                          lenSq === 0
+                                            ? 0.5
+                                            : Math.max(
+                                                0,
+                                                Math.min(
+                                                  1,
+                                                  ((local.x - from.x) * dx + (local.y - from.y) * dy) / lenSq
+                                                )
+                                              );
 
-                                      const dx = to.x - from.x;
-                                      const dy = to.y - from.y;
-                                      const lengthSquared = dx * dx + dy * dy;
-                                      const t =
-                                        lengthSquared === 0
-                                          ? 0
-                                          : Math.max(
-                                              0,
-                                              Math.min(
-                                                1,
-                                                ((local.x - from.x) * dx +
-                                                  (local.y - from.y) * dy) /
-                                                  lengthSquared
-                                              )
-                                            );
+                                        if (t < 0.04 || t > 0.96) {
+                                          setEdgeHover(null);
+                                          return;
+                                        }
 
-                                      // Terlalu dekat ujung sisi: menyisipkan di sini
-                                      // hanya membuat simpul ganda yang menumpuk.
-                                      if (t < 0.04 || t > 0.96) {
-                                        setEdgeHover(null);
-                                        return;
-                                      }
-
-                                      const point = {
-                                        x: from.x + t * dx,
-                                        y: from.y + t * dy,
-                                      };
-
-                                      setEdgeHover({
-                                        facetId: facet.id,
-                                        edgeIdx,
-                                        point,
-                                        localPoint: {
-                                          x: (point.x - polyWidth / 2) / pixelsPerMeter,
-                                          y: (point.y - polyHeight / 2) / pixelsPerMeter,
-                                        },
-                                      });
-                                    }}
-                                    onMouseLeave={() =>
-                                      setEdgeHover((prev) =>
-                                        prev !== null &&
-                                        prev.facetId === facet.id &&
-                                        prev.edgeIdx === edgeIdx
-                                          ? null
-                                          : prev
-                                      )
-                                    }
-                                    onClick={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => {
-                                      // Titik sisip diambil dari penanda `+` yang sedang
-                                      // tampil; bila kursor berada di ujung sisi, jatuh ke
-                                      // titik tengah supaya simpul tetap tersisip di sisi.
-                                      const insertAt =
-                                        hoveredEdge?.localPoint ?? {
-                                          x:
-                                            ((from.x + to.x) / 2 - polyWidth / 2) /
-                                            pixelsPerMeter,
-                                          y:
-                                            ((from.y + to.y) / 2 - polyHeight / 2) /
-                                            pixelsPerMeter,
+                                        const point = {
+                                          x: from.x + t * dx,
+                                          y: from.y + t * dy,
                                         };
+                                        setEdgeHover({
+                                          facetId: facet.id,
+                                          edgeIdx,
+                                          point,
+                                          localPoint: {
+                                            x: (point.x - polyWidth / 2) / pixelsPerMeter,
+                                            y: (point.y - polyHeight / 2) / pixelsPerMeter,
+                                          },
+                                        });
+                                      }}
+                                      onMouseLeave={() =>
+                                        setEdgeHover((prev) =>
+                                          prev !== null &&
+                                          prev.facetId === facet.id &&
+                                          prev.edgeIdx === edgeIdx
+                                            ? null
+                                            : prev
+                                        )
+                                      }
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const insertPt = hoveredEdge?.localPoint ?? {
+                                          x: ((from.x + to.x) / 2 - polyWidth / 2) / pixelsPerMeter,
+                                          y: ((from.y + to.y) / 2 - polyHeight / 2) / pixelsPerMeter,
+                                        };
+                                        insertVertexOnEdge(facet.id, edgeIdx, insertPt);
+                                      }}
+                                    />
 
-                                      startEdgeDrag(
-                                        e,
-                                        facet.id,
-                                        edgeIdx,
-                                        insertAt,
-                                        canResizeEdge ? "resize" : "insert"
-                                      );
-                                    }}
-                                  />
+                                    {hoveredEdge?.point && (
+                                      <g className="pointer-events-none">
+                                        <circle
+                                          cx={hoveredEdge.point.x}
+                                          cy={hoveredEdge.point.y}
+                                          r={9}
+                                          fill="#ffffff"
+                                          fillOpacity={0.92}
+                                          stroke="#0ea5e9"
+                                          strokeWidth={1.6}
+                                          strokeDasharray="3 2"
+                                          className="drop-shadow-sm"
+                                        />
+                                        <line
+                                          x1={hoveredEdge.point.x - 4}
+                                          y1={hoveredEdge.point.y}
+                                          x2={hoveredEdge.point.x + 4}
+                                          y2={hoveredEdge.point.y}
+                                          stroke="#0369a1"
+                                          strokeWidth={2}
+                                          strokeLinecap="round"
+                                        />
+                                        <line
+                                          x1={hoveredEdge.point.x}
+                                          y1={hoveredEdge.point.y - 4}
+                                          x2={hoveredEdge.point.x}
+                                          y2={hoveredEdge.point.y + 4}
+                                          stroke="#0369a1"
+                                          strokeWidth={2}
+                                          strokeLinecap="round"
+                                        />
+                                      </g>
+                                    )}
+                                  </>
                                 )}
-                                {canAddVertex && hoveredEdge !== null && (
-                                  <g className="pointer-events-none">
-                                    <circle
-                                      cx={hoveredEdge.point.x}
-                                      cy={hoveredEdge.point.y}
-                                      r={9}
-                                      fill="#0ea5e9"
-                                      fillOpacity={0.2}
-                                      stroke="#0ea5e9"
-                                      strokeWidth={1.5}
-                                      strokeDasharray="3 2"
-                                    />
+
+                                {/*
+                                  Mode Edit Poligon: seret garis atau kotak di tengah sisi
+                                  untuk menggeser sisi & mengubah ukuran poligon (tanpa tambah simpul).
+                                */}
+                                {canResizeEdge && (
+                                  <>
                                     <line
-                                      x1={hoveredEdge.point.x - 4}
-                                      y1={hoveredEdge.point.y}
-                                      x2={hoveredEdge.point.x + 4}
-                                      y2={hoveredEdge.point.y}
-                                      stroke="#0369a1"
-                                      strokeWidth={2.2}
+                                      x1={from.x}
+                                      y1={from.y}
+                                      x2={to.x}
+                                      y2={to.y}
+                                      stroke="transparent"
+                                      strokeWidth={14}
                                       strokeLinecap="round"
+                                      style={{ cursor: "grab" }}
+                                      className="pointer-events-auto"
+                                      onMouseEnter={() =>
+                                        setEdgeHover({ facetId: facet.id, edgeIdx })
+                                      }
+                                      onMouseLeave={() =>
+                                        setEdgeHover((prev) =>
+                                          prev !== null &&
+                                          prev.facetId === facet.id &&
+                                          prev.edgeIdx === edgeIdx
+                                            ? null
+                                            : prev
+                                        )
+                                      }
+                                      onClick={(e) => e.stopPropagation()}
+                                      onMouseDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
                                     />
-                                    <line
-                                      x1={hoveredEdge.point.x}
-                                      y1={hoveredEdge.point.y - 4}
-                                      x2={hoveredEdge.point.x}
-                                      y2={hoveredEdge.point.y + 4}
-                                      stroke="#0369a1"
-                                      strokeWidth={2.2}
-                                      strokeLinecap="round"
-                                    />
-                                  </g>
+
+                                    {/* Kotak tarik di tengah garis saat di-hover atau sedang diseret */}
+                                    {isEdgeHovered && (
+                                      <g
+                                        transform={`translate(${midX}, ${midY}) rotate(${edgeAngleDeg})`}
+                                        className="pointer-events-auto"
+                                        style={{ cursor: "ns-resize" }}
+                                        onMouseEnter={() =>
+                                          setEdgeHover({ facetId: facet.id, edgeIdx })
+                                        }
+                                        onMouseLeave={() =>
+                                          setEdgeHover((prev) =>
+                                            prev !== null &&
+                                            prev.facetId === facet.id &&
+                                            prev.edgeIdx === edgeIdx
+                                              ? null
+                                              : prev
+                                          )
+                                        }
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
+                                      >
+                                        <rect
+                                          x="-6"
+                                          y="-6"
+                                          width="12"
+                                          height="12"
+                                          rx="2.5"
+                                          fill="#ffffff"
+                                          stroke="#0284c7"
+                                          strokeWidth="2"
+                                          className="drop-shadow-sm"
+                                        />
+                                        <line
+                                          x1="-3"
+                                          y1="0"
+                                          x2="3"
+                                          y2="0"
+                                          stroke="#0284c7"
+                                          strokeWidth="1.5"
+                                          strokeLinecap="round"
+                                        />
+                                      </g>
+                                    )}
+                                  </>
                                 )}
                               </g>
                             );
@@ -5859,46 +6409,50 @@ function StudioPageContent() {
                         </g>
                       )}
 
-                      {/* Simpul poligon hanya ditampilkan pada mode edit bentuk agar tampilan default bersih. */}
+                      {/* Simpul poligon tampil pada mode edit_polygon, pen, delete_vertex, dan measure (read-only pada mode measure). */}
                       {(isSelected || isActive) &&
                         (cadTool === "edit_polygon" ||
                           cadTool === "pen" ||
-                          cadTool === "delete_vertex") && (
-                        <g className="pointer-events-auto">
+                          cadTool === "delete_vertex" ||
+                          cadTool === "measure") && (
+                        <g className={cadTool === "measure" ? "pointer-events-none" : "pointer-events-auto"}>
                           {facetPoints.map((point, vertexIdx) => {
                             const isDeleteMode = cadTool === "delete_vertex";
+                            const isReadOnlyVertex = cadTool === "measure";
                             const canDeleteVertex = isDeleteMode && facetVerts.length > 3;
 
                             return (
                               <g key={`vertex-${facet.id}-${vertexIdx}`}>
-                                <circle
-                                  cx={point.x}
-                                  cy={point.y}
-                                  r={isDeleteMode ? 10 : 9}
-                                  fill="transparent"
-                                  style={{ cursor: isDeleteMode ? "pointer" : "grab" }}
-                                  onMouseDown={
-                                    isDeleteMode
-                                      ? undefined
-                                      : (e) => startVertexDrag(e, facet.id, vertexIdx)
-                                  }
-                                  onClick={
-                                    canDeleteVertex
-                                      ? (e) => {
-                                          e.stopPropagation();
-                                          deleteVertex(vertexIdx, facet.id);
-                                        }
-                                      : undefined
-                                  }
-                                  onDoubleClick={
-                                    isDeleteMode
-                                      ? undefined
-                                      : (e) => {
-                                          e.stopPropagation();
-                                          deleteVertex(vertexIdx, facet.id);
-                                        }
-                                  }
-                                />
+                                {!isReadOnlyVertex && (
+                                  <circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={isDeleteMode ? 10 : 9}
+                                    fill="transparent"
+                                    style={{ cursor: isDeleteMode ? "pointer" : "grab" }}
+                                    onMouseDown={
+                                      isDeleteMode
+                                        ? undefined
+                                        : (e) => startVertexDrag(e, facet.id, vertexIdx)
+                                    }
+                                    onClick={
+                                      canDeleteVertex
+                                        ? (e) => {
+                                            e.stopPropagation();
+                                            deleteVertex(vertexIdx, facet.id);
+                                          }
+                                        : undefined
+                                    }
+                                    onDoubleClick={
+                                      isDeleteMode
+                                        ? undefined
+                                        : (e) => {
+                                            e.stopPropagation();
+                                            deleteVertex(vertexIdx, facet.id);
+                                          }
+                                    }
+                                  />
+                                )}
                                 <circle
                                   cx={point.x}
                                   cy={point.y}
@@ -5921,8 +6475,8 @@ function StudioPageContent() {
                       )}
                     </svg>
 
-                    {/* Top Ridge Tag (Scaled cleanly without clutter - rectangular roofs only) */}
-                    {isSelected && facet.shape === "rectangle" && (
+                    {/* Top Ridge Tag (Scaled cleanly without clutter - rectangular roofs only, hidden in measure mode) */}
+                    {isSelected && cadTool !== "measure" && facet.shape === "rectangle" && (
                       <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-sm flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-25">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                         <span className="font-code-metric text-[10px] font-bold text-slate-900">
@@ -5934,8 +6488,8 @@ function StudioPageContent() {
                       </div>
                     )}
 
-                    {/* Right Slope Tag (Scaled cleanly without clutter - rectangular roofs only) */}
-                    {isSelected && facet.shape === "rectangle" && (
+                    {/* Right Slope Tag (Scaled cleanly without clutter - rectangular roofs only, hidden in measure mode) */}
+                    {isSelected && cadTool !== "measure" && facet.shape === "rectangle" && (
                       <div className="absolute -right-20 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-full bg-white/95 text-slate-800 shadow-sm flex items-center gap-1.5 pointer-events-none border border-slate-200/90 backdrop-blur-md whitespace-nowrap z-25">
                         <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
                         <span className="font-code-metric text-[10px] font-bold text-slate-900">
@@ -5990,7 +6544,9 @@ function StudioPageContent() {
                                   setActiveFacetId(facet.id);
                                 }
                               }}
-                              className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden pointer-events-auto ${
+                              className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden ${
+                                cadTool === "pen" ? "pointer-events-none" : "pointer-events-auto"
+                              } ${
                                 obstacleBrush ? "cursor-crosshair ring-1 ring-amber-300" : "cursor-pointer"
                               } ${
                                 state === "active"
@@ -6046,6 +6602,60 @@ function StudioPageContent() {
                       </div>
                     )}
 
+                    {/* Label Panjang Garis Poligon di Lapisan Teratas (z-30) & Digeser Keluar Bidang agar Tidak Tertutup Panel */}
+                    {(isSelected || isActive) &&
+                      (cadTool === "edit_polygon" || cadTool === "pen" || cadTool === "measure") &&
+                      facetPoints.length >= 3 && (() => {
+                        let signedArea = 0;
+                        for (let i = 0; i < facetPoints.length; i++) {
+                          const p1 = facetPoints[i];
+                          const p2 = facetPoints[(i + 1) % facetPoints.length];
+                          signedArea += p1.x * p2.y - p2.x * p1.y;
+                        }
+                        const outSign = signedArea >= 0 ? 1 : -1;
+                        const minEdgeM = cadTool === "measure" ? 0.2 : 1;
+
+                        return (
+                          <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none z-30">
+                            {facetPoints.map((from, edgeIdx) => {
+                              const to = facetPoints[(edgeIdx + 1) % facetPoints.length];
+                              const pxLen = Math.hypot(to.x - from.x, to.y - from.y);
+                              const edgeLenM = pxLen / pixelsPerMeter;
+                              if (edgeLenM < minEdgeM || pxLen < 1) return null;
+
+                              const midX = (from.x + to.x) / 2;
+                              const midY = (from.y + to.y) / 2;
+                              // Normal luar poligon berbasis arah putaran simpul (selalu keluar bidang)
+                              const nx = ((to.y - from.y) / pxLen) * outSign;
+                              const ny = (-(to.x - from.x) / pxLen) * outSign;
+                              const outwardPx = 14;
+
+                              return (
+                                <text
+                                  key={`dim-out-${facet.id}-${edgeIdx}`}
+                                  x={midX + nx * outwardPx}
+                                  y={midY + ny * outwardPx}
+                                  textAnchor="middle"
+                                  dominantBaseline="central"
+                                  fill="#ffffff"
+                                  fontSize="10"
+                                  fontFamily="ui-sans-serif, system-ui, -apple-system, sans-serif"
+                                  fontWeight="700"
+                                  letterSpacing="0.02em"
+                                  stroke="#0f172a"
+                                  strokeWidth="2.4"
+                                  strokeLinejoin="round"
+                                  paintOrder="stroke"
+                                >
+                                  {edgeLenM.toFixed(1)}
+                                  <tspan dx="2.5" fontSize="9" fontWeight="600">m</tspan>
+                                </text>
+                              );
+                            })}
+                          </svg>
+                        );
+                      })()}
+
                     {/* Mode Kontur Atap: Sleek Minimalist Dark Badge (Sesuai Desain: [🏠] 24 m²) */}
                     {facet.isSolarPopulated === false && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-25">
@@ -6078,7 +6688,11 @@ function StudioPageContent() {
 
                     {/* Single Clean Floating Array Capacity Badge */}
                     {isSelected && cadTool !== "measure" && (
-                      <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/90 text-white shadow-sm border border-white/20 backdrop-blur-md flex items-center gap-1.5 pointer-events-none whitespace-nowrap z-25 text-[10px]">
+                      <div
+                        className={`absolute left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-900/90 text-white shadow-sm border border-white/20 backdrop-blur-md flex items-center gap-1.5 pointer-events-none whitespace-nowrap z-25 text-[10px] ${
+                          cadTool === "edit_polygon" || cadTool === "pen" ? "-bottom-9" : "-bottom-6"
+                        }`}
+                      >
                         {facet.isSolarPopulated === false ? (
                           <>
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
@@ -6099,107 +6713,77 @@ function StudioPageContent() {
                       </div>
                     )}
 
-                    {/* CAD Measure Overview (Edge Dimensions & Radiant Soft Glow Specs Card) */}
+                    {/* CAD Measure Overview Card (Apple Glass + Soft Radiant Glow, zero pill edge clutter) */}
                     {isSelected && cadTool === "measure" && (() => {
-                      const shapeLabel =
-                        facet.shape === "rectangle"
-                          ? "Persegi"
-                          : facet.shape === "trapezoid"
-                          ? "Trapesium / Limas"
-                          : facet.shape === "l-shape"
-                          ? "Bentuk L"
-                          : facet.shape === "custom_polygon"
-                          ? `Poligon Bebas (${facetVerts.length} Titik)`
-                          : `Bentuk ${facet.shape}`;
                       const totalPerimeter = polygonPerimeter(facetVerts);
 
                       return (
-                        <>
-                          {/* 1. Subtle, Sleek Edge Length Badges along Perimeter */}
-                          {facetVerts.map((v1, idx) => {
-                            const v2 = facetVerts[(idx + 1) % facetVerts.length];
-                            const mx = polyWidth / 2 + ((v1.x + v2.x) / 2) * pixelsPerMeter;
-                            const my = polyHeight / 2 + ((v1.y + v2.y) / 2) * pixelsPerMeter;
-                            const edgeLen = Math.hypot(v2.x - v1.x, v2.y - v1.y);
-                            return (
-                              <div
-                                key={`cad-edge-${idx}`}
-                                className="absolute -translate-x-1/2 -translate-y-1/2 z-35 pointer-events-none"
-                                style={{ left: `${mx}px`, top: `${my}px` }}
-                              >
-                                <span className="px-1.5 py-0.5 rounded-full bg-white/95 text-slate-800 border border-amber-300/80 shadow-2xs font-mono text-[8.5px] font-bold whitespace-nowrap backdrop-blur-md">
-                                  {edgeLen.toFixed(1)}m
-                                </span>
-                              </div>
-                            );
-                          })}
-
-                          {/* 2. Streamlined, Non-Overwhelming CAD Dimension Card */}
-                          <div
-                            className="absolute top-[calc(100%+20px)] left-1/2 -translate-x-1/2 z-40 w-72 p-3.5 rounded-2xl bg-white/95 backdrop-blur-xl border border-amber-200/90 shadow-[0_8px_30px_rgba(245,158,11,0.14),0_2px_8px_rgba(0,0,0,0.04)] text-slate-800 pointer-events-auto animate-fadeIn select-none"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {/* Card Header */}
-                            <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-5 h-5 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
-                                  <span className="material-symbols-outlined text-[13px]">architecture</span>
-                                </span>
-                                <span className="font-title text-xs font-bold text-slate-900 truncate">
-                                  {facet.name}
-                                </span>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[8.5px] font-bold font-code-metric shrink-0">
-                                {fMetrics.grossArea.toFixed(1)} m²
+                        <div
+                          className="absolute top-[calc(100%+18px)] left-1/2 -translate-x-1/2 z-40 w-64 p-3.5 rounded-2xl bg-white/82 bg-gradient-to-br from-white/92 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(245,158,11,0.16),0_4px_14px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 pointer-events-auto animate-fadeIn select-none"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Header: Nama Bidang & Jumlah Titik */}
+                          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-900/[0.06]">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-100 to-yellow-100 text-amber-700 flex items-center justify-center shrink-0 shadow-[inset_0_1px_1px_rgba(255,255,255,0.8)]">
+                                <span className="material-symbols-outlined text-[14px]">architecture</span>
+                              </span>
+                              <span className="text-[12.5px] font-semibold text-slate-900 tracking-tight truncate">
+                                {facet.name}
                               </span>
                             </div>
+                            <span className="text-[11px] font-medium text-slate-400 shrink-0 tabular-nums">
+                              {facetVerts.length} titik
+                            </span>
+                          </div>
 
-                            {/* Hero Area Display (Shoelace Polygon Method) */}
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-50/70 via-white to-emerald-50/40 border border-amber-200/60 mb-2">
-                              <div className="flex items-baseline justify-between text-[9px] font-bold">
-                                <span className="text-slate-500 uppercase tracking-wider">Luas Riil Poligon</span>
-                                <span className="text-emerald-800 font-code-metric">Efektif: {fMetrics.netArea.toFixed(1)} m²</span>
-                              </div>
+                          {/* Hero Metric: Luas Atap & Area Efektif */}
+                          <div className="flex items-end justify-between gap-2 py-2.5">
+                            <div>
+                              <span className="text-[11px] font-medium text-slate-500 block">
+                                Luas atap
+                              </span>
                               <div className="flex items-baseline gap-1 mt-0.5">
-                                <span className="font-title text-xl font-extrabold text-slate-900 font-code-metric">
+                                <span className="text-[22px] leading-none font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                                   {fMetrics.grossArea.toFixed(1)}
                                 </span>
-                                <span className="text-xs font-bold text-slate-500">m²</span>
+                                <span className="text-xs font-medium text-slate-400">m²</span>
                               </div>
-                              <span className="text-[8.5px] text-slate-400 block mt-0.5">
-                                Dihitung presisi dari {facetVerts.length} titik koordinat bidang
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10.5px] text-slate-400 block">Efektif</span>
+                              <span className="text-[12.5px] font-semibold text-emerald-700 font-code-metric tabular-nums">
+                                {fMetrics.netArea.toFixed(1)} m²
                               </span>
                             </div>
+                          </div>
 
-                            {/* 2-Column Minimal Dimension Grid */}
-                            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                              <div className="bg-[#FAF9F5] p-2 rounded-xl border border-amber-150">
-                                <span className="text-slate-400 block text-[8px] font-bold uppercase tracking-wider">Total Keliling</span>
-                                <span className="font-bold text-slate-800 font-code-metric text-[11px] block mt-0.5">
-                                  {totalPerimeter.toFixed(1)} m
-                                </span>
-                                <span className="text-[8px] text-slate-400">Keliling batas atap</span>
-                              </div>
-
-                              <div className="bg-[#FAF9F5] p-2 rounded-xl border border-amber-150">
-                                <span className="text-slate-400 block text-[8px] font-bold uppercase tracking-wider">Bentang Rentang</span>
-                                <span className="font-bold text-slate-800 font-code-metric text-[11px] block mt-0.5">
-                                  {bounds.width.toFixed(1)}m × {bounds.height.toFixed(1)}m
-                                </span>
-                                <span className="text-[8px] text-slate-400">Span terluar bidang</span>
-                              </div>
+                          {/* Grouped Dimensions Strip (Single inset surface, zero nested boxes) */}
+                          <div className="grid grid-cols-2 divide-x divide-slate-900/[0.07] rounded-xl bg-slate-900/[0.04] py-2">
+                            <div className="px-2.5">
+                              <span className="text-[10.5px] text-slate-500 block">Keliling</span>
+                              <span className="text-[12.5px] font-semibold text-slate-900 font-code-metric tabular-nums">
+                                {totalPerimeter.toFixed(1)} m
+                              </span>
                             </div>
-
-                            {/* Compact Parameter Footnote */}
-                            <div className="flex items-center justify-between text-[9px] text-slate-500 pt-2 mt-2 border-t border-slate-100 font-code-metric">
-                              <span>Setback: {(facet.setback || 0.5).toFixed(1)}m</span>
-                              <span>•</span>
-                              <span>Celah: {((facet.panelGap ?? 0.02) * 100).toFixed(0)}cm</span>
-                              <span>•</span>
-                              <span className="font-bold text-amber-900">{fMetrics.modulesFitted} Modul ({fMetrics.actualKwp.toFixed(1)} kWp)</span>
+                            <div className="px-2.5">
+                              <span className="text-[10.5px] text-slate-500 block">Dimensi</span>
+                              <span className="text-[12.5px] font-semibold text-slate-900 font-code-metric tabular-nums">
+                                {bounds.width.toFixed(1)} × {bounds.height.toFixed(1)} m
+                              </span>
                             </div>
                           </div>
-                        </>
+
+                          {/* Quiet Parameter Summary */}
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2.5 mt-2.5 border-t border-slate-900/[0.06] font-code-metric">
+                            <span>
+                              Setback {(facet.setback ?? 0.5).toFixed(1)}m · Celah {Math.round(facet.panelGap ?? 3)}cm
+                            </span>
+                            <span className="font-semibold text-amber-800">
+                              {fMetrics.modulesFitted} panel ({fMetrics.actualKwp.toFixed(1)} kWp)
+                            </span>
+                          </div>
+                        </div>
                       );
                     })()}
                   </div>
@@ -6263,63 +6847,38 @@ function StudioPageContent() {
               <span className="material-symbols-outlined text-[19px]">near_me</span>
             </button>
 
-            {/* 2. Edit Polygon / Vertices */}
+            {/* 2. Edit Polygon / Vertices & Edges */}
             <button
               type="button"
               onClick={() => {
                 setCadTool("edit_polygon");
                 setActiveTab("geometry");
-                showToast("Mode Edit Simpul aktif — seret titik, atau klik + pada sisi untuk menambah simpul");
+                showToast("Mode Edit Poligon aktif — seret titik sudut atau kotak di tengah sisi untuk ubah ukuran");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "edit_polygon"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
-              title="Edit Bentuk & Simpul Poligon"
+              title="Edit Poligon: Seret Titik Sudut atau Tengah Garis"
             >
               <span className="material-symbols-outlined text-[19px]">polyline</span>
             </button>
 
-            {/* 3. Resize Edge Tool (Ubah Ukuran dengan Menarik Sisi) */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextTool = cadTool === "resize_edge" ? "select" : "resize_edge";
-                setCadTool(nextTool);
-                if (nextTool === "resize_edge") {
-                  setActiveTab("geometry");
-                }
-                showToast(
-                  nextTool === "resize_edge"
-                    ? "Mode Ubah Ukuran aktif — seret sisi untuk menggeser dua simpulnya sekaligus"
-                    : "Mode Ubah Ukuran dinonaktifkan"
-                );
-              }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
-                cadTool === "resize_edge"
-                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
-              }`}
-              title="Ubah Ukuran: Geser Sisi (2 Simpul Sekaligus)"
-            >
-              <span className="material-symbols-outlined text-[19px]">open_with</span>
-            </button>
-
-            {/* 4. Pen Tool (Custom Polygon Point-by-Point) */}
+            {/* 3. Pen Tool (Custom Polygon Point-by-Point) */}
             <button
               type="button"
               onClick={() => {
                 setCadTool("pen");
                 setPenPoints([]);
-                showToast("Mode Pen Tool aktif");
+                showToast("Mode Pen Tool aktif — klik peta untuk membuat titik & panjang sisi poligon");
               }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "pen"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
-              title="Pen Tool: Gambar Poligon Bebas"
+              title="Pen Tool: Gambar Poligon Baru & Panjang Garis"
             >
               <span className="material-symbols-outlined text-[19px]">edit</span>
             </button>
@@ -6395,7 +6954,7 @@ function StudioPageContent() {
             {/* Divider */}
             <div className="w-5 h-px bg-slate-200 my-0.5" />
 
-            {/* 8. Panduan Studio bersama Sunny (Ikon '?' + Indikator Status) */}
+            {/* 8. Panduan Studio bersama Sunny */}
             <button
               type="button"
               onClick={() => {
@@ -6410,24 +6969,13 @@ function StudioPageContent() {
                   ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] font-bold"
                   : "bg-white/90 text-slate-700 hover:bg-amber-50/70 hover:text-amber-900"
               }`}
-              title={
-                studioGuideCompleted
-                  ? "Panduan Studio sudah dilewati • Klik untuk buka ulang"
-                  : "Panduan Studio bersama Sunny (Belum dilewati)"
-              }
+              title="Panduan Studio bersama Sunny"
               aria-label="Panduan Studio"
             >
               <span className="material-symbols-outlined text-[19px] text-amber-700 font-bold">
                 help
               </span>
-              {studioGuideCompleted ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white border border-white flex items-center justify-center shadow-[0_1px_6px_rgba(16,185,129,0.35)]"
-                >
-                  <span className="material-symbols-outlined text-[9px] font-bold leading-none">check</span>
-                </span>
-              ) : (
+              {!studioGuideCompleted && (
                 <span
                   aria-hidden="true"
                   className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gradient-to-r from-amber-300 to-yellow-400 ring-2 ring-white shadow-[0_0_8px_rgba(251,191,36,0.75)] animate-pulse"
@@ -6439,7 +6987,6 @@ function StudioPageContent() {
           {/* Interactive Studio Mascot Guide (Sunny) */}
           <StudioMascotGuide
             isOpen={mascotGuideOpen}
-            isCompleted={studioGuideCompleted}
             onOpen={() => setMascotGuideOpen(true)}
             onClose={closeStudioGuide}
             onPopulateActiveFacet={() => {
@@ -6467,11 +7014,11 @@ function StudioPageContent() {
         </div>
 
         {/* =======================================================
-            RIGHT: INSPECTOR & PARAMETER STUDIO
+            RIGHT: INSPECTOR & PARAMETER STUDIO (Apple Glass + Soft Radiant Glow)
             ======================================================= */}
         <div
           id="studio-sidebar-inspector"
-          className={`relative h-[45vh] lg:h-full shrink-0 bg-white border-l border-slate-200 shadow-[-4px_0_16px_rgba(15,23,42,0.03)] z-30 transition-all duration-300 overflow-visible flex flex-col ${
+          className={`relative h-[45vh] lg:h-full shrink-0 bg-white/82 bg-gradient-to-b from-white/92 via-amber-50/20 to-sky-50/25 backdrop-blur-2xl saturate-150 border-l border-white/85 shadow-[-8px_0_32px_rgba(15,23,42,0.06)] z-30 transition-all duration-300 overflow-visible flex flex-col ${
             rightPanelOpen ? "w-full lg:w-[380px]" : "w-full lg:w-0"
           }`}
         >
@@ -6479,7 +7026,7 @@ function StudioPageContent() {
           <button
             type="button"
             onClick={() => setRightPanelOpen((prev) => !prev)}
-            className="absolute -left-7 top-1/2 -translate-y-1/2 w-7 h-14 bg-white border border-slate-200 border-r-0 rounded-l-lg shadow-[-2px_0_8px_rgba(0,0,0,0.04)] hidden lg:flex items-center justify-center text-slate-400 hover:text-amber-600 transition-colors z-40 cursor-pointer"
+            className="absolute -left-7 top-1/2 -translate-y-1/2 w-7 h-14 bg-white/88 backdrop-blur-xl border border-white/90 border-r-0 rounded-l-xl shadow-[-4px_0_16px_rgba(15,23,42,0.08)] hidden lg:flex items-center justify-center text-slate-400 hover:text-amber-700 transition-colors z-40 cursor-pointer"
             aria-label="Toggle Panel"
           >
             <span className="material-symbols-outlined text-[20px]">
@@ -6487,10 +7034,10 @@ function StudioPageContent() {
             </span>
           </button>
 
-          <div className="w-full lg:w-[380px] shrink-0 h-full flex flex-col overflow-hidden bg-[#FAF9F5]">
-            {/* Eco-Forest Diorama & Ribbon */}
-            <div className="p-3 pb-2.5 bg-white/80 border-b border-amber-200/50 shrink-0">
-              <div className="relative w-full h-28 rounded-xl bg-gradient-to-b from-sky-200/90 via-sky-100/60 to-emerald-100/80 border border-sky-200/80 overflow-hidden shadow-inner flex flex-col justify-between p-2">
+          <div className="w-full lg:w-[380px] shrink-0 h-full flex flex-col overflow-hidden bg-transparent">
+            {/* Eco-Forest Diorama & Compact Glass Metrics */}
+            <div className="p-3 pb-2.5 bg-white/55 border-b border-slate-200/60 shrink-0">
+              <div className="relative w-full h-26 rounded-2xl bg-gradient-to-b from-sky-200/85 via-sky-100/55 to-emerald-100/80 border border-white/90 overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.85),0_4px_14px_rgba(15,23,42,0.04)] flex flex-col justify-between p-2.5">
                 <div className="relative z-10 w-full">
                   {roiHoverYear !== null ? (
                     <div>
@@ -6652,247 +7199,222 @@ function StudioPageContent() {
 
               </div>
 
-              {/* Metrics Ribbon */}
-              <div className="grid grid-cols-4 divide-x divide-amber-200/60 bg-white rounded-2xl border border-amber-200/50 shadow-2xs py-2 px-0.5 mt-2">
+              {/* Minimal Metrics Ribbon (Frosted Glass) */}
+              <div className="grid grid-cols-4 divide-x divide-slate-200/70 bg-white/80 backdrop-blur-md rounded-2xl border border-white/95 shadow-[0_2px_10px_rgba(15,23,42,0.04),inset_0_1px_1px_rgba(255,255,255,0.9)] py-2 px-0.5 mt-2">
                 <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kapasitas</span>
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Kapasitas</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-extrabold text-slate-900 tracking-tight">
+                    <span className="text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
                       {calc.actualKwp.toFixed(1)}
                     </span>
-                    <span className="text-[10px] font-bold text-amber-600">kWp</span>
+                    <span className="text-[9.5px] font-semibold text-amber-700">kWp</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Produksi</span>
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Produksi</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-extrabold text-slate-900 tracking-tight">
+                    <span className="text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
                       {(calc.annualProductionKwh / 1000).toFixed(1)}
                     </span>
-                    <span className="text-[10px] font-bold text-slate-500">MWh</span>
+                    <span className="text-[9.5px] font-semibold text-slate-500">MWh</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hemat/Bln</span>
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Hemat/Bln</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-extrabold text-emerald-600 tracking-tight">
+                    <span className="text-[13px] font-bold text-emerald-700 tracking-tight font-code-metric">
                       {(calc.cappedSaving / 1_000_000).toFixed(2)}M
                     </span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Payback</span>
+                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Payback</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-extrabold text-amber-600 tracking-tight">
+                    <span className="text-[13px] font-bold text-amber-800 tracking-tight font-code-metric">
                       {calc.paybackYears ? calc.paybackYears.toFixed(1) : "—"}
                     </span>
-                    <span className="text-[10px] font-bold text-slate-500">Thn</span>
+                    <span className="text-[9.5px] font-semibold text-slate-500">Thn</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Navigation Tabs (Unified Soft Amber Pills) */}
-            <div className="grid grid-cols-3 bg-[#FAF9F5] border-b border-amber-200/50 p-2 gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setActiveTab("geometry")}
-                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeTab === "geometry"
-                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
-                }`}
-              >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "geometry" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
-                  1
-                </span>
-                <span>Geometri</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("pvarray")}
-                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeTab === "pvarray"
-                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
-                }`}
-              >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "pvarray" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
-                  2
-                </span>
-                <span>Modul Surya</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("financials")}
-                className={`py-2 px-1 rounded-xl text-center font-title text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  activeTab === "financials"
-                    ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)]"
-                    : "bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/70 font-medium shadow-2xs"
-                }`}
-              >
-                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === "financials" ? "bg-amber-400 text-amber-950" : "bg-slate-100 text-slate-500"}`}>
-                  3
-                </span>
-                <span>Finansial</span>
-              </button>
+            {/* Apple Segmented Control Tabs (Soft Radiant Glow Active) */}
+            <div className="px-3 py-2 bg-white/40 border-b border-slate-200/60 shrink-0">
+              <div className="grid grid-cols-3 p-1 rounded-2xl bg-slate-900/[0.045] gap-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("geometry")}
+                  className={`py-1.5 px-2 rounded-xl text-center font-title text-xs transition-all cursor-pointer ${
+                    activeTab === "geometry"
+                      ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.20),inset_0_1px_1px_rgba(255,255,255,0.9)]"
+                      : "text-slate-600 hover:text-slate-900 font-medium"
+                  }`}
+                >
+                  Geometri
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pvarray")}
+                  className={`py-1.5 px-2 rounded-xl text-center font-title text-xs transition-all cursor-pointer ${
+                    activeTab === "pvarray"
+                      ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.20),inset_0_1px_1px_rgba(255,255,255,0.9)]"
+                      : "text-slate-600 hover:text-slate-900 font-medium"
+                  }`}
+                >
+                  Modul
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("financials")}
+                  className={`py-1.5 px-2 rounded-xl text-center font-title text-xs transition-all cursor-pointer ${
+                    activeTab === "financials"
+                      ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.20),inset_0_1px_1px_rgba(255,255,255,0.9)]"
+                      : "text-slate-600 hover:text-slate-900 font-medium"
+                  }`}
+                >
+                  Finansial
+                </button>
+              </div>
             </div>
 
             {/* TAB PANES */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "geometry" && (
-                <div id="studio-pane-geometry" className="p-4 space-y-4">
-                  {/* Multi-Polygon Facet Switcher Strip */}
-                  <div className="rounded-2xl bg-white/80 p-3 border border-amber-200/50 shadow-2xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[16px] text-amber-600">layers</span>
-                        <span className="font-title text-xs font-bold text-slate-900">
-                          Bidang Atap ({selectedFacetIds.length}/{facets.length})
-                        </span>
-                      </div>
+                <div id="studio-pane-geometry" className="p-3.5 space-y-3">
+                  {/* 1. Multi-Polygon Facet Switcher */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-title text-xs font-semibold text-slate-900">
+                        Bidang Atap <span className="font-code-metric text-slate-400 font-medium">({selectedFacetIds.length}/{facets.length})</span>
+                      </span>
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           disabled={facets.length === 0}
                           onClick={selectedFacetIds.length === facets.length ? unselectAllFacets : selectAllFacets}
-                          className="px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-[10px] font-bold border border-slate-200 transition cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
-                          title={selectedFacetIds.length === facets.length ? "Batal pilih semua bidang" : "Pilih semua bidang atap"}
+                          className="px-2.5 py-1 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 text-[10.5px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {selectedFacetIds.length === facets.length && facets.length > 0 ? "Batal Pilih" : "Pilih Semua"}
                         </button>
                         <button
                           type="button"
                           onClick={addNewFacet}
-                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-95 text-amber-950 text-[10.5px] font-bold flex items-center gap-1 transition shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 cursor-pointer"
+                          className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-95 text-amber-950 text-[10.5px] font-semibold flex items-center gap-1 transition border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)] cursor-pointer"
                           title="Tambah Bidang Atap Baru"
                         >
-                          <span className="material-symbols-outlined text-[14px] text-amber-900">add</span>
-                          <span>Tambah Bidang</span>
+                          <span className="material-symbols-outlined text-[14px]">add</span>
+                          <span>Bidang</span>
                         </button>
                       </div>
                     </div>
 
-                    {/* Horizontal Pill Strip for Facets */}
-                    <div
-                      ref={bindFacetStripScroll}
-                      tabIndex={0}
-                      className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain py-1 px-0.5 focus:outline-none"
-                    >
-                      {facets.map((facet, idx) => {
-                        const isSelected = selectedFacetIds.includes(facet.id);
-                        const isActive = facet.id === activeFacetId;
-                        return (
-                          <div
-                            key={facet.id}
-                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-medium shrink-0 transition-all ${
-                              isSelected
-                                ? isActive
-                                  ? "bg-amber-100/90 text-amber-950 border-amber-300 font-bold shadow-2xs"
-                                  : "bg-amber-50/70 hover:bg-amber-100/70 text-amber-900 border-amber-200/90 font-semibold"
-                                : "bg-white/90 hover:bg-white text-slate-500 border-slate-200/90 opacity-80"
-                            }`}
-                          >
-                            {/* Tombol Centang untuk Multiselect */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleFacetSelection(facet.id);
-                              }}
-                              className={`w-4 h-4 rounded flex items-center justify-center transition-all cursor-pointer ${
-                                isSelected
-                                  ? "bg-amber-500 text-white shadow-2xs hover:bg-amber-600"
-                                  : "border-2 border-slate-300 hover:border-amber-400 bg-white"
-                              }`}
-                              title={isSelected ? "Batalkan centang bidang ini" : "Centang bidang ini untuk multiselect"}
-                            >
-                              {isSelected && (
-                                <span className="material-symbols-outlined text-[12px] font-black">check</span>
-                              )}
-                            </button>
-
-                            {/* Label & Dimensi (Klik untuk fokus aktif ke bidang ini) */}
+                    {facets.length > 0 && (
+                      <div
+                        ref={bindFacetStripScroll}
+                        tabIndex={0}
+                        className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5 focus:outline-none"
+                      >
+                        {facets.map((facet, idx) => {
+                          const isSelected = selectedFacetIds.includes(facet.id);
+                          const isActive = facet.id === activeFacetId;
+                          return (
                             <div
-                              className="flex items-center gap-1.5 cursor-pointer select-none"
-                              onClick={() => {
-                                setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
-                                setActiveFacetId(facet.id);
-                                showToast(`Fokus ke ${facet.name || `Bidang #${idx + 1}`}`);
-                              }}
-                              title="Klik untuk memilih & mengedit parameter bidang ini"
+                              key={facet.id}
+                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] shrink-0 transition-all border ${
+                                isSelected
+                                  ? isActive
+                                    ? "bg-gradient-to-r from-amber-100/95 via-yellow-100/95 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
+                                    : "bg-amber-50/70 text-amber-900 border-amber-200/70 font-medium"
+                                  : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-500 border-transparent"
+                              }`}
                             >
-                              <span className="font-bold text-slate-800">{facet.name || `Bidang #${idx + 1}`}</span>
-                              <span className={`text-[10px] ${isSelected ? "text-amber-800 font-medium" : "text-slate-400"}`}>
-                                ({facet.ridge.toFixed(1)}m × {facet.slope.toFixed(1)}m)
-                              </span>
-                            </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFacetSelection(facet.id);
+                                }}
+                                className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? "bg-amber-500 text-white"
+                                    : "border border-slate-300 bg-white"
+                                }`}
+                                title={isSelected ? "Lepas pilihan" : "Pilih bidang"}
+                              >
+                                {isSelected && (
+                                  <span className="material-symbols-outlined text-[10px] font-bold">check</span>
+                                )}
+                              </button>
 
-                            {facets.length > 1 && (
+                              <button
+                                type="button"
+                                className="flex items-center gap-1 cursor-pointer select-none"
+                                onClick={() => {
+                                  setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
+                                  setActiveFacetId(facet.id);
+                                }}
+                              >
+                                <span className="truncate max-w-[110px]">{facet.name || `Bidang #${idx + 1}`}</span>
+                                <span className="text-[10px] text-slate-400 font-code-metric">
+                                  {facet.ridge.toFixed(1)}×{facet.slope.toFixed(1)}m
+                                </span>
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   deleteFacet(facet.id);
                                 }}
-                                className="p-0.5 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-500 transition ml-0.5 cursor-pointer"
-                                title="Hapus bidang atap ini"
+                                className="w-4 h-4 rounded-full hover:bg-rose-500/15 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
+                                title="Hapus bidang"
                               >
-                                <span className="material-symbols-outlined text-[13px]">delete</span>
+                                <span className="material-symbols-outlined text-[12px]">close</span>
                               </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                    {/* Panduan & daftar bidang kandidat hasil deteksi */}
+                    {/* AI Scan Prompt when empty */}
                     {facets.length === 0 ? (
-                      <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2.5 shadow-2xs">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
-                            <span className="material-symbols-outlined text-[16px]">psychology</span>
-                          </span>
-                          <div>
-                            <span className="font-bold text-slate-900 block text-xs">Deteksi Bidang Atap AI</span>
-                            <span className="text-[10.5px] text-slate-500 block">
-                              Pindai area peta yang tampil atau gambar poligon manual lewat Pen Tool
-                            </span>
-                          </div>
-                        </div>
+                      <div className="pt-1 space-y-2.5">
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          Pindai citra satelit dengan AI atau gambar langsung menggunakan Pen Tool.
+                        </p>
                         <button
                           type="button"
                           onClick={handleRunAiDetection}
                           disabled={isAiScanning}
-                          className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 font-bold text-xs flex items-center justify-center gap-1.5 border border-amber-300/90 shadow-2xs transition cursor-pointer disabled:opacity-60"
+                          className="w-full py-2 px-3 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-semibold text-xs flex items-center justify-center gap-1.5 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.20),inset_0_1px_1px_rgba(255,255,255,0.9)] transition cursor-pointer disabled:opacity-60"
                         >
                           <span className={`material-symbols-outlined text-[16px] ${isAiScanning ? "animate-spin" : ""}`}>
                             {isAiScanning ? "sync" : "radar"}
                           </span>
-                          <span>{isAiScanning ? "Memindai Citra Satelit..." : "Pindai Area Atap AI"}</span>
+                          <span>{isAiScanning ? "Memindai Atap..." : "Pindai Atap AI"}</span>
                         </button>
                         {remainingDetectedRoofs.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200/60">
+                          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
                             {remainingDetectedRoofs.map((detected) => {
                               const isPicked = selectedDetectedIds.includes(detected.id);
-
                               return (
                                 <button
                                   key={detected.id}
                                   type="button"
                                   onClick={() => selectDetectedRoof(detected.id)}
-                                  className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs ${
+                                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition cursor-pointer border ${
                                     isPicked
-                                      ? "bg-amber-400 text-amber-950 border-amber-400"
-                                      : "bg-white hover:bg-amber-100 text-amber-950 border-amber-200"
+                                      ? "bg-amber-200/90 text-amber-950 border-amber-300 font-semibold"
+                                      : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-700 border-transparent"
                                   }`}
-                                  title={`${detected.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(detected.confidence * 100)}%`}
                                 >
-                                  <span className="material-symbols-outlined text-[14px] text-amber-700">
+                                  <span className="material-symbols-outlined text-[13px] text-amber-700">
                                     {isPicked ? "check_circle" : "roofing"}
                                   </span>
                                   <span>{detected.area_sqm.toFixed(1)} m²</span>
-                                  <span className="text-amber-800 text-[10px] font-mono">
+                                  <span className="text-slate-400 font-code-metric text-[10px]">
                                     {Math.round(detected.confidence * 100)}%
                                   </span>
                                 </button>
@@ -6900,23 +7422,15 @@ function StudioPageContent() {
                             })}
                           </div>
                         )}
-                        {detection !== null && detectedRoofs.length === 0 && (
-                          <p className="text-[10.5px] text-slate-500 pt-1 border-t border-amber-200/60">
-                            Model tidak menemukan bidang atap di area ini. Geser peta ke atas atap, lalu pindai ulang.
-                          </p>
-                        )}
                       </div>
                     ) : (
                       selectedFacetIds.length === 0 && (
-                        <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-300/80 text-amber-950 text-xs flex items-center justify-between gap-2 shadow-2xs">
-                          <div className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-amber-600 text-[18px]">info</span>
-                            <span className="text-[11px] font-medium">Belum ada bidang dipilih. Klik centang pada bidang di atas atau klik atap di peta untuk kalkulasi &amp; pohon.</span>
-                          </div>
+                        <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-slate-500">
+                          <span>Pilih bidang untuk kalkulasi sistem.</span>
                           <button
                             type="button"
                             onClick={selectAllFacets}
-                            className="px-2 py-1 rounded-lg bg-amber-300 hover:bg-amber-400 text-amber-950 font-bold text-[10.5px] transition shrink-0 cursor-pointer"
+                            className="text-amber-800 font-semibold hover:underline shrink-0 cursor-pointer"
                           >
                             Pilih Semua
                           </button>
@@ -6924,49 +7438,42 @@ function StudioPageContent() {
                       )
                     )}
 
-                    {/* Bidang kandidat yang belum diterapkan menjadi bidang proyek */}
+                    {/* Pending detected candidates */}
                     {showDetectedRoofs && facets.length > 0 && remainingDetectedRoofs.length > 0 && (
-                      <div className="pt-2 border-t border-amber-100/70 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10.5px] font-bold text-slate-500 block">
-                            Bidang Terdeteksi Belum Diterapkan:
-                          </span>
+                      <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                        <div className="flex items-center justify-between text-[10.5px]">
+                          <span className="font-medium text-slate-500">Kandidat terdeteksi</span>
                           <button
                             type="button"
                             onClick={commitDetectedSelection}
                             disabled={selectedDetectedIds.length === 0}
-                            className={`text-[10.5px] font-bold hover:underline ${
+                            className={`font-semibold ${
                               selectedDetectedIds.length > 0
-                                ? "text-amber-800 cursor-pointer"
+                                ? "text-amber-800 hover:underline cursor-pointer"
                                 : "text-slate-300 cursor-not-allowed"
                             }`}
                           >
-                            Selesai Memilih ✕
+                            Terapkan
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {remainingDetectedRoofs.map((detected) => {
                             const isPicked = selectedDetectedIds.includes(detected.id);
-
                             return (
                               <button
                                 key={detected.id}
                                 type="button"
                                 onClick={() => selectDetectedRoof(detected.id)}
-                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition cursor-pointer border ${
                                   isPicked
-                                    ? "bg-amber-400 text-amber-950 border-amber-400 font-bold"
-                                    : "bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-200/80"
+                                    ? "bg-amber-200/90 text-amber-950 border-amber-300 font-semibold"
+                                    : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-700 border-transparent"
                                 }`}
-                                title={`${detected.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(detected.confidence * 100)}%`}
                               >
-                                <span className="material-symbols-outlined text-[14px] text-amber-700">
+                                <span className="material-symbols-outlined text-[13px] text-amber-700">
                                   {isPicked ? "check_circle" : "roofing"}
                                 </span>
-                                <span className="font-semibold">{detected.area_sqm.toFixed(1)} m²</span>
-                                <span className="text-amber-700 font-mono text-[10px]">
-                                  {Math.round(detected.confidence * 100)}%
-                                </span>
+                                <span>{detected.area_sqm.toFixed(1)} m²</span>
                               </button>
                             );
                           })}
@@ -6975,82 +7482,49 @@ function StudioPageContent() {
                     )}
                   </div>
 
-                  {/* Shape Presets & Polygon Editing */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3.5">
+                  {/* 2. Bentuk, Posisi & Rintangan */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Alat Edit Poligon &amp; Bentuk</span>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold font-code-metric">
+                      <span className="font-title text-xs font-semibold text-slate-900">Bentuk &amp; Posisi</span>
+                      <span className="text-[11px] font-medium text-slate-400">
                         {roofShape === "rectangle"
                           ? "Persegi"
                           : roofShape === "l-shape"
                             ? "Bentuk L"
                             : roofShape === "trapezoid"
                               ? "Limasan"
-                              : "Poligon Bebas"}
+                              : "Bebas"}
                       </span>
                     </div>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setRoofShape("rectangle")}
-                        className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                          roofShape === "rectangle"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
-                        }`}
-                        title="Ubah ke bentuk atap Persegi Panjang standar"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">crop_landscape</span>
-                        <span className="text-[10px] font-bold">Persegi</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRoofShape("l-shape")}
-                        className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                          roofShape === "l-shape"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
-                        }`}
-                        title="Ubah ke bentuk atap Bentuk L bersudut"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">rounded_corner</span>
-                        <span className="text-[10px] font-bold">Bentuk L</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRoofShape("trapezoid")}
-                        className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                          roofShape === "trapezoid"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
-                        }`}
-                        title="Ubah ke bentuk atap Limasan / Trapesium miring"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">change_history</span>
-                        <span className="text-[10px] font-bold">Limasan</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRoofShape("custom_polygon")}
-                        className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center gap-1 cursor-pointer ${
-                          roofShape === "custom_polygon"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
-                        }`}
-                        title="Bebas edit setiap sudut poligon mirip Figma"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">polyline</span>
-                        <span className="text-[10px] font-bold">Bebas</span>
-                      </button>
+
+                    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-slate-900/[0.04]">
+                      {[
+                        { id: "rectangle" as const, icon: "crop_landscape", label: "Persegi" },
+                        { id: "l-shape" as const, icon: "rounded_corner", label: "Bentuk L" },
+                        { id: "trapezoid" as const, icon: "change_history", label: "Limasan" },
+                        { id: "custom_polygon" as const, icon: "polyline", label: "Bebas" },
+                      ].map((shapeOpt) => (
+                        <button
+                          key={shapeOpt.id}
+                          type="button"
+                          onClick={() => setRoofShape(shapeOpt.id)}
+                          className={`py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
+                            roofShape === shapeOpt.id
+                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">{shapeOpt.icon}</span>
+                          <span className="text-[10px]">{shapeOpt.label}</span>
+                        </button>
+                      ))}
                     </div>
 
                     {/* Rotation */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/70">
+                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Rotasi Poligon Atap</span>
-                        <span className="font-code-metric font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px]">
-                          {polygonRotation}°
-                        </span>
+                        <span className="font-medium text-slate-600">Rotasi Poligon</span>
+                        <span className="font-code-metric font-semibold text-slate-900">{polygonRotation}°</span>
                       </div>
                       <input
                         type="range"
@@ -7059,23 +7533,23 @@ function StudioPageContent() {
                         step="1"
                         value={polygonRotation}
                         onChange={(e) => setPolygonRotation(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       />
-                      <div className="grid grid-cols-4 gap-1 pt-0.5 font-code-metric text-[9.5px]">
+                      <div className="grid grid-cols-4 gap-1 font-code-metric text-[10px]">
                         {[
-                          { label: "Optimal (+8°)", val: 8 },
-                          { label: "Datar (0°)", val: 0 },
-                          { label: "Miring (45°)", val: 45 },
-                          { label: "Tegak (90°)", val: 90 },
+                          { label: "+8°", val: 8 },
+                          { label: "0°", val: 0 },
+                          { label: "45°", val: 45 },
+                          { label: "90°", val: 90 },
                         ].map((rot) => (
                           <button
                             key={rot.val}
                             type="button"
                             onClick={() => setPolygonRotation(rot.val)}
-                            className={`py-1 px-1 rounded border text-center transition cursor-pointer font-bold ${
+                            className={`py-1 rounded-full text-center transition cursor-pointer font-medium ${
                               polygonRotation === rot.val
-                                ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                                : "bg-white/80 hover:bg-white text-slate-700 border-slate-200/80"
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
                             }`}
                           >
                             {rot.label}
@@ -7084,329 +7558,255 @@ function StudioPageContent() {
                       </div>
                     </div>
 
-                    {/* Nudge D-Pad */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/70">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Posisi Koordinat Poligon</span>
-                        <span className="font-code-metric text-[10px] text-slate-500">
-                          X: {activeFacet.offsetX || 0}px, Y: {activeFacet.offsetY || 0}px
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
+                    {/* Nudge Position */}
+                    <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+                      <div className="flex items-center gap-0.5 bg-slate-900/[0.035] p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => nudgeFacet(-10, 0)}
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
+                          title="Geser Kiri"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">arrow_left</span>
+                        </button>
+                        <div className="flex flex-col">
                           <button
                             type="button"
-                            onClick={() => nudgeFacet(-10, 0)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
-                            title="Geser Kiri (10px)"
+                            onClick={() => nudgeFacet(0, -10)}
+                            className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
+                            title="Geser Atas"
                           >
-                            <span className="material-symbols-outlined text-[14px]">arrow_left</span>
+                            <span className="material-symbols-outlined text-[12px]">arrow_drop_up</span>
                           </button>
-                          <div className="flex flex-col gap-0.5">
-                            <button
-                              type="button"
-                              onClick={() => nudgeFacet(0, -10)}
-                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
-                              title="Geser Atas (10px)"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">arrow_drop_up</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => nudgeFacet(0, 10)}
-                              className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
-                              title="Geser Bawah (10px)"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">arrow_drop_down</span>
-                            </button>
-                          </div>
                           <button
                             type="button"
-                            onClick={() => nudgeFacet(10, 0)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-slate-600 hover:bg-amber-100 hover:text-amber-950 active:scale-95 transition cursor-pointer"
-                            title="Geser Kanan (10px)"
+                            onClick={() => nudgeFacet(0, 10)}
+                            className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
+                            title="Geser Bawah"
                           >
-                            <span className="material-symbols-outlined text-[14px]">arrow_right</span>
+                            <span className="material-symbols-outlined text-[12px]">arrow_drop_down</span>
                           </button>
                         </div>
                         <button
                           type="button"
-                          onClick={centerFacetOnRoof}
-                          className="flex-1 py-1.5 px-2.5 rounded-lg bg-white border border-slate-200 hover:bg-amber-50 hover:border-amber-300 text-slate-700 hover:text-amber-950 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer active:scale-95"
-                          title="Pusatkan poligon ke titik tengah atap"
+                          onClick={() => nudgeFacet(10, 0)}
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
+                          title="Geser Kanan"
                         >
-                          <span className="material-symbols-outlined text-[14px]">filter_center_focus</span>
-                          <span>Pusatkan ke Atap</span>
+                          <span className="material-symbols-outlined text-[14px]">arrow_right</span>
                         </button>
                       </div>
+                      <button
+                        type="button"
+                        onClick={centerFacetOnRoof}
+                        className="flex-1 h-8 px-3 rounded-xl bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-700 text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">filter_center_focus</span>
+                        <span>Pusatkan</span>
+                      </button>
                     </div>
 
-                    {/* Obstacles Detection & Management */}
-                    <div className="space-y-2 pt-1 border-t border-slate-200/70">
+                    {/* Rintangan Atap */}
+                    <div className="space-y-2 pt-2.5 border-t border-slate-100">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Deteksi &amp; Rintangan Atap</span>
-                        <span className="font-code-metric text-[10px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                          {(hasHvac ? 1 : 0) +
-                            (hasSkylight ? 1 : 0) +
-                            Object.values(activeFacet.slotOverrides || {}).filter((s) => s !== "active").length}{" "}
-                          Rintangan Aktif
-                        </span>
-                      </div>
-
-                      {/* AI Automatic Detection */}
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-slate-500 font-semibold block">Deteksi Otomatis AI:</span>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => toggleObstacle("hvac")}
-                            className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                              hasHvac
-                                ? "bg-amber-50 text-amber-900 border-amber-300 shadow-2xs"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[15px]">{hasHvac ? "check" : "ac_unit"}</span>
-                            <span>{hasHvac ? "AC / HVAC Aktif" : "+ AC / HVAC"}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => toggleObstacle("skylight")}
-                            className={`py-1.5 px-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                              hasSkylight
-                                ? "bg-sky-50 text-sky-900 border-sky-300 shadow-2xs"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[15px]">{hasSkylight ? "check" : "grid_4x4"}</span>
-                            <span>{hasSkylight ? "Skylight Aktif" : "+ Skylight Kaca"}</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Manual Add Obstacles (Interactive Canvas Brush) */}
-                      <div className="space-y-1 pt-1.5 border-t border-slate-100">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-slate-500 font-semibold">Tambah Manual (Kuas Interaktif):</span>
-                          {Object.keys(activeFacet.slotOverrides || {}).length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSlotOverrides({});
-                                showToast("Semua rintangan manual direset");
-                              }}
-                              className="text-rose-600 hover:underline cursor-pointer font-bold flex items-center gap-0.5"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">restart_alt</span>
-                              Reset Manual
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-3 gap-1">
+                        <span className="font-medium text-slate-600">Rintangan Atap</span>
+                        {Object.keys(activeFacet.slotOverrides || {}).length > 0 && (
                           <button
                             type="button"
                             onClick={() => {
-                              const next = obstacleBrush === "hvac" ? null : "hvac";
-                              setObstacleBrush(next);
-                              if (next) showToast("Kuas AC Aktif: Klik slot panel di peta untuk pasang/hapus");
+                              setSlotOverrides({});
+                              showToast("Rintangan manual direset");
                             }}
-                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
-                              obstacleBrush === "hvac"
-                                ? "bg-amber-100 text-amber-950 border-amber-400 font-bold shadow-2xs ring-1 ring-amber-400"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                            }`}
-                            title="Tandai AC / Outdoor Chiller manual"
+                            className="text-[10.5px] text-rose-600 hover:underline font-medium cursor-pointer"
                           >
-                            <span className="material-symbols-outlined text-[14px] text-amber-600">ac_unit</span>
-                            <span className="text-[9.5px]">Kuas AC</span>
+                            Reset manual
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = obstacleBrush === "skylight" ? null : "skylight";
-                              setObstacleBrush(next);
-                              if (next) showToast("Kuas Skylight Aktif: Klik slot panel di peta untuk pasang/hapus");
-                            }}
-                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
-                              obstacleBrush === "skylight"
-                                ? "bg-sky-100 text-sky-950 border-sky-400 font-bold shadow-2xs ring-1 ring-sky-400"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                            }`}
-                            title="Tandai Skylight Kaca manual"
-                          >
-                            <span className="material-symbols-outlined text-[14px] text-sky-600">grid_4x4</span>
-                            <span className="text-[9.5px]">Kuas Kaca</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = obstacleBrush === "empty" ? null : "empty";
-                              setObstacleBrush(next);
-                              if (next) showToast("Kuas Void Aktif: Klik slot panel untuk dikosongkan");
-                            }}
-                            className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center gap-0.5 ${
-                              obstacleBrush === "empty"
-                                ? "bg-slate-200 text-slate-900 border-slate-400 font-bold shadow-2xs ring-1 ring-slate-400"
-                                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                            }`}
-                            title="Hapus / Kosongkan slot panel (Void)"
-                          >
-                            <span className="material-symbols-outlined text-[14px] text-slate-500">block</span>
-                            <span className="text-[9.5px]">Kuas Kosong</span>
-                          </button>
-                        </div>
-                        {obstacleBrush && (
-                          <div className="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-[10px] text-amber-950 flex items-center justify-between animate-fadeIn">
-                            <span className="truncate">
-                              Klik panel di atap: <strong>{obstacleBrush === "hvac" ? "AC" : obstacleBrush === "skylight" ? "Skylight" : "Void"}</strong>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setObstacleBrush(null)}
-                              className="text-amber-800 hover:text-amber-950 font-bold shrink-0 ml-1 cursor-pointer"
-                            >
-                              ✕ Tutup
-                            </button>
-                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Surface Dimensions */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Dimensi &amp; Parameter Bidang</span>
-                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-code-metric text-[10px] font-bold">
-                        {activeFacet.name}
-                      </span>
-                    </div>
-
-                    {/* Rename active facet */}
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-slate-500">Nama Bidang Aktif</label>
-                      <input
-                        type="text"
-                        value={activeFacet.name}
-                        onChange={(e) => updateActiveFacet({ name: e.target.value })}
-                        className="w-full rounded-lg bg-white border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-900 focus:border-amber-500 focus:outline-none"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-slate-500">Panjang Atap (Ridge)</label>
-                        <div className="flex items-center rounded-lg bg-white border border-slate-200 px-2.5 py-1.5 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={ridge}
-                            onChange={(e) => setRidge(Number(e.target.value))}
-                            className="seamless-input w-full bg-transparent font-code-metric text-xs font-bold text-slate-900 border-0 p-0"
-                          />
-                          <span className="font-code-metric text-xs text-slate-400">m</span>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-slate-500">Lebar Kemiringan (Slope)</label>
-                        <div className="flex items-center rounded-lg bg-white border border-slate-200 px-2.5 py-1.5 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={slope}
-                            onChange={(e) => setSlope(Number(e.target.value))}
-                            className="seamless-input w-full bg-transparent font-code-metric text-xs font-bold text-slate-900 border-0 p-0"
-                          />
-                          <span className="font-code-metric text-xs text-slate-400">m</span>
-                        </div>
-                      </div>
-                      <div className="rounded-lg bg-sky-50 border border-sky-200 p-2 space-y-0.5">
-                        <span className="text-[10px] text-sky-800 font-semibold block">Luas Efektif Panel</span>
-                        <p className="font-title text-sm font-extrabold text-sky-700">
-                          {calc.netArea.toFixed(2)} <span className="text-xs font-normal">m²</span>
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-slate-100 border border-slate-200 p-2 space-y-0.5">
-                        <span className="text-[10px] text-slate-600 font-semibold block">Luas Total Bidang Atap</span>
-                        <p className="font-title text-sm font-extrabold text-slate-800">
-                          {calc.grossArea.toFixed(2)} <span className="text-xs font-normal text-slate-500">m²</span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Pitch Calibration & Vector CAD Diagram */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-amber-600 text-[18px]">architecture</span>
-                        <span className="font-title text-xs font-bold text-slate-900">Kemiringan Bidang Atap</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-code-metric text-xs font-bold">
-                        {pitch}° Kemiringan
-                      </span>
-                    </div>
-
-                    {/* Range Slider with Synchronized Ticks */}
-                    <div className="space-y-1.5">
-                      <div className="relative flex items-center">
-                        <input
-                          type="range"
-                          min="0"
-                          max="45"
-                          step="1"
-                          value={pitch}
-                          onChange={(e) => setPitch(Number(e.target.value))}
-                          className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600 focus:outline-none"
-                        />
-                      </div>
-                      <div className="relative w-full h-4 font-code-metric text-[10px] text-slate-400 select-none">
-                        <span className="absolute left-0 cursor-pointer hover:text-amber-600" onClick={() => setPitch(0)}>0°</span>
-                        <span className="absolute -translate-x-1/2 cursor-pointer hover:text-amber-600" style={{ left: "11.11%" }} onClick={() => setPitch(5)}>5°</span>
-                        <span className="absolute -translate-x-1/2 cursor-pointer hover:text-amber-600 font-bold text-slate-800" style={{ left: "33.33%" }} onClick={() => setPitch(15)}>15°</span>
-                        <span className="absolute -translate-x-1/2 cursor-pointer hover:text-amber-600 font-bold text-amber-700" style={{ left: "48.89%" }} onClick={() => setPitch(22)}>22°</span>
-                        <span className="absolute -translate-x-1/2 cursor-pointer hover:text-amber-600" style={{ left: "66.67%" }} onClick={() => setPitch(30)}>30°</span>
-                        <span className="absolute -translate-x-1/2 cursor-pointer hover:text-amber-600 font-bold text-slate-800" style={{ left: "88.89%" }} onClick={() => setPitch(40)}>40°</span>
-                        <span className="absolute right-0 cursor-pointer hover:text-amber-600" onClick={() => setPitch(45)}>45°</span>
-                      </div>
-                    </div>
-
-                    {/* Preset Buttons */}
-                    <div className="grid grid-cols-4 gap-1.5 pt-1">
-                      {[
-                        { label: "Datar 5°", val: 5 },
-                        { label: "Landai 15°", val: 15 },
-                        { label: "Standar 22°", val: 22 },
-                        { label: "Curam 40°", val: 40 },
-                      ].map((p) => (
+                      <div className="grid grid-cols-2 gap-1.5">
                         <button
-                          key={p.val}
                           type="button"
-                          onClick={() => setPitch(p.val)}
-                          className={`py-1.5 px-1.5 rounded-lg border text-[11px] font-bold text-center transition-all cursor-pointer ${
-                            pitch === p.val
-                              ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                              : "bg-white/80 hover:bg-white text-slate-700 border-slate-200/80"
+                          onClick={() => toggleObstacle("hvac")}
+                          className={`py-1.5 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                            hasHvac
+                              ? "bg-amber-50/90 text-amber-900 border-amber-200 font-semibold"
+                              : "bg-slate-900/[0.03] text-slate-600 border-transparent hover:bg-slate-900/[0.06]"
                           }`}
                         >
-                          {p.label}
+                          <span className="material-symbols-outlined text-[14px]">{hasHvac ? "check" : "ac_unit"}</span>
+                          <span>AC / HVAC</span>
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          onClick={() => toggleObstacle("skylight")}
+                          className={`py-1.5 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer border ${
+                            hasSkylight
+                              ? "bg-sky-50/90 text-sky-900 border-sky-200 font-semibold"
+                              : "bg-slate-900/[0.03] text-slate-600 border-transparent hover:bg-slate-900/[0.06]"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">{hasSkylight ? "check" : "grid_4x4"}</span>
+                          <span>Skylight</span>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: "hvac" as const, icon: "ac_unit", label: "Kuas AC" },
+                          { id: "skylight" as const, icon: "grid_4x4", label: "Kuas Kaca" },
+                          { id: "empty" as const, icon: "block", label: "Kosongkan" },
+                        ].map((brush) => (
+                          <button
+                            key={brush.id}
+                            type="button"
+                            onClick={() => {
+                              const next = obstacleBrush === brush.id ? null : brush.id;
+                              setObstacleBrush(next);
+                              if (next) showToast(`Kuas ${brush.label}: klik slot panel di peta`);
+                            }}
+                            className={`py-1.5 px-1 rounded-xl text-[10px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                              obstacleBrush === brush.id
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] text-slate-600 hover:bg-slate-900/[0.06]"
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[13px]">{brush.icon}</span>
+                            <span>{brush.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Dimensi & Batas Keamanan */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-title text-xs font-semibold text-slate-900">Dimensi &amp; Setback</span>
+                      <span className="font-code-metric text-[11px] font-semibold text-sky-700">
+                        {calc.netArea.toFixed(1)} m² efektif
+                      </span>
                     </div>
 
-                    {/* Interactive Profile Vector Diagram (Rich Architectural CAD Simulation) */}
-                    <div className="rounded-xl bg-white border border-slate-200 p-3 space-y-2 shadow-xs">
+                    <input
+                      type="text"
+                      value={activeFacet.name}
+                      onChange={(e) => updateActiveFacet({ name: e.target.value })}
+                      placeholder="Nama bidang atap"
+                      className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 transition"
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <span className="text-[10.5px] font-medium text-slate-500">Panjang (m)</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={ridge}
+                          onChange={(e) => setRidge(Number(e.target.value))}
+                          className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 font-code-metric text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10.5px] font-medium text-slate-500">Lebar (m)</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={slope}
+                          onChange={(e) => setSlope(Number(e.target.value))}
+                          className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 font-code-metric text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-slate-600">Setback Keliling</span>
+                        <span className="font-code-metric font-semibold text-slate-900">{setback.toFixed(2)} m</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="0.8"
+                        step="0.05"
+                        value={setback}
+                        onChange={(e) => setSetback(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-sky-600"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-slate-600">Jalur Talang</span>
+                        <span className="font-code-metric font-semibold text-slate-900">{gutter.toFixed(2)} m</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.3"
+                        max="0.9"
+                        step="0.05"
+                        value={gutter}
+                        onChange={(e) => setGutter(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 4. Kemiringan Bidang Atap */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-title text-xs font-semibold text-slate-900">Kemiringan Atap</span>
+                      <span className="font-code-metric text-xs font-semibold text-amber-800">{pitch}°</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <input
+                        type="range"
+                        min="0"
+                        max="45"
+                        step="1"
+                        value={pitch}
+                        onChange={(e) => setPitch(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      />
+                      <div className="grid grid-cols-4 gap-1">
+                        {[
+                          { label: "5°", val: 5 },
+                          { label: "15°", val: 15 },
+                          { label: "22°", val: 22 },
+                          { label: "40°", val: 40 },
+                        ].map((p) => (
+                          <button
+                            key={p.val}
+                            type="button"
+                            onClick={() => setPitch(p.val)}
+                            className={`py-1 rounded-full text-[10.5px] font-medium text-center transition cursor-pointer ${
+                              pitch === p.val
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Interactive Profile Vector Diagram (Flattened Apple Architectural Inset) */}
+                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                          Visualisasi Sudut Datang Sinar Surya
+                        <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]" />
+                          <span>Sudut Datang Sinar Surya</span>
                         </span>
-                        <span className="font-code-metric text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                          Kemiringan: {pitch}°
+                        <span className="font-code-metric text-[10.5px] font-medium text-slate-400">
+                          Ideal 15°–22°
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 bg-gradient-to-br from-slate-50 to-amber-50/20 p-2.5 rounded-lg border border-slate-200/90">
+
+                      <div className="flex items-center gap-3.5 rounded-xl bg-slate-50/80 p-2.5">
                         {/* SVG Technical Vector */}
-                        <div className="relative w-36 h-22 shrink-0 bg-white rounded-lg border border-slate-200/60 p-1 shadow-2xs overflow-hidden">
+                        <div className="relative w-36 h-[84px] shrink-0 bg-white/95 rounded-lg p-1 overflow-hidden">
                           <svg className="w-full h-full" viewBox="0 0 145 85">
                             <defs>
                               <pattern id="cad-grid-pitch" width="10" height="10" patternUnits="userSpaceOnUse">
@@ -7424,30 +7824,17 @@ function StudioPageContent() {
                             </defs>
 
                             <rect width="145" height="85" fill="url(#cad-grid-pitch)" />
-
-                            {/* Concrete wall support */}
                             <polygon points="12,70 24,70 24,82 12,82" fill="#e2e8f0" stroke="#cbd5e1" strokeWidth="1" />
-                            <line x1="12" y1="74" x2="24" y2="74" stroke="#94a3b8" strokeWidth="0.5" />
-                            <line x1="12" y1="78" x2="24" y2="78" stroke="#94a3b8" strokeWidth="0.5" />
-
-                            {/* Horizontal Baseline */}
                             <line x1="8" y1="70" x2="138" y2="70" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 3" />
                             <text x="135" y="73" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600">0°</text>
-
-                            {/* Shaded Angle Wedge Sector */}
                             <path d={wedgePathD} fill="url(#amberWedgeGrad)" />
 
-                            {/* Rotating Roof & PV Assembly */}
                             <g transform={`rotate(-${pitch}, 20, 70)`} style={{ transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)" }}>
                               <line x1="18" y1="70" x2="118" y2="70" stroke="#475569" strokeWidth="4.5" strokeLinecap="round" />
                               <line x1="36" y1="70" x2="36" y2="63" stroke="#64748b" strokeWidth="2" />
                               <line x1="74" y1="70" x2="74" y2="63" stroke="#64748b" strokeWidth="2" />
                               <line x1="106" y1="70" x2="106" y2="63" stroke="#64748b" strokeWidth="2" />
                               <rect x="26" y="58" width="88" height="5.5" rx="1.5" fill="url(#solarGlassGrad)" stroke="#0284c7" strokeWidth="1" />
-                              <rect x="25" y="57.5" width="90" height="6.5" rx="1.5" fill="none" stroke="#38bdf8" strokeWidth="0.6" opacity="0.8" />
-                              <line x1="48" y1="58.5" x2="48" y2="63" stroke="#ffffff" strokeWidth="0.75" opacity="0.7" />
-                              <line x1="70" y1="58.5" x2="70" y2="63" stroke="#ffffff" strokeWidth="0.75" opacity="0.7" />
-                              <line x1="92" y1="58.5" x2="92" y2="63" stroke="#ffffff" strokeWidth="0.75" opacity="0.7" />
                               <line x1="70" y1="58" x2="70" y2="34" stroke="#d97706" strokeWidth="1.5" strokeDasharray="2 2" />
                               <polygon points="70,30 67.5,35 72.5,35" fill="#d97706" />
                             </g>
@@ -7455,94 +7842,66 @@ function StudioPageContent() {
                             <path d={arcPathD} fill="none" stroke="#d97706" strokeWidth="2" />
                             <circle cx="20" cy="70" r="3.5" fill="#d97706" stroke="#ffffff" strokeWidth="1" />
 
-                            {/* Sun Vector */}
                             <g transform="translate(108, 16)">
                               <circle cx="0" cy="0" r="10" fill="#f59e0b" opacity="0.15" />
                               <circle cx="0" cy="0" r="7" fill="#f59e0b" opacity="0.3" />
                               <circle cx="0" cy="0" r="4.5" fill="#f59e0b" />
                               <line x1="-7" y1="7" x2="-26" y2="28" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" />
                               <polygon points="-29,32 -22,27 -25,24" fill="#f59e0b" />
-                              <line x1="-3" y1="9" x2="-14" y2="24" stroke="#fbbf24" strokeWidth="1" strokeDasharray="2 2" opacity="0.8" />
                             </g>
                           </svg>
                         </div>
 
-                        {/* Real-time HUD Stats */}
-                        <div className="flex-1 space-y-1">
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
-                            Faktor Sudut Datang Sinar
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                            Faktor Cosinus
                           </span>
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="font-title text-sm font-extrabold text-slate-900">
-                              Cos {pitch}° = {calc.pitchCosine}
-                            </span>
+                          <div className="font-title text-[15px] font-bold text-slate-900 leading-tight">
+                            Cos {pitch}° = {calc.pitchCosine}
                           </div>
                           <div
-                            className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                            className={`inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap ${
                               pitch >= 15 && pitch <= 25
-                                ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                                ? "text-emerald-700"
                                 : pitch < 15
-                                ? "text-amber-700 bg-amber-50 border-amber-200"
-                                : "text-slate-700 bg-slate-100 border-slate-200"
+                                ? "text-amber-700"
+                                : "text-slate-600"
                             }`}
                           >
-                            <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                            <span className="material-symbols-outlined text-[14px]">check_circle</span>
                             <span>
                               {pitch >= 15 && pitch <= 25
-                                ? `Tangkapan Surya Optimal (${calc.pitchEffPct}%)`
+                                ? `Optimal · ${calc.pitchEffPct}%`
                                 : pitch < 15
-                                ? `Kemiringan Landai (${calc.pitchEffPct}%)`
-                                : `Kemiringan Curam (${calc.pitchEffPct}%)`}
+                                ? `Landai · ${calc.pitchEffPct}%`
+                                : `Curam · ${calc.pitchEffPct}%`}
                             </span>
                           </div>
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-relaxed">
-                        Kemiringan optimal di Indonesia: <strong className="text-slate-700">15° – 22°</strong> untuk mencuci mandiri debu saat hujan. Efisiensi Tangkapan: <strong className="text-amber-700 font-code-metric">{calc.pitchEffPct}%</strong>
+
+                      <p className="text-[10.5px] text-slate-500 leading-relaxed">
+                        Kemiringan 15°–22° membantu pembilasan debu alami saat hujan.
                       </p>
                     </div>
                   </div>
 
-                  {/* Azimuth Dial Section (Interactive Navigational Compass 3D) */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
+                  {/* 5. Orientasi & Azimuth Kompas */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">explore</span>
-                        <span className="font-title text-xs font-bold text-slate-900 truncate">Orientasi &amp; Azimuth Kompas 3D</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-code-metric text-xs font-bold shrink-0">
-                        {azimuth}° {azInfo.name}
-                      </span>
+                      <span className="font-title text-xs font-semibold text-slate-900">Orientasi &amp; Azimuth</span>
+                      <span className="font-code-metric text-xs font-semibold text-amber-800">{azimuth}° {azInfo.name}</span>
                     </div>
 
-                    {/* Compass Interactive Dial Container */}
-                    <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200/90 shadow-2xs">
-                      {/* 3D Bezel & Dynamic Compass Instrument */}
-                      <div className="relative w-22 h-22 sm:w-24 sm:h-24 shrink-0 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-1 border-2 border-slate-700 shadow-md flex items-center justify-center select-none overflow-hidden">
+                    <div className="flex items-center gap-3.5 rounded-xl bg-slate-50/80 p-2.5">
+                      <div className="relative w-20 h-20 shrink-0 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-1 shadow-sm flex items-center justify-center select-none overflow-hidden">
                         <svg className="w-full h-full" viewBox="0 0 100 100">
                           <circle cx="50" cy="50" r="46" fill="none" stroke="#334155" strokeWidth="1.5" />
-                          <circle cx="50" cy="50" r="39" fill="none" stroke="#1e293b" strokeWidth="0.8" />
-                          <g stroke="#64748b" strokeWidth="1.2" opacity="0.85">
-                            <line x1="50" y1="8" x2="50" y2="12" />
-                            <line x1="50" y1="88" x2="50" y2="92" />
-                            <line x1="8" y1="50" x2="12" y2="50" />
-                            <line x1="88" y1="50" x2="92" y2="50" />
-                            <line x1="71" y1="13.6" x2="69" y2="17.1" />
-                            <line x1="29" y1="86.4" x2="31" y2="82.9" />
-                            <line x1="86.4" y1="29" x2="82.9" y2="31" />
-                            <line x1="13.6" y1="71" x2="17.1" y2="69" />
-                            <line x1="86.4" y1="71" x2="82.9" y2="69" />
-                            <line x1="13.6" y1="29" x2="17.1" y2="31" />
-                            <line x1="71" y1="86.4" x2="69" y2="82.9" />
-                            <line x1="29" y1="13.6" x2="31" y2="17.1" />
-                          </g>
-                          <text x="50" y="20" fill="#f43f5e" fontSize="8.5" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">N</text>
-                          <text x="50" y="80" fill="#f59e0b" fontSize="8.5" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">S</text>
-                          <text x="80" y="50" fill="#94a3b8" fontSize="7.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">E</text>
-                          <text x="20" y="50" fill="#94a3b8" fontSize="7.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">W</text>
+                          <text x="50" y="20" fill="#f43f5e" fontSize="9" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">N</text>
+                          <text x="50" y="80" fill="#f59e0b" fontSize="9" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">S</text>
+                          <text x="80" y="50" fill="#94a3b8" fontSize="8" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">E</text>
+                          <text x="20" y="50" fill="#94a3b8" fontSize="8" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">W</text>
                         </svg>
-
-                        {/* Dynamic Rotating Needle */}
                         <div
                           className="absolute inset-0 flex items-center justify-center pointer-events-none"
                           style={{
@@ -7550,374 +7909,217 @@ function StudioPageContent() {
                             transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                           }}
                         >
-                          <svg className="w-18 h-18 sm:w-20 sm:h-20 drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]" viewBox="0 0 80 80">
+                          <svg className="w-16 h-16" viewBox="0 0 80 80">
                             <polygon points="40,11 36.5,40 40,37" fill="#f43f5e" />
                             <polygon points="40,11 43.5,40 40,37" fill="#be123c" />
                             <polygon points="40,69 36.5,40 40,43" fill="#fbbf24" />
                             <polygon points="40,69 43.5,40 40,43" fill="#d97706" />
-                            <circle cx="40" cy="40" r="4.5" fill="#f8fafc" stroke="#64748b" strokeWidth="1.2" />
-                            <circle cx="40" cy="40" r="2" fill="#0f172a" />
+                            <circle cx="40" cy="40" r="4" fill="#f8fafc" stroke="#64748b" strokeWidth="1" />
                           </svg>
                         </div>
-                        <div className="absolute inset-1 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-white/20 pointer-events-none"></div>
                       </div>
 
-                      {/* Compass Readout Details */}
                       <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xl font-extrabold text-slate-900 font-headline-sm leading-none">{azimuth}°</span>
-                          <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-md leading-none border ${azInfo.isOptimal ? "text-amber-800 bg-amber-100 border-amber-300" : "text-slate-700 bg-slate-100 border-slate-200"}`}>
-                            {azInfo.name}
-                          </span>
+                        <div className="font-title text-base font-bold text-slate-900 leading-none">
+                          {azimuth}° · {azInfo.name}
                         </div>
                         <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
                           {azInfo.desc}
                         </p>
-                        <div className="pt-0.5 flex items-center gap-1.5 text-emerald-700 text-[10px] font-semibold">
+                        <div className="flex items-center gap-1 text-emerald-700 text-[11px] font-semibold">
                           <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                          <span>{calc.azimuthEffPct}% Efisiensi Azimuth</span>
+                          <span>Efisiensi {calc.azimuthEffPct}%</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Interactive Azimuth Slider & Quick Controls */}
-                    <div className="space-y-1.5 pt-2 border-t border-slate-200/80">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-amber-600">navigation</span>
-                          Atur Sudut Kompas (0° – 360°)
-                        </span>
-                        <span className="font-code-metric font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px]">
-                          {azimuth}°
-                        </span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="360"
+                      step="1"
+                      value={azimuth}
+                      onChange={(e) => setAzimuth(Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    />
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => nudgeAzimuth(-10)}
+                        className="w-7 h-7 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 flex items-center justify-center shrink-0 cursor-pointer"
+                        title="Putar -10°"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">rotate_left</span>
+                      </button>
+                      <div className="grid grid-cols-5 gap-1 flex-1 font-code-metric text-[10px]">
+                        {[
+                          { label: "0°", val: 0 },
+                          { label: "90°", val: 90 },
+                          { label: "180°", val: 180 },
+                          { label: "188°", val: 188 },
+                          { label: "270°", val: 270 },
+                        ].map((p) => (
+                          <button
+                            key={p.val}
+                            type="button"
+                            onClick={() => setAzimuth(p.val)}
+                            className={`py-1 rounded-full text-center transition cursor-pointer font-medium ${
+                              azimuth === p.val
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
                       </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="360"
-                        step="1"
-                        value={azimuth}
-                        onChange={(e) => setAzimuth(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => nudgeAzimuth(10)}
+                        className="w-7 h-7 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 flex items-center justify-center shrink-0 cursor-pointer"
+                        title="Putar +10°"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">rotate_right</span>
+                      </button>
+                    </div>
 
-                      {/* Quick Preset Buttons & Nudge */}
-                      <div className="flex items-center gap-1 pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => nudgeAzimuth(-10)}
-                          className="py-1 px-1.5 rounded bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-center transition flex items-center justify-center shrink-0 cursor-pointer"
-                          title="Putar -10°"
-                        >
-                          <span className="material-symbols-outlined text-[13px]">rotate_left</span>
-                        </button>
-
-                        <div className="grid grid-cols-5 gap-1 flex-1 font-code-metric text-[9.5px]">
-                          {[
-                            { label: "0° U", val: 0 },
-                            { label: "90° T", val: 90 },
-                            { label: "180° S", val: 180 },
-                            { label: "188° ⭐", val: 188 },
-                            { label: "270° B", val: 270 },
-                          ].map((p) => (
-                            <button
-                              key={p.val}
-                              type="button"
-                              onClick={() => setAzimuth(p.val)}
-                              className={`py-1 px-0.5 rounded border text-center transition cursor-pointer font-bold ${
-                                azimuth === p.val
-                                  ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                                  : "bg-white/80 hover:bg-white text-slate-700 border-slate-200/80"
-                              }`}
-                            >
-                              {p.label}
-                            </button>
-                          ))}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => nudgeAzimuth(10)}
-                          className="py-1 px-1.5 rounded bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-center transition flex items-center justify-center shrink-0 cursor-pointer"
-                          title="Putar +10°"
-                        >
-                          <span className="material-symbols-outlined text-[13px]">rotate_right</span>
-                        </button>
-                      </div>
-
-                      {/* Grid Integration to Compass Azimuth Toggle */}
-                      <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[14px] text-amber-600">sync</span>
-                            Integrasikan Grid ke Azimuth
-                          </span>
-                          <span className="text-[9.5px] text-slate-500 leading-tight">
-                            {alignToAzimuth
-                              ? "Grid susunan & sudut tiap panel otomatis berputar searah jarum kompas"
-                              : "Grid sejajar rusuk atap (flush mounted tanpa rotasi azimuth)"}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAlignToAzimuth(!alignToAzimuth)}
-                          className={`px-2.5 py-1 rounded-full text-[10.5px] font-bold border transition cursor-pointer flex items-center gap-1 shrink-0 ${
-                            alignToAzimuth
-                              ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300 shadow-2xs"
-                              : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                          }`}
-                          title="Klik untuk menyalakan/mematikan penyesuaian rotasi grid otomatis mengikuti kompas"
-                        >
-                          <span className="material-symbols-outlined text-[13px]">
-                            {alignToAzimuth ? "check_circle" : "cancel"}
-                          </span>
-                          <span>{alignToAzimuth ? "Aktif" : "Mati"}</span>
-                        </button>
-                      </div>
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-slate-700">Selaraskan grid ke azimuth</span>
+                      <button
+                        type="button"
+                        onClick={() => setAlignToAzimuth(!alignToAzimuth)}
+                        className={`px-3 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                          alignToAzimuth
+                            ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 border border-amber-200/90"
+                            : "bg-slate-900/[0.05] text-slate-600"
+                        }`}
+                      >
+                        {alignToAzimuth ? "Aktif" : "Mati"}
+                      </button>
                     </div>
                   </div>
 
-                  {/* Batas Keamanan & Jalur Talang */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-sky-600 text-[18px]">crop_free</span>
-                        <span className="font-title text-xs font-bold text-slate-900">Batas Keamanan &amp; Jalur Talang</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200 text-[10px] font-bold">
-                        Zonasi Aman PLN
-                      </span>
-                    </div>
-
-                    {/* Perimeter Setback */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Batas Keamanan Tepi (Setback Keliling)</span>
-                        <span className="font-code-metric font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px]">
-                          {setback.toFixed(2)} m
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.2"
-                        max="0.8"
-                        step="0.05"
-                        value={setback}
-                        onChange={(e) => setSetback(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-600"
-                      />
-                      <div className="relative w-full flex justify-between font-code-metric text-[9.5px] text-slate-400 pt-0.5">
-                        <button type="button" onClick={() => setSetback(0.2)} className="hover:text-sky-600 transition cursor-pointer">
-                          Min (0.2m)
-                        </button>
-                        <button type="button" onClick={() => setSetback(0.5)} className="hover:text-sky-600 transition font-semibold text-slate-700 cursor-pointer">
-                          Standar PLN (0.5m)
-                        </button>
-                        <button type="button" onClick={() => setSetback(0.8)} className="hover:text-sky-600 transition cursor-pointer">
-                          Aman (0.8m)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Gutter Margin */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Jalur Talang Air &amp; Akses Pemeliharaan (Bawah)</span>
-                        <span className="font-code-metric font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px]">
-                          {gutter.toFixed(2)} m
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.3"
-                        max="0.9"
-                        step="0.05"
-                        value={gutter}
-                        onChange={(e) => setGutter(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                      />
-                      <div className="relative w-full flex justify-between font-code-metric text-[9.5px] text-slate-400 pt-0.5">
-                        <button type="button" onClick={() => setGutter(0.3)} className="hover:text-amber-600 transition cursor-pointer">
-                          Ringkas (0.3m)
-                        </button>
-                        <button type="button" onClick={() => setGutter(0.6)} className="hover:text-amber-600 transition font-semibold text-slate-700 cursor-pointer">
-                          Standar Talang (0.6m)
-                        </button>
-                        <button type="button" onClick={() => setGutter(0.9)} className="hover:text-amber-600 transition cursor-pointer">
-                          Walkway (0.9m)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Area Breakdown Info */}
-                    <div className="p-2 rounded-lg bg-white border border-slate-200 text-[10px] text-slate-600 flex justify-between items-center">
-                      <span>Area Bebas Penghalang Bersih:</span>
-                      <span className="font-bold text-slate-900 font-code-metric">
-                        {calc.netArea.toFixed(2)} m² ({calc.netAreaPct}%)
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Primary Action Button: Modern Soft Golden Glass Gradient */}
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={autoPackModules}
-                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 font-title text-sm font-bold shadow-[0_3px_14px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 transition flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px] text-amber-900">auto_awesome</span>
-                      <span>Susun Tata Letak Panel Otomatis</span>
-                    </button>
-                  </div>
+                  {/* Primary Action */}
+                  <button
+                    type="button"
+                    onClick={autoPackModules}
+                    className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[17px]">auto_awesome</span>
+                    <span>Susun Tata Letak Panel</span>
+                  </button>
                 </div>
               )}
 
               {activeTab === "pvarray" && (
-                <div id="studio-pane-pvarray" className="p-4 space-y-4">
-                  {/* Module Selection Card */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
+                <div id="studio-pane-pvarray" className="p-3.5 space-y-3">
+                  {/* 1. Pilihan Modul */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Pilihan Modul Surya</span>
-                      <span className="material-symbols-outlined text-amber-600 text-[18px]">solar_power</span>
+                      <span className="font-title text-xs font-semibold text-slate-900">Modul Surya</span>
+                      <span className="font-code-metric text-[11px] font-semibold text-emerald-700">
+                        {calc.currentSpec.eff} efis.
+                      </span>
                     </div>
                     <div className="relative">
                       <select
                         value={modulePower}
                         onChange={(e) => setModulePower(Number(e.target.value))}
-                        className="w-full pl-3 pr-8 py-2 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 appearance-none cursor-pointer transition-all"
+                        className="w-full pl-3 pr-8 py-2 rounded-xl bg-slate-900/[0.035] text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 appearance-none cursor-pointer transition"
                       >
-                        <option value="550">Tier-1 550W Mono PERC (Bifacial) — 2.27m x 1.13m</option>
-                        <option value="450">Tier-1 450W Compact All-Black — 1.76m x 1.04m</option>
-                        <option value="580">Bifacial 580W Dual-Glass — 2.38m x 1.13m</option>
+                        <option value="550">Tier-1 550W Mono PERC — 2.27 × 1.13 m</option>
+                        <option value="450">Tier-1 450W All-Black — 1.76 × 1.04 m</option>
+                        <option value="580">Bifacial 580W Dual-Glass — 2.38 × 1.13 m</option>
                       </select>
                       <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[18px]">expand_more</span>
                     </div>
-                    {/* Spec Badges */}
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-code-metric text-[10px] font-bold">
-                        {calc.currentSpec.eff} Efisiensi
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-code-metric text-[10px] font-medium">
-                        {calc.currentSpec.l}m × {calc.currentSpec.w}m
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-code-metric text-[10px] font-semibold">
-                        {calc.currentSpec.tech}
-                      </span>
-                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      {calc.currentSpec.l} × {calc.currentSpec.w} m · {calc.currentSpec.tech}
+                    </p>
                   </div>
 
-                  {/* Penyesuaian Jumlah Modul Surya */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
+                  {/* 2. Jumlah Modul */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-amber-600 text-[18px]">tune</span>
-                        <span className="font-title text-xs font-bold text-slate-900">Penyesuaian Jumlah Panel Surya</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-code-metric text-[10px] font-bold">
-                        {calc.modulesFitted} Terpasang
+                      <span className="font-title text-xs font-semibold text-slate-900">Jumlah Panel</span>
+                      <span className="font-code-metric text-[11px] text-slate-400 font-medium">
+                        maks {calc.totalValidSlots} slot
                       </span>
                     </div>
 
-                    {/* Stepper & Direct Range Slider */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3 bg-white p-2 rounded-lg border border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => adjustModuleCount(-1)}
-                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition-all shadow-2xs cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">remove</span>
-                        </button>
-                        <div className="text-center">
-                          <span className="font-title text-base font-extrabold text-slate-900 block">
-                            {calc.modulesFitted} Modul
-                          </span>
-                          <span className="text-[9.5px] text-slate-400 font-code-metric">
-                            dari maks {calc.totalValidSlots} slot
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => adjustModuleCount(1)}
-                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition-all shadow-2xs cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">add</span>
-                        </button>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max={Math.max(1, calc.totalValidSlots)}
-                        value={calc.modulesFitted}
-                        onChange={(e) => setCustomModuleCount(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-                      />
-                      <div className="grid grid-cols-3 gap-1.5 font-code-metric text-[9.5px]">
-                        <button
-                          type="button"
-                          onClick={() => setCountPreset("max")}
-                          className="py-1 px-1 rounded bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-700 border border-slate-200 text-center font-semibold transition-all cursor-pointer"
-                        >
-                          Maksimal (Full)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCountPreset("opt")}
-                          className="py-1 px-1 rounded bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-700 border border-slate-200 text-center font-semibold transition-all cursor-pointer"
-                        >
-                          Rekomendasi
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCountPreset("min")}
-                          className="py-1 px-1 rounded bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-700 border border-slate-200 text-center font-semibold transition-all cursor-pointer"
-                        >
-                          Ekonomis
-                        </button>
-                      </div>
-
-                      {/* Eco Integration in Tab 2 */}
-                      <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/80 border border-emerald-200/70 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[17px] text-emerald-600">park</span>
-                          <div>
-                            <span className="text-[9.5px] text-slate-500 font-medium block">Estimasi Serapan Lingkungan</span>
-                            <span className="font-bold text-emerald-800 text-xs">
-                              {calc.treesEquivalent.toLocaleString("id-ID")} Pohon (~{calc.co2ReductionTon.toFixed(1)} Ton CO2/thn)
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          {calc.forestHa} Ha
-                        </span>
-                      </div>
-
-                      {/* Guidance Box */}
-                      <div className="p-2 rounded-lg bg-amber-50/70 border border-amber-200/80 text-[10px] text-amber-900 flex items-start gap-1.5 leading-snug">
-                        <span className="material-symbols-outlined text-amber-600 text-[14px] shrink-0 mt-0.5">info</span>
-                        <span><strong>Tips Seleksi Interaktif:</strong> Klik langsung modul di kanvas atap untuk mematikan/menyalakan panel individu.</span>
-                      </div>
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-900/[0.035] p-1.5">
+                      <button
+                        type="button"
+                        onClick={() => adjustModuleCount(-1)}
+                        className="w-8 h-8 rounded-lg bg-white/90 hover:bg-white text-slate-700 flex items-center justify-center transition shadow-2xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">remove</span>
+                      </button>
+                      <span className="font-title text-base font-bold text-slate-900">
+                        {calc.modulesFitted} Modul
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => adjustModuleCount(1)}
+                        className="w-8 h-8 rounded-lg bg-white/90 hover:bg-white text-slate-700 flex items-center justify-center transition shadow-2xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add</span>
+                      </button>
                     </div>
+
+                    <input
+                      type="range"
+                      min="1"
+                      max={Math.max(1, calc.totalValidSlots)}
+                      value={calc.modulesFitted}
+                      onChange={(e) => setCustomModuleCount(Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    />
+
+                    <div className="grid grid-cols-3 gap-1 font-code-metric text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setCountPreset("max")}
+                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
+                      >
+                        Penuh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCountPreset("opt")}
+                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
+                      >
+                        Ideal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCountPreset("min")}
+                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
+                      >
+                        Hemat
+                      </button>
+                    </div>
+
+                    <p className="text-[10.5px] text-slate-500">
+                      Klik langsung panel di peta untuk menyalakan atau mematikan slot satuan.
+                    </p>
                   </div>
 
-                  {/* Pengaturan Tata Letak Modul */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Pengaturan Tata Letak Modul</span>
-                      <span className="material-symbols-outlined text-slate-400 text-[16px]">grid_view</span>
-                    </div>
+                  {/* 3. Tata Letak & Inverter */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
+                    <span className="font-title text-xs font-semibold text-slate-900 block">Tata Letak &amp; Inverter</span>
 
-                    {/* Orientasi */}
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium text-slate-600 block">Orientasi Modul</label>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <span className="text-[11px] font-medium text-slate-500 block">Orientasi</span>
+                      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-900/[0.04]">
                         <button
                           type="button"
                           onClick={() => setOrientation("portrait")}
-                          className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                             orientation === "portrait"
-                              ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                              : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
+                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-2xs"
+                              : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
                           <span className="material-symbols-outlined text-[15px]">stay_current_portrait</span>
@@ -7926,45 +8128,36 @@ function StudioPageContent() {
                         <button
                           type="button"
                           onClick={() => setOrientation("landscape")}
-                          className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
                             orientation === "landscape"
-                              ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                              : "bg-white/80 text-slate-700 border-slate-200/80 hover:bg-slate-50"
+                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-2xs"
+                              : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
                           <span className="material-symbols-outlined text-[15px]">stay_current_landscape</span>
                           <span>Lanskap ({calc.landscapeSlotsCount})</span>
                         </button>
                       </div>
-
-                      {calc.portraitSlotsCount !== calc.landscapeSlotsCount && (
-                        <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-amber-50/90 border border-amber-200/80 text-[10.5px] text-amber-950">
-                          <span className="flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[13px] text-amber-600">auto_awesome</span>
-                            <span>
-                              {calc.bestOrientation === "portrait" ? "Potret" : "Lanskap"} muat lebih banyak (+{Math.abs(calc.portraitSlotsCount - calc.landscapeSlotsCount)} panel)
-                            </span>
+                      {calc.portraitSlotsCount !== calc.landscapeSlotsCount && orientation !== calc.bestOrientation && (
+                        <div className="flex items-center justify-between text-[11px] text-amber-900 pt-0.5">
+                          <span>
+                            {calc.bestOrientation === "portrait" ? "Potret" : "Lanskap"} muat +{Math.abs(calc.portraitSlotsCount - calc.landscapeSlotsCount)} panel
                           </span>
-                          {orientation !== calc.bestOrientation && (
-                            <button
-                              type="button"
-                              onClick={() => setOrientation(calc.bestOrientation)}
-                              className="font-bold underline text-amber-700 hover:text-amber-950 cursor-pointer ml-1"
-                            >
-                              Terapkan
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => setOrientation(calc.bestOrientation)}
+                            className="font-semibold text-amber-800 hover:underline cursor-pointer"
+                          >
+                            Terapkan
+                          </button>
                         </div>
                       )}
                     </div>
 
-                    {/* Clearance Gap */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
+                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Jarak Antar Modul (Clearance Gap)</span>
-                        <span className="font-code-metric font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px]">
-                          {panelGap} cm
-                        </span>
+                        <span className="font-medium text-slate-600">Jarak Antar Modul</span>
+                        <span className="font-code-metric font-semibold text-slate-900">{panelGap} cm</span>
                       </div>
                       <input
                         type="range"
@@ -7973,25 +8166,14 @@ function StudioPageContent() {
                         step="1"
                         value={panelGap}
                         onChange={(e) => setPanelGap(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       />
-                      <div className="flex justify-between font-code-metric text-[9.5px] text-slate-400">
-                        <span>Rapat (2cm)</span>
-                        <span>Standar Racking (3cm)</span>
-                        <span>Aman Angin (10cm)</span>
-                      </div>
                     </div>
 
-                    {/* Racking Extra Tilt */}
-                    <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
+                    <div className="space-y-1.5 pt-1">
                       <div className="flex items-center justify-between text-[11px]">
-                        <div>
-                          <span className="font-medium text-slate-600 block">Sudut Ekstra Dudukan (Racking Tilt)</span>
-                          <span className="text-[9.5px] text-slate-400">Self-cleaning debu saat hujan</span>
-                        </div>
-                        <span className="font-code-metric font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[11px]">
-                          +{extraTilt}°
-                        </span>
+                        <span className="font-medium text-slate-600">Sudut Ekstra Racking</span>
+                        <span className="font-code-metric font-semibold text-amber-800">+{extraTilt}°</span>
                       </div>
                       <input
                         type="range"
@@ -8000,113 +8182,90 @@ function StudioPageContent() {
                         step="1"
                         value={extraTilt}
                         onChange={(e) => setExtraTilt(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       />
-                      <div className="flex justify-between font-code-metric text-[9.5px] text-slate-400">
-                        <span>Flush (0°)</span>
-                        <span>Rekomendasi (+10°)</span>
-                        <span>Tinggi (+20°)</span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-medium text-slate-600">Inverter</span>
+                        <span className="font-code-metric text-[10.5px] text-slate-500">
+                          DC/AC {calc.dcAcRatio}× · {calc.inverterEffPct}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setInverterType("string")}
+                          className={`p-2 rounded-xl text-left transition cursor-pointer border ${
+                            inverterType === "string"
+                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/90 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
+                              : "bg-slate-900/[0.03] text-slate-700 border-transparent hover:bg-slate-900/[0.06]"
+                          }`}
+                        >
+                          <span className="text-xs font-semibold block">Central String</span>
+                          <span className="text-[10px] text-slate-500 block">3-Phase Sentral</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInverterType("micro")}
+                          className={`p-2 rounded-xl text-left transition cursor-pointer border ${
+                            inverterType === "micro"
+                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/90 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
+                              : "bg-slate-900/[0.03] text-slate-700 border-transparent hover:bg-slate-900/[0.06]"
+                          }`}
+                        >
+                          <span className="text-xs font-semibold block">Microinverter</span>
+                          <span className="text-[10px] text-slate-500 block">Per Panel</span>
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* Arsitektur Inverter */}
-                  <div className="rounded-2xl bg-white/80 p-3.5 border border-amber-200/50 shadow-2xs space-y-3">
+                  {/* 4. Ringkasan Array */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-bold text-slate-900">Arsitektur Inverter</span>
-                      <span className="material-symbols-outlined text-amber-600 text-[18px]">electric_meter</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setInverterType("string")}
-                        className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                          inverterType === "string"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        <span className="text-xs font-bold block">Central String</span>
-                        <span className={`text-[9.5px] block mt-0.5 ${inverterType === "string" ? "text-amber-900 font-semibold" : "text-slate-500"}`}>
-                          Solis / Sungrow 3-Phase
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInverterType("micro")}
-                        className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                          inverterType === "micro"
-                            ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.8)] font-bold"
-                            : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        <span className="text-xs font-bold block">Microinverter</span>
-                        <span className={`text-[9.5px] block mt-0.5 ${inverterType === "micro" ? "text-amber-900 font-semibold" : "text-slate-500"}`}>
-                          Enphase IQ8+ Per Panel
-                        </span>
-                      </button>
-                    </div>
-                    <div className="flex gap-1.5 pt-0.5">
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-code-metric text-[10px] font-semibold">
-                        Rasio DC/AC: {calc.dcAcRatio}x
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-code-metric text-[10px] font-bold">
-                        Efisiensi CEC: {calc.inverterEffPct}
+                      <span className="font-title text-xs font-semibold text-slate-900">Ringkasan Array</span>
+                      <span className="text-[11px] font-semibold text-emerald-700 font-code-metric">
+                        {calc.densityPct}% terpakai
                       </span>
                     </div>
-                  </div>
-
-                  {/* Bento Summary Card */}
-                  <div className="rounded-xl bg-gradient-to-br from-sky-50/40 via-white to-white text-slate-900 p-3.5 space-y-2.5 shadow-2xs border border-slate-200/90">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <span className="text-xs font-bold flex items-center gap-1.5 text-slate-900">
-                        <span className="material-symbols-outlined text-sky-600 text-[16px]">developer_board</span>
-                        Ringkasan Konfigurasi Array PV
-                      </span>
-                      <span className="font-code-metric text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        Optimal
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-2 gap-3 pt-1">
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Total Modul Terpilih</span>
-                        <span className="font-bold text-slate-900 text-sm font-code-metric">{calc.totalModulesFitted} Unit</span>
+                        <span className="text-[10.5px] text-slate-400 block">Total Modul</span>
+                        <span className="font-semibold text-slate-900 text-sm font-code-metric">{calc.totalModulesFitted} unit</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Formasi Grid</span>
-                        <span className="font-bold text-slate-900 text-sm">{calc.cols} × {calc.rows} Modul</span>
+                        <span className="text-[10.5px] text-slate-400 block">Formasi Grid</span>
+                        <span className="font-semibold text-slate-900 text-sm">{calc.cols} × {calc.rows}</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Kapasitas Puncak</span>
-                        <span className="font-bold text-sky-700 text-sm font-code-metric">{calc.actualKwp.toFixed(2)} kWp</span>
+                        <span className="text-[10.5px] text-slate-400 block">Kapasitas Puncak</span>
+                        <span className="font-semibold text-sky-700 text-sm font-code-metric">{calc.actualKwp.toFixed(2)} kWp</span>
                       </div>
                       <div>
-                        <span className="text-[10px] text-slate-500 block">Luas Total Array</span>
-                        <span className="font-bold text-slate-900 text-sm font-code-metric">{(calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l).toFixed(1)} m²</span>
+                        <span className="text-[10.5px] text-slate-400 block">Luas Array</span>
+                        <span className="font-semibold text-slate-900 text-sm font-code-metric">{(calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l).toFixed(1)} m²</span>
                       </div>
-                    </div>
-                    <div className="pt-1 border-t border-slate-100 flex justify-between items-center text-[10px]">
-                      <span className="text-slate-500">Kerapatan Panel terhadap Atap:</span>
-                      <span className="font-bold text-emerald-700 font-code-metric">{calc.densityPct}% Terpakai</span>
                     </div>
                   </div>
 
                   {/* Actions */}
-                  <div className="pt-1 space-y-2">
+                  <div className="pt-0.5 space-y-2">
                     <button
                       type="button"
                       onClick={autoPackModules}
-                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 font-title text-xs font-bold shadow-[0_3px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 transition flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[17px] text-amber-900">auto_awesome</span>
+                      <span className="material-symbols-outlined text-[17px]">auto_awesome</span>
                       <span>Tata Otomatis Modul</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => showToast("Konfigurasi modul berhasil diterapkan")}
-                      className="w-full py-2.5 px-4 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-title text-xs font-bold shadow-sm transition flex items-center justify-center gap-2 cursor-pointer"
+                      onClick={() => showToast("Konfigurasi modul diterapkan")}
+                      className="w-full py-2 px-4 rounded-full bg-white/80 hover:bg-white border border-white/90 text-slate-700 font-title text-xs font-semibold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[17px] text-amber-600">check_circle</span>
+                      <span className="material-symbols-outlined text-[16px] text-amber-700">check_circle</span>
                       <span>Terapkan Konfigurasi</span>
                     </button>
                   </div>
@@ -8114,51 +8273,40 @@ function StudioPageContent() {
               )}
 
               {activeTab === "financials" && (
-                <div id="studio-pane-financials" className="p-4 space-y-4">
-                  {/* Card 1: Parameter Tarif & Tagihan PLN */}
-                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
+                <div id="studio-pane-financials" className="p-3.5 space-y-3">
+                  {/* 1. Tarif & Tagihan PLN */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
-                          <span className="material-symbols-outlined text-[17px]">bolt</span>
-                        </span>
-                        <div>
-                          <span className="font-title text-xs font-bold text-slate-900 block">Parameter Tarif &amp; Tagihan PLN</span>
-                          <span className="text-[10px] text-slate-400">Sesuaikan golongan tarif &amp; rekening listrik Anda</span>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-code-metric">
+                      <span className="font-title text-xs font-semibold text-slate-900">Tarif &amp; Tagihan PLN</span>
+                      <span className="text-[11px] font-semibold text-amber-800 font-code-metric">
                         {plnTariff ? `Rp ${Number(plnTariff).toLocaleString("id-ID")}/kWh` : ""}
                       </span>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-slate-600 block">Golongan Tarif Listrik</label>
-                      <select
-                        value={plnTariff}
-                        onChange={(e) => setPlnTariff(Number(e.target.value))}
-                        className="w-full p-2.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200/50 transition"
-                      >
-                        <option value="1700">R-2 / TR (3.500 – 5.500 VA Rumah Tangga) — Rp 1.700/kWh</option>
-                        <option value="1444.7">R-1 / TR (1.300 – 2.200 VA Rumah Tangga) — Rp 1.444,70/kWh</option>
-                        <option value="1699.53">R-3 / TR (&gt; 6.600 VA Rumah Tangga Besar) — Rp 1.699,53/kWh</option>
-                        <option value="1444.7">B-2 / TR (6.600 VA – 200 kVA Bisnis Menengah) — Rp 1.444,70/kWh</option>
-                        <option value="1114.74">B-3 / TM (&gt; 200 kVA Bisnis / Mall / Hotel) — Rp 1.114,74/kWh</option>
-                        <option value="1114.74">I-3 / TM (&gt; 200 kVA Industri / Pabrik / Gudang) — Rp 1.114,74/kWh</option>
-                        <option value="996.74">I-4 / TT (&gt; 30.000 kVA Industri Skala Besar) — Rp 996,74/kWh</option>
-                      </select>
-                    </div>
+                    <select
+                      value={plnTariff}
+                      onChange={(e) => setPlnTariff(Number(e.target.value))}
+                      className="w-full p-2.5 rounded-xl bg-slate-900/[0.035] text-xs font-medium text-slate-900 cursor-pointer focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 transition"
+                    >
+                      <option value="1700">R-2 / TR (3.500–5.500 VA) — Rp 1.700/kWh</option>
+                      <option value="1444.7">R-1 / TR (1.300–2.200 VA) — Rp 1.444,70/kWh</option>
+                      <option value="1699.53">R-3 / TR (&gt; 6.600 VA) — Rp 1.699,53/kWh</option>
+                      <option value="1444.7">B-2 / TR (Bisnis Menengah) — Rp 1.444,70/kWh</option>
+                      <option value="1114.74">B-3 / TM (Bisnis Besar) — Rp 1.114,74/kWh</option>
+                      <option value="1114.74">I-3 / TM (Industri) — Rp 1.114,74/kWh</option>
+                      <option value="996.74">I-4 / TT (Industri Besar) — Rp 996,74/kWh</option>
+                    </select>
 
-                    {/* Dual Input: Manual Numeric Field + Interactive Slider up to 100M */}
                     <div className="space-y-2 pt-2 border-t border-slate-100">
                       <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-semibold text-slate-700">Tagihan Listrik per Bulan</label>
-                        <span className="text-[9.5px] text-slate-400 font-medium">Batas s/d Rp 100 Juta</span>
+                        <label className="text-[11px] font-medium text-slate-600">Tagihan Bulanan</label>
+                        <span className="text-[10px] text-slate-400">
+                          ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh/bln
+                        </span>
                       </div>
 
-                      {/* Manual Currency Input */}
                       <div className="relative flex items-center">
-                        <span className="absolute left-3 text-xs font-bold text-amber-700 select-none">Rp</span>
+                        <span className="absolute left-3 text-xs font-semibold text-amber-800 select-none">Rp</span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -8184,44 +8332,32 @@ function StudioPageContent() {
                               setMonthlyBill(500_000);
                             }
                           }}
-                          className="w-full pl-9 pr-14 py-2 rounded-xl bg-white border border-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-200/50 text-right font-code-metric text-sm font-extrabold text-slate-900 tracking-wide transition shadow-2xs"
+                          className="w-full pl-9 pr-14 py-2 rounded-xl bg-slate-900/[0.035] focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 text-right font-code-metric text-sm font-bold text-slate-900 transition"
                           placeholder="2.800.000"
                         />
-                        <span className="absolute right-3 text-[10px] text-slate-400 font-semibold select-none">/ bulan</span>
+                        <span className="absolute right-3 text-[10px] text-slate-400 font-medium select-none">/ bln</span>
                       </div>
 
-                      {/* Interactive Range Slider */}
-                      <div className="pt-1">
-                        <input
-                          type="range"
-                          min="500000"
-                          max="100000000"
-                          step="250000"
-                          value={monthlyBill}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setMonthlyBill(val);
-                            setManualBillInput(val.toString());
-                          }}
-                          className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                        />
-                        <div className="flex justify-between items-center text-[9px] text-slate-400 font-code-metric pt-0.5">
-                          <span>Rp 500 Rb</span>
-                          <span>Rp 25 Jt</span>
-                          <span>Rp 50 Jt</span>
-                          <span>Rp 100 Jt</span>
-                        </div>
-                      </div>
+                      <input
+                        type="range"
+                        min="500000"
+                        max="100000000"
+                        step="250000"
+                        value={monthlyBill}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setMonthlyBill(val);
+                          setManualBillInput(val.toString());
+                        }}
+                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      />
 
-                      {/* Quick Presets */}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
+                      <div className="grid grid-cols-4 gap-1 font-code-metric text-[10px]">
                         {[
                           { label: "2 Jt", val: 2_000_000 },
                           { label: "5 Jt", val: 5_000_000 },
                           { label: "15 Jt", val: 15_000_000 },
-                          { label: "35 Jt", val: 35_000_000 },
                           { label: "50 Jt", val: 50_000_000 },
-                          { label: "100 Jt (Industri)", val: 100_000_000 },
                         ].map((preset) => (
                           <button
                             key={preset.val}
@@ -8230,406 +8366,261 @@ function StudioPageContent() {
                               setMonthlyBill(preset.val);
                               setManualBillInput(preset.val.toString());
                             }}
-                            className={`px-2 py-0.5 rounded-lg text-[9.5px] font-bold border transition cursor-pointer ${
+                            className={`py-1 rounded-full font-medium transition cursor-pointer ${
                               monthlyBill === preset.val
-                                ? "bg-amber-100 text-amber-900 border-amber-300 shadow-2xs"
-                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] text-slate-600 hover:bg-slate-900/[0.06]"
                             }`}
                           >
                             {preset.label}
                           </button>
                         ))}
                       </div>
-
-                      {/* Summary Footnote */}
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1.5 border-t border-slate-100 font-code-metric">
-                        <span>Konsumsi: ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh / bln</span>
-                        <span>Pengeluaran PLN: <strong>{formatRp(monthlyBill * 12)}</strong> / thn</span>
-                      </div>
                     </div>
                   </div>
 
-                  {/* Card 2: Komparasi Tagihan & Penghematan Listrik */}
-                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
+                  {/* 2. Penghematan & Proyeksi Arus Kas 25 Tahun */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-title text-xs font-bold text-slate-900 block">
-                          Komparasi Tagihan &amp; Penghematan
-                        </span>
-                        <span className="text-[10px] text-slate-400">Sebelum vs Pasca Pemasangan PLTS Atap</span>
-                      </div>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border font-code-metric ${
-                        calc.coveragePct > 0
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                          : "bg-slate-100 text-slate-500 border-slate-200"
+                      <span className="font-title text-xs font-semibold text-slate-900">Penghematan &amp; Arus Kas</span>
+                      <span className={`text-[11px] font-semibold font-code-metric ${
+                        calc.coveragePct > 0 ? "text-emerald-700" : "text-slate-400"
                       }`}>
                         {calc.coveragePct > 0 ? `Hemat ${calc.coveragePct}%` : "0% PLTS"}
                       </span>
                     </div>
 
-                    {/* Side-by-Side Comparison */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-semibold text-slate-500">Sebelum PLTS</span>
-                          <span className="text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">PLN Penuh</span>
-                        </div>
-                        <div className="font-title text-sm font-extrabold text-slate-900 font-code-metric">
+                    {/* Hero Comparison (No Nested Borders) */}
+                    <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-900/[0.03] p-3">
+                      <div>
+                        <span className="text-[10.5px] text-slate-500 block">Sebelum PLTS</span>
+                        <span className="font-title text-sm font-bold text-slate-900 font-code-metric block mt-0.5">
                           {formatRp(monthlyBill)}
-                        </div>
-                        <div className="text-[9.5px] text-slate-400 font-code-metric">
-                          ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh / bln
-                        </div>
+                        </span>
                       </div>
-
-                      <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-semibold text-emerald-900">Tagihan Baru PLN</span>
-                          <span className="text-[8.5px] font-bold px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-900">
-                            Hemat {calc.coveragePct}%
-                          </span>
-                        </div>
-                        <div className="font-title text-sm font-extrabold text-emerald-700 font-code-metric">
+                      <div>
+                        <span className="text-[10.5px] text-emerald-800 block">Tagihan Baru PLN</span>
+                        <span className="font-title text-sm font-bold text-emerald-700 font-code-metric block mt-0.5">
                           {formatRp(calc.newMonthlyBill)}
-                        </div>
-                        <div className="text-[9.5px] text-emerald-800 font-code-metric">
-                          Turun {formatRp(calc.cappedSaving)} / bln
-                        </div>
+                        </span>
                       </div>
                     </div>
 
-                    {/* Stacked Comparative Progress Bar */}
-                    <div className="space-y-1 pt-0.5">
-                      <div className="flex justify-between items-center text-[10px] text-slate-600 font-medium">
-                        <span>Porsi Penghematan Mandiri:</span>
-                        <span className="font-bold text-emerald-700 font-code-metric">
-                          {formatRp(calc.cappedSaving)} / bln ({calc.coveragePct}%)
-                        </span>
-                      </div>
-                      <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex border border-slate-200">
+                    {/* Progress Bar */}
+                    <div className="space-y-1.5">
+                      <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden flex">
                         {calc.coveragePct > 0 && (
                           <div
-                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500 flex items-center justify-center text-[8.5px] font-bold text-white tracking-tight"
+                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500 rounded-full"
                             style={{ width: `${calc.coveragePct}%` }}
-                            title={`Produksi Surya: ${Math.round(calc.monthlyGenKwh)} kWh (${formatRp(calc.cappedSaving)})`}
-                          >
-                            {calc.coveragePct >= 20 ? `${calc.coveragePct}% PLTS` : ""}
-                          </div>
+                          />
                         )}
-                        <div
-                          className="h-full bg-slate-200/90 transition-all duration-500 flex items-center justify-center text-[8.5px] font-bold text-slate-600 tracking-tight"
-                          style={{ width: `${100 - calc.coveragePct}%` }}
-                          title={`Sisa Tagihan PLN: ${formatRp(calc.newMonthlyBill)}`}
-                        >
-                          {100 - calc.coveragePct >= 25 ? `Sisa PLN (${100 - calc.coveragePct}%)` : ""}
-                        </div>
                       </div>
-                      <div className="flex justify-between items-center text-[9px] text-slate-400 font-code-metric pt-0.5">
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>Produksi: ~{Math.round(calc.monthlyGenKwh)} kWh</span>
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                          <span>Sisa Tagihan: {formatRp(calc.newMonthlyBill)}</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 3-Column Cumulative Summary */}
-                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100 text-center">
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Hemat / Bulan</span>
-                        <span className="font-title text-xs font-extrabold text-emerald-700 block mt-0.5 font-code-metric">
-                          {formatRp(calc.cappedSaving)}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Hemat 1 Tahun</span>
-                        <span className="font-title text-xs font-extrabold text-emerald-700 block mt-0.5 font-code-metric">
-                          {formatRp(calc.annualSaving)}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-xl bg-emerald-50/60 border border-emerald-100">
-                        <span className="text-[9px] text-emerald-700 font-bold uppercase tracking-wider block">Hemat 25 Tahun</span>
-                        <span className="font-title text-xs font-extrabold text-emerald-800 block mt-0.5 font-code-metric">
-                          {formatRp(calc.cumulative25)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 3: Proyeksi Arus Kas & Titik Impas (BEP) */}
-                  <div className="rounded-2xl bg-white/90 backdrop-blur-md p-4 border border-amber-200/60 shadow-2xs space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-emerald-600 text-[18px]">trending_up</span>
-                          Proyeksi Arus Kas &amp; BEP
-                        </span>
-                        <span className="text-[10px] text-slate-400 block mt-0.5">Analisis Finansial 25 Tahun &amp; Titik Impas</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200/90 px-2.5 py-1 rounded-full text-emerald-800 text-[10px] font-bold shadow-2xs whitespace-nowrap shrink-0">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>
-                          {calc.bepYear > 0 && calc.bepYear <= 25
-                            ? `BEP: Thn ${calc.bepYear.toFixed(1)}`
-                            : calc.totalCapex === 0
-                            ? "Tanpa Modal"
-                            : "BEP &gt; 25 Thn"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Interactive 2x2 Real-time Inspector Stat Strip */}
-                    <div className="grid grid-cols-2 gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-left">
-                      <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider">Tahun Proyeksi</span>
-                          <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded-full ${
-                            currentInspectCashFlow >= 0
-                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                              : currentInspectYear === calc.bepYear
-                              ? "bg-amber-100 text-amber-800 border border-amber-200"
-                              : "bg-rose-100 text-rose-800 border border-rose-200"
-                          }`}>
-                            {currentInspectCashFlow >= 0 ? "Profit" : currentInspectYear === calc.bepYear ? "BEP" : "Investasi"}
+                      <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                        <div>
+                          <span className="text-[9.5px] text-slate-400 block">Per Bulan</span>
+                          <span className="font-title text-xs font-bold text-emerald-700 font-code-metric">
+                            {formatRp(calc.cappedSaving)}
                           </span>
                         </div>
-                        <span className="font-title text-xs font-extrabold text-slate-900 block mt-1">
-                          Tahun {currentInspectYear.toFixed(1)} {currentInspectYear === calc.bepYear ? "(BEP)" : ""}
-                        </span>
-                      </div>
-
-                      <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
-                        <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block">Arus Kas Bersih</span>
-                        <span className={`font-title text-xs font-extrabold block mt-1 font-code-metric ${
-                          currentInspectCashFlow >= 0 ? "text-emerald-600" : "text-amber-600"
-                        }`}>
-                          {formatRp(currentInspectCashFlow)}
-                        </span>
-                      </div>
-
-                      <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
-                        <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block">Total Hemat Listrik</span>
-                        <span className="font-code-metric text-xs font-extrabold text-slate-800 block mt-1">
-                          {formatRp(currentInspectYear * calc.annualSaving)}
-                        </span>
-                      </div>
-
-                      <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
-                        <span className="text-[8.5px] text-emerald-600 font-bold uppercase tracking-wider block">Serapan Lingkungan</span>
-                        <span className="font-title text-xs font-extrabold text-emerald-700 block mt-1">
-                          {Math.round(currentInspectYear * (calc.treesEquivalent / 25) * 25).toLocaleString("id-ID")} Pohon
-                        </span>
+                        <div>
+                          <span className="text-[9.5px] text-slate-400 block">1 Tahun</span>
+                          <span className="font-title text-xs font-bold text-slate-900 font-code-metric">
+                            {formatRp(calc.annualSaving)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9.5px] text-slate-400 block">25 Tahun</span>
+                          <span className="font-title text-xs font-bold text-emerald-800 font-code-metric">
+                            {formatRp(calc.cumulative25)}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Interactive SVG Chart */}
-                    <div
-                      className="relative w-full h-44 bg-gradient-to-b from-slate-50/60 via-white to-slate-50/60 rounded-xl border border-slate-200/90 p-2 overflow-hidden select-none cursor-crosshair shadow-2xs"
-                      onMouseMove={handleChartMouseMove}
-                      onMouseLeave={() => setRoiHoverYear(null)}
-                    >
-                      <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${chartW} ${chartH}`}>
-                        <defs>
-                          <linearGradient id="roiProfitGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                            <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
-                          </linearGradient>
-                          <linearGradient id="roiDeficitGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.05" />
-                            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.2" />
-                          </linearGradient>
-                          <linearGradient id="roiCurveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#ef4444" />
-                            <stop offset={`${Math.max(0, (bepRatio - 0.04) * 100).toFixed(1)}%`} stopColor="#f59e0b" />
-                            <stop offset={`${(bepRatio * 100).toFixed(1)}%`} stopColor="#10b981" />
-                            <stop offset="100%" stopColor="#059669" />
-                          </linearGradient>
-                        </defs>
+                    {/* BEP & Cashflow Chart */}
+                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-slate-700">
+                          Tahun {currentInspectYear.toFixed(1)} ·{" "}
+                          <span className={`font-code-metric ${currentInspectCashFlow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                            {formatRp(currentInspectCashFlow)}
+                          </span>
+                        </span>
+                        <span className="text-[10.5px] font-semibold text-emerald-700 font-code-metric">
+                          {calc.bepYear > 0 && calc.bepYear <= 25
+                            ? `BEP ${calc.bepYear.toFixed(1)} thn`
+                            : calc.totalCapex === 0
+                            ? "Tanpa Modal"
+                            : "BEP > 25 thn"}
+                        </span>
+                      </div>
 
-                        {/* Grid lines */}
-                        <line x1="28" y1="20" x2="320" y2="20" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                        <line x1="28" y1="46" x2="320" y2="46" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                        <line x1="28" y1="72" x2="320" y2="72" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
+                      <div
+                        className="relative w-full h-40 bg-slate-50/75 rounded-xl p-2 overflow-hidden select-none cursor-crosshair"
+                        onMouseMove={handleChartMouseMove}
+                        onMouseLeave={() => setRoiHoverYear(null)}
+                      >
+                        <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${chartW} ${chartH}`}>
+                          <defs>
+                            <linearGradient id="roiProfitGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                              <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                            </linearGradient>
+                            <linearGradient id="roiDeficitGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.05" />
+                              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.2" />
+                            </linearGradient>
+                            <linearGradient id="roiCurveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#ef4444" />
+                              <stop offset={`${Math.max(0, (bepRatio - 0.04) * 100).toFixed(1)}%`} stopColor="#f59e0b" />
+                              <stop offset={`${(bepRatio * 100).toFixed(1)}%`} stopColor="#10b981" />
+                              <stop offset="100%" stopColor="#059669" />
+                            </linearGradient>
+                          </defs>
 
-                        <line x1="86.4" y1="14" x2="86.4" y2="108" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                        <line x1="144.8" y1="14" x2="144.8" y2="108" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                        <line x1="203.2" y1="14" x2="203.2" y2="108" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                        <line x1="261.6" y1="14" x2="261.6" y2="108" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
+                          <line x1="28" y1="20" x2="320" y2="20" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
+                          <line x1="28" y1="46" x2="320" y2="46" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
+                          <line x1="28" y1="72" x2="320" y2="72" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
+                          <line x1="28" y1={zeroY} x2="320" y2={zeroY} stroke="#cbd5e1" strokeWidth="1.2" strokeDasharray="3 3" />
 
-                        {/* Zero baseline */}
-                        <line x1="28" y1={zeroY} x2="320" y2={zeroY} stroke="#cbd5e1" strokeWidth="1.2" strokeDasharray="3 3" />
-                        <rect x="290" y={zeroY - 7} width="30" height="12" rx="3" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="0.8" />
-                        <text x="305" y={zeroY + 2} textAnchor="middle" fontSize="7" fill="#64748b" fontFamily="Inter" fontWeight="700">Rp 0</text>
+                          {deficitFillD && <path d={deficitFillD} fill="url(#roiDeficitGrad)" />}
+                          {profitFillD && <path d={profitFillD} fill="url(#roiProfitGrad)" />}
+                          <path d={curvePathD} fill="none" stroke="url(#roiCurveGrad)" strokeWidth="2.5" strokeLinecap="round" />
 
-                        {deficitFillD && <path d={deficitFillD} fill="url(#roiDeficitGrad)" />}
-                        {profitFillD && <path d={profitFillD} fill="url(#roiProfitGrad)" />}
-                        <path d={curvePathD} fill="none" stroke="url(#roiCurveGrad)" strokeWidth="2.5" strokeLinecap="round" />
+                          {calc.bepYear > 0 && calc.bepYear <= 25 && calc.annualSaving > 0 && (
+                            <g transform={`translate(${mapChartX(effectiveBep)}, ${zeroY})`}>
+                              <circle cx="0" cy="0" r="4" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                              <text x="0" y="-8" textAnchor="middle" fontSize="7" fill="#b45309" fontFamily="Inter" fontWeight="700">
+                                BEP {calc.bepYear.toFixed(1)}t
+                              </text>
+                            </g>
+                          )}
 
-                        {/* Year 12 Inverter Replacement */}
-                        <g transform={`translate(${mapChartX(12)}, 0)`}>
-                          <line x1="0" y1="18" x2="0" y2="106" stroke="#f59e0b" strokeWidth="1" strokeDasharray="2 2" opacity="0.8" />
-                          <rect x="-12" y="22" width="24" height="11" rx="2" fill="#fffbeb" stroke="#f59e0b" strokeWidth="0.8" />
-                          <text x="0" y="30" textAnchor="middle" fontSize="6.5" fill="#b45309" fontFamily="Inter" fontWeight="700">Thn 12</text>
-                        </g>
+                          <line
+                            x1={mapChartX(currentInspectYear)}
+                            y1="12"
+                            x2={mapChartX(currentInspectYear)}
+                            y2="108"
+                            stroke="#0284c7"
+                            strokeWidth="1.2"
+                            strokeDasharray="2 2"
+                          />
+                          <circle
+                            cx={mapChartX(currentInspectYear)}
+                            cy={mapChartY(currentInspectCashFlow)}
+                            r="4"
+                            fill="#0284c7"
+                            stroke="#ffffff"
+                            strokeWidth="1.5"
+                          />
 
-                        {/* BEP Marker */}
-                        {calc.bepYear > 0 && calc.bepYear <= 25 && calc.annualSaving > 0 && (
-                          <g transform={`translate(${mapChartX(effectiveBep)}, ${zeroY})`}>
-                            <circle cx="0" cy="0" r="4.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
-                            <rect x="-24" y="-19" width="48" height="13" rx="4" fill="#fffbeb" stroke="#f59e0b" strokeWidth="0.8" />
-                            <text x="0" y="-10" textAnchor="middle" fontSize="7" fill="#b45309" fontFamily="Inter" fontWeight="800">
-                              ⭐ BEP {calc.bepYear.toFixed(1)} Thn
-                            </text>
-                          </g>
-                        )}
+                          <text x="28" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600">Thn 0</text>
+                          <text x="144.8" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="middle">Thn 10</text>
+                          <text x="320" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="end">Thn 25</text>
+                        </svg>
+                      </div>
 
-                        {/* Interactive crosshair */}
-                        <line
-                          x1={mapChartX(currentInspectYear)}
-                          y1="12"
-                          x2={mapChartX(currentInspectYear)}
-                          y2="108"
-                          stroke="#0284c7"
-                          strokeWidth="1.2"
-                          strokeDasharray="2 2"
-                        />
-                        <circle
-                          cx={mapChartX(currentInspectYear)}
-                          cy={mapChartY(currentInspectCashFlow)}
-                          r="4.5"
-                          fill="#0284c7"
-                          stroke="#ffffff"
-                          strokeWidth="1.5"
-                        />
-
-                        <text x="28" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600">Thn 0</text>
-                        <text x="144.8" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="middle">Thn 10</text>
-                        <text x="320" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="end">Thn 25</text>
-                      </svg>
-                    </div>
-
-                    {/* Quick Jump Buttons */}
-                    <div className="grid grid-cols-5 gap-1 pt-0.5">
-                      {[
-                        { label: "Thn 5", sub: "Titik Balik", yr: 5 },
-                        { label: "Thn 10", sub: "Laba 100%", yr: 10 },
-                        { label: "Thn 15", sub: "Pasca Inv", yr: 15 },
-                        { label: "Thn 20", sub: "Ekspansi", yr: 20 },
-                        { label: "Thn 25", sub: "Puncak", yr: 25 },
-                      ].map((btn) => (
-                        <button
-                          key={btn.yr}
-                          type="button"
-                          onClick={() => setRoiHoverYear(btn.yr)}
-                          className={`p-1 rounded-lg border text-center transition cursor-pointer flex flex-col items-center justify-center ${
-                            currentInspectYear === btn.yr
-                              ? "bg-amber-100/80 border-amber-300 text-amber-900 shadow-2xs"
-                              : "bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          <span className="text-[9.5px] font-bold">{btn.label}</span>
-                          <span className="text-[8px] text-slate-400">{btn.sub}</span>
-                        </button>
-                      ))}
+                      <div className="grid grid-cols-5 gap-1 font-code-metric text-[10px]">
+                        {[5, 10, 15, 20, 25].map((yr) => (
+                          <button
+                            key={yr}
+                            type="button"
+                            onClick={() => setRoiHoverYear(yr)}
+                            className={`py-1 rounded-full transition cursor-pointer font-medium ${
+                              currentInspectYear === yr
+                                ? "bg-amber-100 text-amber-950 font-semibold"
+                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
+                            }`}
+                          >
+                            Thn {yr}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Card 4: Rincian Modal CAPEX Proyek (Collapsible) */}
-                  <div className="rounded-2xl bg-white/90 backdrop-blur-md border border-amber-200/60 overflow-hidden shadow-2xs">
+                  {/* 3. Rincian Modal CAPEX (Collapsible) */}
+                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl border border-white/90 overflow-hidden shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)]">
                     <button
                       type="button"
                       onClick={() => setCapexCollapsed((c) => !c)}
-                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-white/50 transition-colors cursor-pointer"
                     >
                       <div>
-                        <span className="font-title text-xs font-bold text-slate-900 block">Rincian Modal CAPEX Proyek</span>
-                        <span className="font-code-metric text-[11px] text-slate-500 font-semibold">Total: {formatRp(calc.totalCapex)}</span>
+                        <span className="font-title text-xs font-semibold text-slate-900 block">Estimasi Investasi (CAPEX)</span>
+                        <span className="font-code-metric text-[11px] text-slate-500 font-medium">{formatRp(calc.totalCapex)}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-code-metric">
-                          {calc.totalModulesFitted} Modul ({calc.actualKwp.toFixed(2)} kWp)
-                        </span>
-                        <span
-                          className={`material-symbols-outlined text-slate-400 transition-transform duration-200 text-[20px] ${
-                            capexCollapsed ? "" : "rotate-180"
-                          }`}
-                        >
-                          expand_more
-                        </span>
-                      </div>
+                      <span
+                        className={`material-symbols-outlined text-slate-400 transition-transform duration-200 text-[20px] ${
+                          capexCollapsed ? "" : "rotate-180"
+                        }`}
+                      >
+                        expand_more
+                      </span>
                     </button>
 
                     {!capexCollapsed && (
-                      <div className="px-3.5 pb-3.5 space-y-2 border-t border-slate-100 animate-fadeIn">
-                        <div className="pt-2 divide-y divide-slate-100 text-xs">
-                          <div className="py-1.5 flex justify-between items-center">
-                            <span className="text-slate-600">Modul Surya ({calc.totalModulesFitted}x Modul {modulePower}W)</span>
-                            <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costModules)}</span>
-                          </div>
-                          <div className="py-1.5 flex justify-between items-center">
-                            <span className="text-slate-600">Inverter &amp; Kelistrikan AC/DC ({inverterType === "string" ? "Central String" : "Microinverter"})</span>
-                            <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInverter)}</span>
-                          </div>
-                          <div className="py-1.5 flex justify-between items-center">
-                            <span className="text-slate-600">Sistem Racking Aluminium</span>
-                            <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costRacking)}</span>
-                          </div>
-                          <div className="py-1.5 flex justify-between items-center">
-                            <span className="text-slate-600">Instalasi, Net-Metering &amp; Sertifikat SLO</span>
-                            <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInstall)}</span>
-                          </div>
-                          <div className="pt-2.5 mt-1.5 flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200 font-bold">
-                            <div>
-                              <span className="text-slate-950 block text-xs">Total Modal Investasi</span>
-                              <span className="text-[10px] text-slate-400 font-normal">
-                                Payback: {calc.paybackYears ? `${calc.paybackYears.toFixed(1)} Thn` : "—"} • IRR: {calc.irr}%
-                              </span>
-                            </div>
-                            <span className="font-code-metric text-sm text-sky-700">{formatRp(calc.totalCapex)}</span>
-                          </div>
+                      <div className="px-3.5 pb-3.5 border-t border-slate-100 divide-y divide-slate-100 text-xs animate-fadeIn">
+                        <div className="py-2 flex justify-between items-center">
+                          <span className="text-slate-500">Modul ({calc.totalModulesFitted}× {modulePower}W)</span>
+                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costModules)}</span>
+                        </div>
+                        <div className="py-2 flex justify-between items-center">
+                          <span className="text-slate-500">Inverter ({inverterType === "string" ? "String" : "Micro"})</span>
+                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInverter)}</span>
+                        </div>
+                        <div className="py-2 flex justify-between items-center">
+                          <span className="text-slate-500">Racking Aluminium</span>
+                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costRacking)}</span>
+                        </div>
+                        <div className="py-2 flex justify-between items-center">
+                          <span className="text-slate-500">Instalasi &amp; SLO</span>
+                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInstall)}</span>
+                        </div>
+                        <div className="pt-2.5 flex justify-between items-center font-semibold">
+                          <span className="text-slate-900">Total · IRR {calc.irr}%</span>
+                          <span className="font-code-metric text-sky-700">{formatRp(calc.totalCapex)}</span>
                         </div>
                       </div>
                     )}
                   </div>
 
                   {/* Actions */}
-                  <div className="pt-1 space-y-2">
+                  <div className="pt-0.5 space-y-2">
                     <button
                       type="button"
-                      onClick={handleSaveSimulation}
+                      onClick={openSaveModal}
                       disabled={isSaving}
-                      className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-500 active:scale-98 text-amber-950 font-title text-xs font-bold shadow-xs border border-amber-300 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                      className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                     >
-                      <span className={`material-symbols-outlined text-[17px] text-amber-950 ${isSaving ? "animate-spin" : ""}`}>
+                      <span className={`material-symbols-outlined text-[16px] ${isSaving ? "animate-spin" : ""}`}>
                         {isSaving ? "sync" : saveSuccess ? "check_circle" : "cloud_upload"}
                       </span>
                       <span>
                         {isSaving
-                          ? "Menyimpan ke Server..."
+                          ? "Menyimpan..."
                           : saveSuccess
-                            ? "Berhasil Disimpan!"
+                            ? "Tersimpan"
                             : openedSimulationId !== null
-                              ? "Perbarui Simulasi Tersimpan"
-                              : "Simpan Simulasi ke Akun"}
+                              ? "Perbarui Proyek"
+                              : "Simpan Proyek"}
                       </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setProposalOpen(true)}
-                      className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 active:scale-98 text-slate-800 font-title text-xs font-bold shadow-2xs border border-slate-200 transition flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full py-2 px-4 rounded-full bg-white/80 hover:bg-white border border-white/90 text-slate-700 font-title text-xs font-semibold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[17px] text-amber-600">file_download</span>
+                      <span className="material-symbols-outlined text-[16px] text-amber-700">file_download</span>
                       <span>Unduh Proposal PDF</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => showToast("Permintaan penawaran EPC terkirim ke mitra resmi!")}
-                      className="w-full py-2.5 px-4 rounded-xl bg-white/80 hover:bg-white border border-amber-200/80 text-slate-800 font-title text-xs font-bold shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
+                      onClick={() => showToast("Permintaan penawaran EPC terkirim!")}
+                      className="w-full py-1.5 px-4 rounded-full text-slate-500 hover:text-amber-900 hover:bg-white/60 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[17px] text-amber-600">verified</span>
+                      <span className="material-symbols-outlined text-[15px] text-amber-600">verified</span>
                       <span>Ajukan Penawaran Mitra EPC</span>
                     </button>
                   </div>
@@ -8659,6 +8650,141 @@ function StudioPageContent() {
         activeFacetName={activeFacet.name}
         monthlyGenKwh={calc.monthlyGenKwh}
       />
+
+      {/* Save Project Name Dialog (Apple Glass + Soft Radiant Glow) */}
+      {saveModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 print:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="save-project-title"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !isSaving) {
+              e.preventDefault();
+              setSaveModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs animate-fadeIn"
+            onClick={() => {
+              if (!isSaving) setSaveModalOpen(false);
+            }}
+          />
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!isSaving) {
+                void performSaveSimulation(saveModalName);
+              }
+            }}
+            className="relative w-full max-w-md rounded-[28px] bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_24px_64px_rgba(15,23,42,0.16),0_8px_28px_rgba(253,224,71,0.18),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 sm:p-6 space-y-4 animate-scaleIn"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="save-project-title" className="font-title font-bold text-slate-900 text-base">
+                  {openedSimulationId !== null ? "Perbarui Proyek" : "Simpan Proyek"}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Nama bawaan mengikuti lokasi atap atau pencarian Anda.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => setSaveModalOpen(false)}
+                className="w-7 h-7 rounded-full hover:bg-slate-900/5 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+                aria-label="Tutup"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="save-project-name-input" className="text-xs font-semibold text-slate-700">
+                  Nama Proyek
+                </label>
+                <button
+                  type="button"
+                  disabled={isResolvingProjectName || isSaving}
+                  onClick={() => {
+                    const targetFacets =
+                      selectedFacets.length > 0
+                        ? selectedFacets
+                        : facets.filter((facet) => facet.id === activeFacetId);
+                    saveModalDirtyRef.current = false;
+                    setIsResolvingProjectName(true);
+                    void resolveDefaultProjectName(targetFacets, true)
+                      .then((resolved) => {
+                        setSaveModalName(resolved);
+                      })
+                      .finally(() => {
+                        setIsResolvingProjectName(false);
+                      });
+                  }}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 hover:text-amber-950 transition cursor-pointer disabled:opacity-50"
+                >
+                  <span className={`material-symbols-outlined text-[13px] ${isResolvingProjectName ? "animate-spin" : ""}`}>
+                    {isResolvingProjectName ? "sync" : "my_location"}
+                  </span>
+                  <span>{isResolvingProjectName ? "Mencari alamat..." : "Ambil dari titik atap"}</span>
+                </button>
+              </div>
+              <input
+                id="save-project-name-input"
+                autoFocus
+                type="text"
+                maxLength={160}
+                value={saveModalName}
+                onChange={(e) => {
+                  saveModalDirtyRef.current = true;
+                  setSaveModalName(e.target.value);
+                }}
+                placeholder="Contoh: Jl. Pajajaran No. 42, Bogor Tengah"
+                className="w-full h-11 px-3.5 rounded-2xl bg-white/90 border border-slate-200/90 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-200/60 transition"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-slate-600">
+              <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200/80 font-medium">
+                {selectedFacets.length > 0 ? selectedFacets.length : 1} bidang atap
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200/80 font-code-metric font-semibold text-slate-800">
+                {calc.totalModulesFitted} panel · {calc.actualKwp.toFixed(1)} kWp
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => setSaveModalOpen(false)}
+                className="h-9 px-4 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 text-xs font-semibold transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving || saveModalName.trim() === ""}
+                className="h-9 px-5 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 border border-amber-200/90 shadow-[0_3px_14px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                <span className={`material-symbols-outlined text-[15px] ${isSaving ? "animate-spin" : ""}`}>
+                  {isSaving ? "sync" : "check"}
+                </span>
+                <span>
+                  {isSaving
+                    ? "Menyimpan..."
+                    : openedSimulationId !== null
+                      ? "Simpan Perubahan"
+                      : "Simpan Proyek"}
+                </span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Konfirmasi keluar dengan rancangan yang belum tersimpan */}
       <ConfirmDialog

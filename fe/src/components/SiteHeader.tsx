@@ -38,15 +38,15 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="w-full border-b border-slate-200/90 bg-white/95 backdrop-blur-md sticky top-0 z-40 print:hidden">
+    <header className="w-full border-b border-white/80 bg-white/75 backdrop-blur-2xl saturate-150 sticky top-0 z-40 print:hidden">
       <div className="page-frame h-16 flex items-center justify-between gap-3">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 shrink-0" title="SunSight Beranda">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="SunSight Logo" className="h-8 w-auto" />
+            <img src="/logo.svg" alt="SunSight Logo" className="h-7 w-auto" />
           </Link>
 
-          <nav className="hidden sm:flex items-center p-1 rounded-full bg-slate-100/90 border border-slate-200/70" aria-label="Navigasi utama">
+          <nav className="hidden sm:flex items-center p-1 rounded-full bg-slate-900/[0.045] border border-white/80" aria-label="Navigasi utama">
             {NAV_LINKS.map((link) => {
               const active = link.exact
                 ? pathname === link.href
@@ -59,7 +59,7 @@ export function SiteHeader() {
                   aria-current={active ? "page" : undefined}
                   className={`px-3.5 py-1.5 rounded-full text-xs transition ${
                     active
-                      ? "bg-white text-slate-900 shadow-xs border border-slate-200/80 font-bold"
+                      ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 text-amber-950 font-semibold shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                       : "text-slate-600 hover:text-slate-900 font-medium"
                   }`}
                 >
@@ -75,20 +75,20 @@ export function SiteHeader() {
           <div className="flex sm:hidden items-center gap-1">
             <Link
               href="/studio"
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold ${
+              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold ${
                 pathname.startsWith("/studio")
-                  ? "bg-sky-100 text-sky-900"
-                  : "text-slate-600 hover:bg-slate-100"
+                  ? "bg-amber-100 text-amber-950"
+                  : "text-slate-600 hover:bg-slate-900/[0.05]"
               }`}
             >
               Studio
             </Link>
             <Link
               href="/history"
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold ${
+              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold ${
                 pathname.startsWith("/history")
-                  ? "bg-sky-100 text-sky-900"
-                  : "text-slate-600 hover:bg-slate-100"
+                  ? "bg-amber-100 text-amber-950"
+                  : "text-slate-600 hover:bg-slate-900/[0.05]"
               }`}
             >
               Riwayat
@@ -98,20 +98,21 @@ export function SiteHeader() {
           {hasToken ? (
             <>
               {biodata?.name && (
-                <div
-                  className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                <Link
+                  href="/profile"
+                  className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/80 hover:bg-white border border-white/90 text-xs text-slate-700 shadow-2xs transition"
                   title={`${biodata.name} (${biodata.email})`}
                 >
-                  <span className="w-5 h-5 rounded-full bg-sky-600 text-white font-bold text-[10px] flex items-center justify-center">
+                  <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 font-bold text-[10px] flex items-center justify-center">
                     {initials}
                   </span>
                   <span className="font-semibold max-w-[130px] truncate">{biodata.name}</span>
-                </div>
+                </Link>
               )}
               <button
                 type="button"
                 onClick={() => void handleSignOut()}
-                className="px-3 py-1.5 rounded-full border border-slate-200 hover:border-rose-300 bg-white hover:bg-rose-50 text-xs font-semibold text-slate-700 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                className="px-3 py-1.5 rounded-full bg-slate-900/[0.045] hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[15px]">logout</span>
                 <span>Keluar</span>
@@ -121,13 +122,13 @@ export function SiteHeader() {
             <>
               <Link
                 href="/login"
-                className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-900/[0.05] transition"
               >
                 Masuk
               </Link>
               <Link
                 href="/register"
-                className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white transition shadow-xs shadow-sky-600/20"
+                className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 transition shadow-[0_2px_8px_rgba(245,158,11,0.18)] border border-amber-300/80"
               >
                 Daftar
               </Link>

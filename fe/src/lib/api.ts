@@ -297,7 +297,9 @@ export type SimulationSummary = {
   trees_equivalent: number;
   capacity_kwp: number;
   annual_production_kwh: number;
+  monthly_bill_idr?: number;
   monthly_saving_idr: number;
+  annual_saving_idr?: number;
   payback_years: number | null;
   created_at: string;
 };
@@ -385,6 +387,13 @@ export type GeocodeResponse = {
   query: string;
   /** Kosong berarti alamat tidak ditemukan, bukan kegagalan. */
   results: GeocodeResult[];
+};
+
+export type ReverseGeocodeResponse = {
+  lat: number;
+  lng: number;
+  label: string | null;
+  source: string;
 };
 
 export type Paginated<T> = {
@@ -686,6 +695,13 @@ export const api = {
       ? mockApi.geocode(query)
       : apiRequest<GeocodeResponse>(`/geocode?q=${encodeURIComponent(query)}`),
 
+  reverseGeocode: (lat: number, lng: number) =>
+    USE_MOCK
+      ? mockApi.reverseGeocode(lat, lng)
+      : apiRequest<ReverseGeocodeResponse>(
+          `/reverse-geocode?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`,
+        ),
+
   saveSimulation: (body: SimulationRequest) =>
     USE_MOCK
       ? mockApi.saveSimulation(body)
@@ -695,6 +711,11 @@ export const api = {
     USE_MOCK
       ? mockApi.updateSimulation(id, body)
       : apiRequest<SimulationDetail>(`/analyses/${id}`, { method: "PATCH", body }),
+
+  renameSimulation: (id: number, address: string | null) =>
+    USE_MOCK
+      ? mockApi.renameSimulation(id, address)
+      : apiRequest<SimulationDetail>(`/analyses/${id}/name`, { method: "PATCH", body: { address } }),
 
   updateProfile: (body: {
     name: string;

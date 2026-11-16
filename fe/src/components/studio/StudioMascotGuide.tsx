@@ -77,7 +77,6 @@ const STUDIO_STEPS: StudioTourStep[] = [
 
 interface StudioMascotGuideProps {
   isOpen: boolean;
-  isCompleted?: boolean;
   onOpen: () => void;
   onClose: () => void;
   onPopulateActiveFacet?: () => void;
@@ -131,9 +130,9 @@ const AnimatedSunnyStudioMascot = memo(function AnimatedSunnyStudioMascot({
     : "translate(0px, 0px) rotate(0deg) scale(1)";
 
   return (
-    <div className="relative w-[88px] h-[76px] select-none pointer-events-none drop-shadow-[0_6px_16px_rgba(245,158,11,0.22)]">
+    <div className="relative w-12 h-12 select-none pointer-events-none shrink-0 drop-shadow-[0_4px_12px_rgba(245,158,11,0.22)]">
       <svg
-        viewBox="0 0 460 360"
+        viewBox="55 10 350 340"
         className="w-full h-full overflow-visible"
         aria-label="Sunny - Maskot Studio SunSight"
       >
@@ -263,7 +262,6 @@ const AnimatedSunnyStudioMascot = memo(function AnimatedSunnyStudioMascot({
 
 export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
   isOpen,
-  isCompleted = false,
   onOpen,
   onClose,
   onPopulateActiveFacet,
@@ -564,53 +562,40 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
         }}
         className="z-50 pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
       >
-        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl border border-white/95 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_8px_28px_rgba(253,224,71,0.18),0_2px_14px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] p-4 sm:p-5 text-slate-800">
+        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_8px_28px_rgba(253,224,71,0.18),0_2px_14px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 text-slate-800">
           {/* Ambient Soft Radiant Glow Aura */}
           <div className="pointer-events-none absolute inset-0 rounded-[28px] overflow-hidden -z-10">
             <div className="absolute -top-10 -left-10 w-36 h-36 rounded-full bg-gradient-to-br from-yellow-200/45 via-amber-200/25 to-transparent blur-2xl" />
             <div className="absolute -bottom-10 -right-10 w-36 h-36 rounded-full bg-gradient-to-tl from-sky-200/35 via-cyan-100/20 to-transparent blur-2xl" />
           </div>
 
-          {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu (Sejajar Badge & Bebas Tabrakan Teks) */}
-          <div className="absolute -top-2.5 sm:-top-3 left-2 sm:left-2.5">
-            <AnimatedSunnyStudioMascot
-              expression={currentStep.expression}
-              isGliding={isGliding}
-              glideDirection={glideDirection}
-            />
-          </div>
-
-          {/* Header Card: Badge Step, Status Panduan & Tombol Tutup */}
-          <div className="flex items-center justify-between gap-2 mb-3.5 pl-16 sm:pl-[74px]">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] sm:text-[11px] font-bold text-amber-950 bg-gradient-to-r from-amber-100/80 via-yellow-100/90 to-sky-50/80 px-2.5 py-0.5 rounded-full border border-white/90 shadow-[0_2px_10px_rgba(245,158,11,0.14),inset_0_1px_1px_rgba(255,255,255,0.9)] font-code-metric">
+          {/* Header Card: Sunny Proporsional + Badge Step + Tombol Tutup */}
+          <div className="flex items-center justify-between gap-2.5 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AnimatedSunnyStudioMascot
+                expression={currentStep.expression}
+                isGliding={isGliding}
+                glideDirection={glideDirection}
+              />
+              <span className="text-[11px] font-semibold text-amber-950 bg-gradient-to-r from-amber-100/80 via-yellow-100/90 to-sky-50/80 px-2.5 py-0.5 rounded-full border border-white/90 shadow-[0_2px_10px_rgba(245,158,11,0.14),inset_0_1px_1px_rgba(255,255,255,0.9)] font-code-metric truncate">
                 {currentStep.badge}
               </span>
-              {isCompleted ? (
-                <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-800 bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-white/90 px-2 py-0.5 rounded-full border border-emerald-200/70 shadow-[0_2px_8px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)]">
-                  <span className="material-symbols-outlined text-[11px]">check_circle</span>
-                  Sudah dilewati
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-amber-950 bg-gradient-to-r from-amber-100/90 via-yellow-100/95 to-amber-100/85 px-2 py-0.5 rounded-full border border-amber-200/70 shadow-[0_2px_10px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]">
-                  Baru
-                </span>
-              )}
             </div>
 
             <button
               type="button"
               onClick={handleComplete}
-              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 flex items-center justify-center transition-colors cursor-pointer shrink-0"
-              title="Tutup & tandai panduan selesai"
+              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.05] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              title="Tutup panduan"
+              aria-label="Tutup panduan"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
             </button>
           </div>
 
           {/* Judul & Penjelasan Ringkas (To the Point) */}
-          <div className="pl-1 pt-1.5 mb-4">
-            <h3 className="font-title text-sm sm:text-[15px] font-bold text-slate-900 leading-snug mb-1">
+          <div className="mb-4">
+            <h3 className="font-title text-sm sm:text-[15px] font-semibold text-slate-900 tracking-tight leading-snug mb-1">
               {currentStep.title}
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
@@ -627,8 +612,8 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
                   key={idx}
                   className={`h-1.5 rounded-full transition-all duration-400 ${
                     idx === currentStepIdx
-                      ? "w-5 bg-gradient-to-r from-amber-100 via-yellow-200 to-amber-200 shadow-[0_0_10px_rgba(253,224,71,0.75)] border border-amber-200/70"
-                      : "w-1.5 bg-slate-200/90"
+                      ? "w-5 bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.55)] border border-amber-300/70"
+                      : "w-1.5 bg-slate-300/85"
                   }`}
                 />
               ))}
@@ -636,16 +621,6 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
 
             {/* Navigation Buttons */}
             <div className="flex items-center gap-1.5">
-              {!isLastStep && (
-                <button
-                  type="button"
-                  onClick={handleComplete}
-                  className="h-8 px-2.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 text-[11px] font-medium transition-colors cursor-pointer"
-                  title="Lewati panduan dan jangan tampilkan otomatis lagi"
-                >
-                  Lewati
-                </button>
-              )}
               {currentStepIdx > 0 && (
                 <button
                   type="button"

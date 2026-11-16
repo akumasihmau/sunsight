@@ -2,25 +2,19 @@ import Link from "next/link";
 
 export default function Footer() {
   return (
-    <footer className="w-full border-t border-slate-200 bg-white py-12 px-4 sm:px-6">
+    <footer className="relative z-10 w-full border-t border-white/85 bg-white/78 backdrop-blur-2xl saturate-150 py-12 px-4 sm:px-6">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 text-xs text-slate-500">
-        {/* Kolom 1: Logo & Deskripsi */}
         <div className="space-y-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="SunSight Logo" className="h-8 w-auto" />
+          <img src="/logo.svg" alt="SunSight Logo" className="h-7.5 w-auto" />
           <p className="leading-relaxed">
-            Platform simulasi cerdas PLTS atap Indonesia berbasis citra satelit terkalibrasi dan
-            kalkulasi regulasi energi terbarukan.
+            Platform simulasi PLTS atap Indonesia berbasis citra satelit terkalibrasi dan standar rekayasa energi terbarukan.
           </p>
-          <div className="flex items-center gap-2 text-slate-400">
-            <span className="font-code-metric">SunSight Studio Platform</span>
-          </div>
         </div>
 
-        {/* Kolom 2: Navigasi Produk */}
         <div className="space-y-2">
-          <span className="font-title font-bold text-slate-900 text-xs uppercase tracking-wider block">
-            Navigasi Produk
+          <span className="font-title font-semibold text-slate-900 text-xs block">
+            Produk
           </span>
           <ul className="space-y-1.5">
             <li>
@@ -45,16 +39,15 @@ export default function Footer() {
             </li>
             <li>
               <a href="#faq" className="hover:text-amber-800 transition">
-                Tanya Jawab (FAQ)
+                Tanya Jawab
               </a>
             </li>
           </ul>
         </div>
 
-        {/* Kolom 3: Regulasi & Data */}
         <div className="space-y-2">
-          <span className="font-title font-bold text-slate-900 text-xs uppercase tracking-wider block">
-            Regulasi &amp; Data
+          <span className="font-title font-semibold text-slate-900 text-xs block">
+            Standar &amp; Regulasi
           </span>
           <ul className="space-y-1.5">
             <li>
@@ -63,33 +56,22 @@ export default function Footer() {
                 <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
               </Link>
             </li>
-            <li>
-              <span className="text-slate-600">Permen ESDM No. 2/2024</span>
-            </li>
-            <li>
-              <span className="text-slate-600">Katalog Tarif Resmi PLN</span>
-            </li>
-            <li>
-              <span className="text-slate-600">Data Iradiasi NASA POWER</span>
-            </li>
-            <li>
-              <span className="text-slate-600">Standar Modul Surya Tier-1</span>
-            </li>
+            <li className="text-slate-600">Permen ESDM No. 2 &amp; 7/2024</li>
+            <li className="text-slate-600">IEC 61215 · IEC 61724 · IEEE 1547</li>
+            <li className="text-slate-600">PUIL 2020 &amp; ISO 14064</li>
           </ul>
         </div>
 
-        {/* Kolom 4: Mulai Simulasi */}
         <div className="space-y-2">
-          <span className="font-title font-bold text-slate-900 text-xs uppercase tracking-wider block">
+          <span className="font-title font-semibold text-slate-900 text-xs block">
             Mulai Sekarang
           </span>
           <p className="leading-relaxed">
-            Sudah siap memetakan potensi energi surya di atap rumah, ruko, atau fasilitas bisnis
-            Anda?
+            Petakan potensi energi surya di atap rumah, ruko, atau gedung Anda dalam hitungan detik.
           </p>
           <Link
             href="/register"
-            className="inline-flex items-center gap-1.5 text-amber-700 font-bold hover:underline"
+            className="inline-flex items-center gap-1.5 text-amber-800 font-semibold hover:underline"
           >
             <span>Daftar Akun Gratis</span>
             <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
@@ -97,10 +79,9 @@ export default function Footer() {
         </div>
       </div>
 
-      {/* Bagian Bawah: Copyright */}
-      <div className="max-w-7xl mx-auto pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
-        <span>© {new Date().getFullYear()} SunSight Platform. Hak Cipta Dilindungi.</span>
-        <span>Dikembangkan untuk percepatan adopsi energi surya atap di Indonesia.</span>
+      <div className="max-w-7xl mx-auto pt-6 border-t border-slate-900/[0.06] flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
+        <span>© {new Date().getFullYear()} SunSight Platform · Hak Cipta Dilindungi</span>
+        <span>Energi Surya Atap Indonesia</span>
       </div>
     </footer>
   );

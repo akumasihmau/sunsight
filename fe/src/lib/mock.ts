@@ -1,13 +1,16 @@
 import {
   ApiRequestError,
   type AuthResponse,
+  type BoundingBox,
   type CaptureRegistration,
   type CapturedImage,
   type DetectedRoof,
   type Imagery,
   type GeocodeResponse,
+  type GeocodeResult,
   type PixelPoint,
   type Paginated,
+  type ReverseGeocodeResponse,
   type RoofDetectionResponse,
   type SimulationAssumptions,
   type SimulationDetail,
@@ -690,6 +693,115 @@ const MOCK_USER: User = {
   avatar_url: null,
 };
 
+const reverseGeocodeMemoryCache = new Map<string, string | null>();
+const geocodeMemoryCache = new Map<string, GeocodeResult[]>();
+
+const BOGOR_FALLBACK_ZONES = [
+  { label: "Baranangsiang Indah, Bogor Timur", lat: -6.611, lng: 106.815 },
+  { label: "Jl. Pajajaran, Bogor Tengah", lat: -6.5971, lng: 106.806 },
+  { label: "Tanah Sareal, Kota Bogor", lat: -6.561, lng: 106.798 },
+  { label: "Bogor Utara, Kota Bogor", lat: -6.578, lng: 106.816 },
+  { label: "Bogor Selatan, Kota Bogor", lat: -6.628, lng: 106.801 },
+  { label: "Bogor Barat, Kota Bogor", lat: -6.582, lng: 106.766 },
+];
+
+const LOCAL_STREET_CATALOG: Array<{ label: string; lat: number; lng: number }> = [
+  { label: "Jl. Raya Pajajaran, Bogor Tengah, Kota Bogor", lat: -6.5955, lng: 106.8058 },
+  { label: "Jl. Ir. H. Juanda, Pabaton, Bogor Tengah, Kota Bogor", lat: -6.5994, lng: 106.7945 },
+  { label: "Jl. Jend. Sudirman, Sempur, Bogor Tengah, Kota Bogor", lat: -6.5882, lng: 106.7966 },
+  { label: "Jl. Ahmad Yani, Tanah Sareal, Kota Bogor", lat: -6.5744, lng: 106.8007 },
+  { label: "Jl. Sholeh Iskandar (Ring Road Utara), Tanah Sareal, Kota Bogor", lat: -6.5568, lng: 106.7918 },
+  { label: "Jl. Suryakencana, Gudang, Bogor Tengah, Kota Bogor", lat: -6.6057, lng: 106.8019 },
+  { label: "Jl. Pahlawan, Bondongan, Bogor Selatan, Kota Bogor", lat: -6.6184, lng: 106.8005 },
+  { label: "Jl. Raya Tajur, Muarasari, Bogor Selatan, Kota Bogor", lat: -6.6327, lng: 106.8239 },
+  { label: "Jl. Pemuda, Kebon Pedes, Tanah Sareal, Kota Bogor", lat: -6.5675, lng: 106.8012 },
+  { label: "Jl. Tunjung Biru, Baranangsiang, Bogor Timur, Kota Bogor", lat: -6.611, lng: 106.815 },
+  { label: "Perumahan Taman Yasmin, Curugmekar, Bogor Barat, Kota Bogor", lat: -6.5579, lng: 106.7743 },
+  { label: "Bantarjati / Villa Indah Pajajaran, Bogor Utara, Kota Bogor", lat: -6.5778, lng: 106.8142 },
+  { label: "Sentul City, Babakan Madang, Kab. Bogor", lat: -6.5665, lng: 106.8543 },
+  { label: "Jl. Raya Dramaga, Babakan, Dramaga, Kab. Bogor", lat: -6.5624, lng: 106.7327 },
+  { label: "Jl. Raya Cibinong, Pakansari, Cibinong, Kab. Bogor", lat: -6.4846, lng: 106.8424 },
+  { label: "Jl. Margonda Raya, Beji, Kota Depok", lat: -6.3738, lng: 106.8327 },
+  { label: "Jl. Diponegoro No. 24, Menteng, Jakarta Pusat", lat: -6.1985, lng: 106.8326 },
+  { label: "Jl. Grand Boulevard, BSD City, Tangerang Selatan", lat: -6.3016, lng: 106.6534 },
+  { label: "Jl. Ir. H. Juanda (Dago), Coblong, Kota Bandung", lat: -6.8856, lng: 107.6134 },
+  { label: "Bukit Golf Utama, CitraLand, Surabaya Barat", lat: -7.2892, lng: 112.6328 },
+];
+
+function bboxAroundPoint(lat: number, lng: number, delta = 0.005): BoundingBox {
+  return [
+    Number((lng - delta).toFixed(6)),
+    Number((lat - delta).toFixed(6)),
+    Number((lng + delta).toFixed(6)),
+    Number((lat + delta).toFixed(6)),
+  ];
+}
+
+function searchLocalStreetCatalog(query: string): GeocodeResult[] {
+  const tokens = query
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && t !== "jl" && t !== "jalan" && t !== "kota");
+
+  if (tokens.length === 0) return [];
+
+  return LOCAL_STREET_CATALOG.filter((item) => {
+    const hay = item.label.toLowerCase();
+    return tokens.every((tok) => hay.includes(tok));
+  })
+    .slice(0, 6)
+    .map((item) => ({
+      label: item.label,
+      lat: item.lat,
+      lng: item.lng,
+      bbox: bboxAroundPoint(item.lat, item.lng),
+      source: "catalog",
+    }));
+}
+
+function formatNominatimLabel(item: {
+  display_name?: string;
+  name?: string;
+  address?: Record<string, string | undefined>;
+}): string {
+  const addr = item.address ?? {};
+  const primary =
+    addr.road ||
+    item.name ||
+    addr.residential ||
+    addr.neighbourhood ||
+    addr.suburb;
+  const secondary = [
+    addr.suburb || addr.village || addr.neighbourhood,
+    addr.city_district || addr.city || addr.town || addr.county || addr.state,
+  ].filter((part): part is string => Boolean(part && part.trim() && part.trim() !== primary?.trim()));
+
+  const combined = [primary, ...secondary]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .filter((part, idx, arr) => arr.indexOf(part) === idx);
+
+  if (combined.length > 0) {
+    return combined.join(", ").slice(0, 140);
+  }
+  return (item.display_name ?? "Lokasi Tanpa Nama").slice(0, 140);
+}
+
+function fallbackBogorAreaLabel(lat: number, lng: number): string {
+  let closest = BOGOR_FALLBACK_ZONES[0];
+  let bestDist = Infinity;
+
+  for (const zone of BOGOR_FALLBACK_ZONES) {
+    const d = (zone.lat - lat) ** 2 + (zone.lng - lng) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      closest = zone;
+    }
+  }
+
+  return closest.label;
+}
+
 export const mockApi = {
   login: async (body: { email: string; password: string }): Promise<AuthResponse> => {
     if (body.password === "salah" || body.password === "wrong") {
@@ -855,6 +967,24 @@ export const mockApi = {
     return detail;
   },
 
+  renameSimulation: async (id: number, address: string | null): Promise<SimulationDetail> => {
+    const list = getStoredSimulations();
+    const target = list.find((item) => item.id === id);
+    if (!target) {
+      throw new ApiRequestError(404, "Simulasi tidak ditemukan");
+    }
+
+    const trimmed = address === null ? "" : address.trim();
+    const updated: SimulationDetail = {
+      ...target,
+      address: trimmed === "" ? null : trimmed.slice(0, 160),
+      message: "Simulation renamed",
+    };
+
+    saveSimulations(list.map((item) => (item.id === id ? updated : item)));
+    return updated;
+  },
+
   listSimulations: async (page = 1, perPage = 10): Promise<Paginated<SimulationSummary>> => {
     const list = getStoredSimulations();
     const start = (page - 1) * perPage;
@@ -876,7 +1006,9 @@ export const mockApi = {
       trees_equivalent: item.result.trees_equivalent,
       capacity_kwp: item.result.capacity_kwp,
       annual_production_kwh: item.result.annual_production_kwh,
+      monthly_bill_idr: item.input.monthly_bill_idr,
       monthly_saving_idr: item.result.monthly_saving_idr,
+      annual_saving_idr: item.result.annual_saving_idr,
       payback_years: item.result.payback_years,
       created_at: item.created_at,
     }));
@@ -916,21 +1048,145 @@ export const mockApi = {
   },
 
   /**
-   * Pencarian alamat contoh. Hasilnya memakai satu titik tetap di Kota Bogor
-   * supaya alur pemilihan alamat dapat dicoba tanpa backend.
+   * Pencarian alamat & nama jalan dinamis via OpenStreetMap Nominatim (dengan
+   * cache memori dan fallback katalog jalan Bogor/Indonesia bila offline).
    */
-  geocode: async (query: string): Promise<GeocodeResponse> => ({
-    query,
-    results: [
-      {
-        label: `${query} (contoh, Kota Bogor)`,
-        lat: -6.611,
-        lng: 106.815,
-        bbox: [106.809, -6.615, 106.821, -6.607],
-        source: "mock",
-      },
-    ],
-  }),
+  geocode: async (query: string): Promise<GeocodeResponse> => {
+    const clean = query.trim();
+    if (!clean) {
+      return { query: clean, results: [] };
+    }
+
+    const cacheKey = clean.toLowerCase();
+    const cached = geocodeMemoryCache.get(cacheKey);
+    if (cached) {
+      return { query: clean, results: cached };
+    }
+
+    if (typeof window !== "undefined") {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 4500);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(clean)}&countrycodes=id&addressdetails=1&limit=6&accept-language=id`,
+          { signal: controller.signal },
+        );
+        if (res.ok) {
+          const items = (await res.json()) as Array<{
+            lat?: string;
+            lon?: string;
+            display_name?: string;
+            name?: string;
+            boundingbox?: [string, string, string, string];
+            address?: Record<string, string | undefined>;
+          }>;
+          const mapped: GeocodeResult[] = [];
+          for (const item of items) {
+            const lat = Number(item.lat);
+            const lng = Number(item.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+            let bbox: BoundingBox = bboxAroundPoint(lat, lng);
+            if (Array.isArray(item.boundingbox) && item.boundingbox.length === 4) {
+              const south = Number(item.boundingbox[0]);
+              const north = Number(item.boundingbox[1]);
+              const west = Number(item.boundingbox[2]);
+              const east = Number(item.boundingbox[3]);
+              if ([south, north, west, east].every(Number.isFinite)) {
+                bbox = [west, south, east, north];
+              }
+            }
+
+            mapped.push({
+              label: formatNominatimLabel(item),
+              lat,
+              lng,
+              bbox,
+              source: "nominatim",
+            });
+          }
+
+          if (mapped.length > 0) {
+            geocodeMemoryCache.set(cacheKey, mapped);
+            return { query: clean, results: mapped };
+          }
+        }
+      } catch {
+        // Offline / blocked: fall back to local street catalog below.
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    const localMatches = searchLocalStreetCatalog(clean);
+    if (localMatches.length > 0) {
+      geocodeMemoryCache.set(cacheKey, localMatches);
+    }
+    return {
+      query: clean,
+      results: localMatches,
+    };
+  },
+
+  reverseGeocode: async (lat: number, lng: number): Promise<ReverseGeocodeResponse> => {
+    const cacheKey = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    if (reverseGeocodeMemoryCache.has(cacheKey)) {
+      return {
+        lat,
+        lng,
+        label: reverseGeocodeMemoryCache.get(cacheKey) ?? fallbackBogorAreaLabel(lat, lng),
+        source: "cache",
+      };
+    }
+
+    if (typeof window !== "undefined") {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 3500);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1&accept-language=id`,
+          { signal: controller.signal },
+        );
+        if (res.ok) {
+          const payload = (await res.json()) as {
+            display_name?: string;
+            address?: Record<string, string | undefined>;
+          };
+          const addr = payload.address ?? {};
+          const parts: string[] = [];
+          for (const key of ["road", "residential", "pedestrian", "neighbourhood", "hamlet", "suburb", "village", "city_district"]) {
+            const val = addr[key]?.trim();
+            if (val && !parts.includes(val)) {
+              parts.push(val);
+            }
+            if (parts.length >= 2) break;
+          }
+          if (parts.length === 0 && payload.display_name) {
+            parts.push(
+              ...payload.display_name
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .slice(0, 2),
+            );
+          }
+          if (parts.length > 0) {
+            const formatted = parts.join(", ").slice(0, 120);
+            reverseGeocodeMemoryCache.set(cacheKey, formatted);
+            return { lat, lng, label: formatted, source: "nominatim" };
+          }
+        }
+      } catch {
+        // Offline / blocked: fall back to nearest Bogor area below.
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    const fallback = fallbackBogorAreaLabel(lat, lng);
+    reverseGeocodeMemoryCache.set(cacheKey, fallback);
+    return { lat, lng, label: fallback, source: "fallback" };
+  },
 
   updateProfile: async (body: {
     name: string;

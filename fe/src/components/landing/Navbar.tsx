@@ -17,7 +17,12 @@ export default function Navbar() {
 
   useEffect(() => {
     function handleScroll() {
-      setIsScrolled(window.scrollY > 30);
+      const y = window.scrollY;
+      setIsScrolled((prev) => {
+        if (!prev && y > 28) return true;
+        if (prev && y < 12) return false;
+        return prev;
+      });
     }
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -45,18 +50,12 @@ export default function Navbar() {
 
   return (
     <>
-      <header
-        className={`w-full z-40 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isScrolled
-            ? "fixed top-3 sm:top-4 inset-x-0 px-3 sm:px-6 pointer-events-none flex justify-center"
-            : "sticky top-0 bg-white/80 backdrop-blur-md border-b border-amber-200/50 px-4 sm:px-6"
-        }`}
-      >
+      <header className="fixed top-0 inset-x-0 z-40 px-3 sm:px-6 pt-3 sm:pt-3.5 pointer-events-none flex justify-center">
         <div
-          className={`transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`pointer-events-auto w-full h-14 rounded-full flex items-center justify-between border will-change-[max-width,background-color,box-shadow] transition-[max-width,padding,background-color,border-color,box-shadow] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
             isScrolled
-              ? "pointer-events-auto max-w-5xl w-full rounded-full bg-white/95 backdrop-blur-2xl border border-slate-200/90 shadow-lg px-4 sm:px-6 h-13 sm:h-14 flex items-center justify-between"
-              : "max-w-7xl mx-auto h-16 sm:h-18 flex items-center justify-between"
+              ? "max-w-5xl px-4 sm:px-6 bg-white/84 backdrop-blur-2xl saturate-150 border-white/90 shadow-[0_12px_36px_rgba(15,23,42,0.08),0_2px_12px_rgba(245,158,11,0.08)]"
+              : "max-w-7xl px-2 sm:px-4 bg-white/0 border-white/0 shadow-[0_0_0_rgba(255,255,255,0)]"
           }`}
         >
           {/* Brand Logo */}
@@ -73,19 +72,19 @@ export default function Navbar() {
 
           {/* Center Navigation Links (Hidden on mobile) */}
           <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-600">
-            <a className="hover:text-amber-800 transition-colors" href="#features">
-              Fitur Cerdas
+            <a className="hover:text-slate-950 transition-colors" href="#features">
+              Fitur
             </a>
-            <a className="hover:text-amber-800 transition-colors" href="#quick-calculator">
-              Kalkulator Hemat
+            <a className="hover:text-slate-950 transition-colors" href="#quick-calculator">
+              Kalkulator
             </a>
-            <a className="hover:text-amber-800 transition-colors" href="#how-it-works">
+            <a className="hover:text-slate-950 transition-colors" href="#how-it-works">
               Cara Kerja
             </a>
-            <a className="hover:text-amber-800 transition-colors" href="#comparison">
+            <a className="hover:text-slate-950 transition-colors" href="#comparison">
               Komparasi
             </a>
-            <a className="hover:text-amber-800 transition-colors" href="#faq">
+            <a className="hover:text-slate-950 transition-colors" href="#faq">
               FAQ
             </a>
           </nav>

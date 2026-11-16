@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "material-symbols/outlined.css" layer(base);
+@import "leaflet/dist/leaflet.css";
 @import "../styles/tokens.css";
 @import "../styles/components.css";
 
@@ -104,6 +106,68 @@
 }
 .animate-gentle-float {
   animation: gentleFloat 6s ease-in-out infinite;
+}
+
+/* Solar Meadow Nature Animations (Landing Hero & CTA) */
+@keyframes cloudDrift {
+  0% { transform: translateX(-28px); }
+  50% { transform: translateX(34px); }
+  100% { transform: translateX(-28px); }
+}
+.animate-cloud-slow {
+  animation: cloudDrift 26s ease-in-out infinite;
+}
+.animate-cloud-mid {
+  animation: cloudDrift 19s ease-in-out -7s infinite reverse;
+}
+
+@keyframes windSweep {
+  0% { transform: translateX(-18%); opacity: 0; }
+  25% { opacity: 0.65; }
+  75% { opacity: 0.55; }
+  100% { transform: translateX(28%); opacity: 0; }
+}
+.animate-wind-sweep {
+  animation: windSweep 7.5s ease-in-out infinite;
+}
+.animate-wind-sweep-delayed {
+  animation: windSweep 9s ease-in-out -3.5s infinite;
+}
+
+@keyframes leafFlutter {
+  0% {
+    transform: translate3d(-12px, -6px, 0) rotate(-14deg);
+    opacity: 0;
+  }
+  18% { opacity: 0.85; }
+  55% {
+    transform: translate3d(42px, 14px, 0) rotate(22deg);
+    opacity: 0.9;
+  }
+  85% { opacity: 0.65; }
+  100% {
+    transform: translate3d(96px, 28px, 0) rotate(48deg);
+    opacity: 0;
+  }
+}
+.animate-leaf-a {
+  animation: leafFlutter 8.5s ease-in-out infinite;
+}
+.animate-leaf-b {
+  animation: leafFlutter 10.5s ease-in-out -4s infinite;
+}
+.animate-leaf-c {
+  animation: leafFlutter 9.5s ease-in-out -7s infinite;
+}
+
+@keyframes meadowSway {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(2deg); }
+}
+.animate-tree-sway {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: meadowSway 5.5s ease-in-out infinite;
 }
 
 @keyframes mapDotPulse {
@@ -819,6 +883,24 @@ input:focus, textarea:focus, select:focus, button:focus {
   .no-print,
   [data-print-hide="true"] {
     display: none !important;
+  }
+
+  /* Strictly isolate Proposal Modal portal when printing from any route (Beranda, Studio, Riwayat) */
+  body:has(#proposal-print-portal) > *:not(#proposal-print-portal),
+  body.printing-proposal > *:not(#proposal-print-portal) {
+    display: none !important;
+  }
+
+  #proposal-print-portal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   /* Prevent page breaks inside cards, rows and proposal sections */
