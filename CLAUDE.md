@@ -122,13 +122,13 @@ Bobot lama (`yolov8n-seg` di `YOLO_Sunsight.ipynb`, ±200 foto Google Maps) memi
 - **Wajib sertakan 15–20% *Hard Negative Images*:** gambar jalan aspal, paving blok, area parkir, lapangan, sungai, dan kanopi pohon **tanpa anotasi poligon** (label kosong) agar model menekan *false positive* jalan.
 - Gunakan pembagian dataset terstratifikasi (`train ~75–80%`, `val ~15%`, `test ~10%`) di Roboflow dan ekspor format segmentasi YOLO.
 
-#### 3. Konfigurasi Training & Eksperimen Benchmark (`YOLO11-Seg`)
+#### 3. Konfigurasi Training (`YOLO11-Seg` — Fokus Adaptasi Citra, Bukan Sekadar Benchmark Versi)
 - Lanjutkan notebook training di **Kaggle / Google Colab GPU**:
-  - Upgrade base model ke **`yolo11s-seg.pt`** (rekomendasi utama untuk akurasi tepi di citra Esri) dan simpan juga hasil **`yolo11n-seg.pt`** serta baseline **`yolov8n-seg.pt`** untuk tabel komparasi jurnal.
+  - Pakai **`yolo11s-seg.pt`** sebagai arsitektur tunggal utama (lebih ringan di CPU ONNX dan lebih tajam menangkap konteks tepi atap rapat pada citra nadir Esri).
   - Parameter training yang direkomendasikan (`ultralytics`):
     - `imgsz=1024` atau `1280` (jangan `640` karena deteksi drop ke 0 pada tangkapan 180–230 m).
     - Augmentasi anti-bias warna & orientasi nadir: `hsv_h=0.04, hsv_s=0.7, hsv_v=0.5, degrees=180.0, flipud=0.5, fliplr=0.5, mosaic=1.0, close_mosaic=15`.
-    - Opsional (sangat baik untuk sudut pandang pemrosesan citra di jurnal): uji perbandingan **Raw RGB** vs **CLAHE (luminance normalization di ruang LAB)** saat pra-pemrosesan sebelum inferensi/training.
+  - **Eksperimen Pra-pemrosesan Citra (Fokus Jurnal):** Bandingkan **Dataset Google Maps Raw (baseline)** vs **Dataset Esri + Hard Negatives + Augmentasi HSV / Pra-pemrosesan CLAHE (normalisasi luminansi LAB)** memakai model `yolo11s-seg` untuk membuktikan penyelesaian *cross-source domain shift* di pemrosesan citra satelit.
 
 #### 4. Post-Processing "Anti-Blobby" & Filter Anti-Jalan (Di FastAPI `/api/v1/predict`)
 Terapkan langsung di pipeline inferensi FastAPI pada setiap kontur mask sebelum dikonversi ke JSON `detections[]`:
@@ -141,11 +141,11 @@ Terapkan langsung di pipeline inferensi FastAPI pada setiap kontur mask sebelum 
    - Jika `0.55 <= rectangularity < 0.80` (atap bentuk L/T/kompleks) -> jalankan `cv2.approxPolyDP(contour, epsilon = 0.015 * perimeter, closed=True)` lalu lanjutkan *orthogonal edge snapping* terhadap sudut orientasi utama (`rect[2]`) sehingga segmen tepi sejajar `0°/90°`.
 4. **Sinkronkan Field Output:** Hitung ulang `area_px` (Shoelace) dan `bbox` (`min/max x, y`) dari poligon yang sudah diregularisasi agar konsisten saat diterima Laravel.
 
-#### 5. Data Wajib untuk Evaluasi Jurnal SINTA 4 (Simpan Output CSV/Gambar!)
-Pastikan AI/notebook menyimpan hasil kuantitatif berikut untuk Bab 3 artikel jurnal:
-- **Tabel 1 (Benchmark Model & Lintas Sumber):** `Precision`, `Recall`, `mAP@50`, `mAP@50-95 (mask)`, *False Positive Rate* pada jalan raya, serta latensi CPU per gambar (`yolov8n-seg` baseline vs `yolo11n-seg` vs `yolo11s-seg`, Raw vs Esri+Augmentasi/CLAHE).
-- **Tabel 2 (Uji Ablasi Regularisasi Poligon):** Perbandingan Raw Mask vs *Douglas-Peucker* vs **Regularisasi Ortogonal** pada metric `IoU`, jumlah rata-rata *vertex*, **`% Galat Luas (m²)`** vs *ground truth* ukur manual, dan dampaknya pada **akurasi jumlah panel surya (`N_modul`)**.
-- **Tabel 3 (Validasi Sampel Kota Bogor):** Uji pada 6 sampel bangunan lintas kecamatan di Kota Bogor.
+#### 5. Data Wajib untuk Evaluasi Jurnal SINTA 4 (Fokus Uji Ablasi Citra & Geometri)
+Pastikan AI/notebook menyimpan hasil kuantitatif berikut untuk Bab 3 artikel jurnal (tanpa sekadar membandingkan versi YOLO8 vs YOLO11):
+- **Tabel 1 (Adaptasi Lintas Sumber Citra Satelit):** Model pada citra *Raw RGB* vs *Esri + Hard Negatives + Color-Invariant Augmentation / CLAHE* — ukur `Precision`, `Recall` (khusus atap non-merah seperti spandek/beton/asbes), `mAP@50`, `mAP@50-95`, dan penurunan *False Positive Rate* pada jalan raya.
+- **Tabel 2 (Uji Ablasi Regularisasi Poligon & Dampaknya ke PLTS):** Mask mentah (*blobby*) vs *Douglas-Peucker* vs **Regularisasi Poligon Ortogonal** — ukur `IoU`, jumlah rata-rata titik sudut (*vertex*), **`% Galat Luas (m²)`** dibanding ukur manual, serta galat **jumlah panel surya (`N_modul`) & kapasitas (`kWp`)**.
+- **Tabel 3 (Validasi Lapangan Virtual Kota Bogor):** Uji pada 6 sampel bangunan lintas kecamatan dan lintas material atap di Kota Bogor.
 
 #### 6. Ekspor ONNX & Serving FastAPI
 - Ekspor bobot terbaik ke **ONNX** (`model.export(format="onnx", imgsz=1280, simplify=True)`) dan jalankan di FastAPI dengan **`onnxruntime` CPU-only** (hindari PyTorch CUDA multi-GB di container produksi).

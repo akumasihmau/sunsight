@@ -193,7 +193,7 @@ Untuk mengatasi *domain shift* Google Maps → Esri World Imagery (bias atap ora
 
 1. **Dataset & Training (`YOLO11s-Seg` / `YOLO11n-Seg`)**:
    - Tambah ±250–350 *tile* **Esri World Imagery Kota Bogor** (`zoom 19`, cakupan `150–230 m`) berisi beragam warna atap (spandek, beton, asbes, genteng) + **15–20% *hard negatives*** jalan/paving/kanopi pohon tanpa anotasi `roof`.
-   - Latih di notebook Kaggle/Colab GPU (`imgsz=1024/1280`) dengan augmentasi tahan bias warna & orientasi (`hsv_h=0.04, hsv_s=0.7, hsv_v=0.5, degrees=180, flipud=0.5, fliplr=0.5`, serta uji pra-pemrosesan *CLAHE* LAB), lalu catat benchmark `Precision`, `Recall`, `mAP@50`, `mAP@50-95`, dan `IoU` terhadap baseline `yolov8n-seg`.
+   - Latih dengan **`yolo11s-seg`** di notebook Kaggle/Colab GPU (`imgsz=1024/1280`) menggunakan augmentasi tahan bias warna & orientasi (`hsv_h=0.04, hsv_s=0.7, hsv_v=0.5, degrees=180, flipud=0.5, fliplr=0.5`, serta uji pra-pemrosesan *CLAHE* LAB), lalu catat metrik adaptasi lintas sumber & uji ablasi regularisasi poligon (`Precision`, `Recall`, `mAP@50`, `IoU`, *False Positive Rate* jalan raya, dan `% Galat Luas m²`).
 2. **Post-Processing Anti-Blobby & Filter Anti-Jalan di `/api/v1/predict`**:
    - Terapkan `cv2.morphologyEx` (`CLOSE` + `OPEN` kernel `3x3`) pada mask biner.
    - Buang kandidat dengan *aspect ratio* `minAreaRect` $> 4.5$ atau luas piksel terlalu kecil (filter jalan memanjang & noise).
