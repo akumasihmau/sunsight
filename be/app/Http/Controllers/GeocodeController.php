@@ -34,4 +34,28 @@ class GeocodeController extends Controller
             'results' => $results,
         ]);
     }
+
+    public function reverse(Request $request, NominatimGeocoder $geocoder): JsonResponse
+    {
+        $validated = $request->validate([
+            'lat' => ['required', 'numeric', 'between:-90,90'],
+            'lng' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+
+        $lat = (float) $validated['lat'];
+        $lng = (float) $validated['lng'];
+
+        try {
+            $label = $geocoder->reverse($lat, $lng);
+        } catch (GeocodingUnavailableException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 503);
+        }
+
+        return response()->json([
+            'lat' => $lat,
+            'lng' => $lng,
+            'label' => $label,
+            'source' => 'nominatim',
+        ]);
+    }
 }

@@ -51,7 +51,9 @@ class SimulationSummaryResource extends JsonResource
             'trees_equivalent' => (int) $simulation->trees_equivalent,
             'capacity_kwp' => round((float) $simulation->capacity_kwp, 3),
             'annual_production_kwh' => round((float) $simulation->annual_production_kwh, 2),
+            'monthly_bill_idr' => (int) $simulation->monthly_bill_idr,
             'monthly_saving_idr' => (int) $simulation->monthly_saving_idr,
+            'annual_saving_idr' => (int) $simulation->annual_saving_idr,
             'payback_years' => $simulation->payback_years === null
                 ? null
                 : round((float) $simulation->payback_years, 2),

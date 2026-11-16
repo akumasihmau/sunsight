@@ -184,6 +184,32 @@ class SimulationController extends Controller
         return new SimulationResource($simulation);
     }
 
+    /**
+     * Mengubah nama/label proyek (`address`) di riwayat tanpa menghitung ulang geometri.
+     */
+    public function rename(Request $request, int $id): JsonResponse
+    {
+        $existing = $this->findOwned($request, $id);
+
+        if ($existing === null) {
+            return $this->notFound();
+        }
+
+        $validated = $request->validate([
+            'address' => ['present', 'nullable', 'string', 'max:160'],
+        ]);
+
+        $trimmed = trim((string) ($validated['address'] ?? ''));
+        $existing->address = $trimmed === '' ? null : $trimmed;
+        $existing->save();
+
+        $existing->load(['roofs', 'imageryAsset']);
+
+        $body = (new SimulationResource($existing))->resolve($request);
+
+        return response()->json(array_merge(['message' => 'Simulation renamed'], $body));
+    }
+
     public function destroy(Request $request, int $id): JsonResponse
     {
         $simulation = $this->findOwned($request, $id);

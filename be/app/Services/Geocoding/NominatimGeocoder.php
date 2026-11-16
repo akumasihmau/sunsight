@@ -56,6 +56,39 @@ final class NominatimGeocoder
     }
 
     /**
+     * Mencari alamat terdekat dari koordinat (reverse geocoding), dengan cache.
+     *
+     * @throws GeocodingUnavailableException
+     */
+    public function reverse(float $lat, float $lng): ?string
+    {
+        $normalised = sprintf('rev:%.5F,%.5F', $lat, $lng);
+        $hash = hash('sha256', $normalised);
+        $cached = $this->fromCache($hash);
+
+        if ($cached !== null) {
+            $firstLabel = $cached[0]['label'] ?? null;
+
+            return is_string($firstLabel) && trim($firstLabel) !== '' ? trim($firstLabel) : null;
+        }
+
+        $label = $this->fetchReverse($lat, $lng);
+        $this->store(
+            $normalised,
+            $hash,
+            $label === null ? [] : [[
+                'label' => $label,
+                'lat' => $lat,
+                'lng' => $lng,
+                'bbox' => [$lng, $lat, $lng, $lat],
+                'source' => 'nominatim',
+            ]],
+        );
+
+        return $label;
+    }
+
+    /**
      * Kueri dinormalkan supaya "  Jl.  Pajajaran " dan "jl. pajajaran" berbagi
      * satu baris cache.
      */
@@ -183,5 +216,65 @@ final class NominatimGeocoder
         }
 
         return $results;
+    }
+
+    private function fetchReverse(float $lat, float $lng): ?string
+    {
+        try {
+            $response = Http::withHeaders([
+                'User-Agent' => (string) config('services.geocode.user_agent'),
+                'Accept-Language' => 'id',
+            ])
+                ->timeout((int) config('services.geocode.timeout'))
+                ->get(rtrim((string) config('services.geocode.url'), '/').'/reverse', [
+                    'format' => 'jsonv2',
+                    'lat' => $lat,
+                    'lon' => $lng,
+                    'zoom' => 18,
+                    'addressdetails' => 1,
+                ]);
+        } catch (\Illuminate\Http\Client\ConnectionException $exception) {
+            throw new GeocodingUnavailableException(
+                'Layanan pencarian alamat tidak dapat dihubungi.',
+                previous: $exception,
+            );
+        }
+
+        if (! $response->successful()) {
+            throw new GeocodingUnavailableException(sprintf(
+                'Layanan pencarian alamat menolak permintaan (%d).',
+                $response->status(),
+            ));
+        }
+
+        $payload = $response->json();
+
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $address = is_array($payload['address'] ?? null) ? $payload['address'] : [];
+        $parts = [];
+
+        foreach (['road', 'residential', 'pedestrian', 'neighbourhood', 'hamlet', 'suburb', 'village', 'city_district'] as $key) {
+            $val = isset($address[$key]) ? trim((string) $address[$key]) : '';
+            if ($val !== '' && ! in_array($val, $parts, true)) {
+                $parts[] = $val;
+            }
+            if (count($parts) >= 2) {
+                break;
+            }
+        }
+
+        if ($parts === [] && isset($payload['display_name'])) {
+            $segments = array_values(array_filter(array_map('trim', explode(',', (string) $payload['display_name']))));
+            $parts = array_slice($segments, 0, 2);
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return mb_substr(implode(', ', $parts), 0, 120);
     }
 }

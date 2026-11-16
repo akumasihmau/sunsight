@@ -32,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Pencarian alamat, dibatasi lajunya agar tidak membanjiri Nominatim.
     Route::get('/geocode', GeocodeController::class)->middleware('throttle:30,1');
+    Route::get('/reverse-geocode', [GeocodeController::class, 'reverse'])->middleware('throttle:30,1');
     Route::post('/simulate', [SimulationController::class, 'simulate']);
 
     // Riwayat simulasi
@@ -39,5 +40,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/analyses', [SimulationController::class, 'store']);
     Route::get('/analyses/{id}', [SimulationController::class, 'show'])->whereNumber('id');
     Route::patch('/analyses/{id}', [SimulationController::class, 'update'])->whereNumber('id');
+    Route::patch('/analyses/{id}/name', [SimulationController::class, 'rename'])->whereNumber('id');
     Route::delete('/analyses/{id}', [SimulationController::class, 'destroy'])->whereNumber('id');
 });
