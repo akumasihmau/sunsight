@@ -186,3 +186,11 @@ $response = Http::timeout(config('services.ml.timeout'))
 Ditulis di sini supaya tidak dianggap tersedia: `/predict/batch`, `/predict/async`, `/v1/models`,
 caching hasil per-hash citra, auto-scaling, dan pemilihan bobot per versi. Layanan saat ini
 memuat tepat satu berkas bobot dan melayani permintaan secara sinkron, satu per satu.
+
+## 8. Rencana Upgrade Model, Regularisasi Poligon, & Hosting Gratis
+
+Untuk mengatasi *domain shift* Google Maps → Esri World Imagery (bias atap merah/oranye, salah deteksi jalan raya, dan kontur *blobby*) sekaligus mendukung riset jurnal SINTA 4 tanpa mengubah kontrak `POST /api/v1/predict`:
+
+1. **Dataset & Training (`YOLO11s-Seg` / `YOLO11n-Seg`)**: tambah ±250–300 *tile* Esri Kota Bogor (`zoom 19`, cakupan 150–230 m) dengan material atap heterogen + 15–20% *hard negatives* jalan/kanopi pohon tanpa anotasi, plus augmentasi HSV tinggi (`hsv_h`, `hsv_s`, `hsv_v`) dan rotasi penuh di notebook Kaggle/Colab GPU.
+2. **Post-Processing Anti-Blobby di `/api/v1/predict`**: tambahkan pembersihan mask morfologis, penyederhanaan Douglas-Peucker adaptif (`2.0–3.5 px`), *rectangularity / orthogonal edge snapping* (`minAreaRect` bila rectangularity ≥ 0.80), dan filter *aspect ratio* ekstrem untuk membuang kontur jalan.
+3. **Serving Ringan (`ONNX` — AWS EC2 atau Alternatif Gratis)**: ekspor bobot ke **ONNX (`onnxruntime` CPU-only)** agar image container ~400–500 MB dan cepat di CPU, lalu jalankan di EC2 yang sudah ada atau alternatif gratis **Hugging Face Spaces (Docker `port 7860`, 2 vCPU, 16 GB RAM)**. Detail handoff lengkap tersedia di [CLAUDE.md](../CLAUDE.md).

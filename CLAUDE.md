@@ -67,3 +67,30 @@ Mohon **tidak menghapus atau mengembalikan perilaku lama** pada bagian-bagian be
    - Gunakan `npx next build --webpack` di `fe/` (Turbopack mengalami *panic* PostCSS worker pada environment Windows ini).
 7. **Konvensi Commit**:
    - Semua commit wajib mengikuti [commit-convention.md](./commit-convention.md) (`feat(fe): ...`, `feat(be): ...`, `fix(fe): ...`, `docs(root): ...`).
+
+---
+
+## 4. Konteks Upgrade ML Deteksi Atap & Riset SINTA 4 (Untuk Tim ML & AI)
+
+Detail kontrak layanan model tetap mengacu pada [docs/ml-service-design.md](./docs/ml-service-design.md) dan tidak boleh memutus integrasi Laravel ([MlClient.php](./be/app/Services/Ml/MlClient.php)).
+
+### A. Akar Masalah Model Saat Ini
+Bobot lama (`yolov8n-seg` pada `YOLO_Sunsight.ipynb`, ±200 foto Google Maps) mengalami 3 kendala saat dipakai langsung di peta **Esri World Imagery** SunSight:
+1. **Color & Domain Bias:** Lebih sensitif genteng oranye/merah; atap spandek/beton/asbes abu-abu sering terlewat.
+2. **False Positive Jalan Raya:** Jalan aspal/paving kemerahan kadang ikut terdeteksi sebagai `roof`.
+3. **Poligon Blobby:** Mask segmentasi mentah membentuk lekukan organik dan `RoofDetectionController` hanya menyederhanakan `0.5 px`, sehingga bentuk atap tidak tegas kotak/limas/L-shape.
+
+### B. Rencana Perbaikan Tanpa Mengubah Pipeline & Kontrak API
+1. **Kontrak API Tetap Sama (Wajib):**
+   - Pertahankan endpoint `GET /health`, `GET /ready`, dan `POST /api/v1/predict` (`file` multipart + query `min_confidence`), `MODEL_IMAGE_SIZE=1280`, serta format respons JSON (`detections[].{id, class_id, class_name, confidence, bbox, polygon, area_px}`).
+2. **Kurasi Dataset Esri Kota Bogor + *Hard Negatives*:**
+   - Tambah ±250–300 tangkapan *tile* **Esri World Imagery wilayah Kota Bogor** (`zoom 19`, cakupan 150–230 m) mencakup semua warna/material atap (genteng tanah liat, beton gelap, spandek biru/hijau/merah, asbes, dak beton).
+   - Wajib tambahkan **15–20% *Hard Negative Images*** (jalan aspal, paving blok, lapangan parkir, kanopi pohon tanpa label `roof`).
+3. **Training & Benchmark untuk Artikel SINTA 4 (Kaggle / Colab GPU):**
+   - Lanjutkan notebook training di **Kaggle / Google Colab GPU** dengan dataset Roboflow yang diperbarui.
+   - Upgrade base model ke **`yolo11s-seg`** (atau `yolo11n-seg`) dengan `imgsz=1024/1280` dan augmentasi warna-invarian agresif (`hsv_h=0.04, hsv_s=0.7, hsv_v=0.5`, rotasi penuh `degrees=180`, `flipud=0.5`, `fliplr=0.5`, plus uji *CLAHE* / normalisasi pencahayaan).
+   - Catat metrik evaluasi (`Precision`, `Recall`, `mAP@50`, `mAP@50-95`, `IoU`, waktu inferensi CPU) dibanding *baseline* `yolov8n-seg` untuk Bab 3 artikel SINTA 4.
+4. **Post-Processing "Anti-Blobby" di `/api/v1/predict`:**
+   - Sebelum mengembalikan `polygon`, terapkan pembersihan morfologis (`open/close`), penyederhanaan Douglas-Peucker adaptif (`~2.0–3.5 px`), dan **Regularisasi Poligon Ortogonal** (`cv2.minAreaRect` bila *rectangularity* ≥ 0.80, atau *orthogonal edge snapping* untuk atap L/kompleks), serta filter *aspect ratio* ekstrem (`> 4.5`) untuk menyaring *false positive* jalan raya.
+5. **Ekspor ONNX & Serving FastAPI:**
+   - Ekspor model terbaik ke **ONNX** (`onnxruntime` CPU-only) agar ringan tanpa `torch` multi-GB — bisa tetap dideploy di server AWS/EC2 yang sudah ada (`docs/ml-service-design.md`) **atau** alternatif gratis di **Hugging Face Spaces (Docker, port 7860, 2 vCPU, 16 GB RAM)**. Backend Laravel tinggal diarahkan lewat `ML_SERVICE_URL`.
