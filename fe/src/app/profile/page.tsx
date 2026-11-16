@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, type FormEvent } from "react";
 import { ApiRequestError, api, getToken, setToken } from "@/lib/api";
+import { NavbarSearchPopover } from "@/components/NavbarSearchPopover";
 import {
   saveStoredBiodata,
   useHasToken,
@@ -241,13 +242,10 @@ export default function ProfilePage() {
               <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
             </Link>
 
-            <Link
-              href="/"
-              className="w-11 h-11 rounded-full bg-white/85 hover:bg-white backdrop-blur-xl saturate-150 flex items-center justify-center transition shadow-xs border border-white/90 text-slate-600 hover:text-slate-900"
-              title="Cari Proyek"
-            >
-              <span className="material-symbols-outlined text-[20px]">search</span>
-            </Link>
+            <NavbarSearchPopover
+              activeLocationName={location || "Kota Bogor, Jawa Barat"}
+              onNotify={showToast}
+            />
           </div>
 
           <nav className="hidden md:flex items-center gap-2" aria-label="Navigasi utama">
