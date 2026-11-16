@@ -7,7 +7,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { AuthAlert } from "@/components/auth/AuthAlert";
 import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
 import { PasswordChecklist } from "@/components/auth/PasswordChecklist";
-import { api, setToken } from "@/lib/api";
+import { api, googleAuthUrl, setToken } from "@/lib/api";
 import {
   parseAuthError,
   validateEmail,
@@ -121,13 +121,28 @@ export default function RegisterPage() {
       setToken(result.token);
 
       const cleanLocation = location.trim();
+      const cleanName = result.user.name || name.trim();
+      const cleanEmail = result.user.email || email.trim();
+      const cleanPhone = phone.trim();
+
       saveStoredBiodata({
-        name: result.user.name || name.trim(),
-        email: result.user.email || email.trim(),
-        phone: phone.trim(),
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
         propertyType,
         location: cleanLocation,
       });
+
+      // Simpan biodata tambahan (no. telepon, tipe properti, lokasi) ke profil server secara senyap.
+      void api
+        .updateProfile({
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone || null,
+          property_type: propertyType,
+          location: cleanLocation || null,
+        })
+        .catch(() => {});
 
       const coords = resolveCoordinatesFromAddress(cleanLocation);
       const defaultBill =
@@ -438,17 +453,9 @@ export default function RegisterPage() {
             {busy ? "Mendaftarkan Akun..." : "Daftar & Masuk"}
           </button>
 
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              setAlert({
-                title: "Daftar dengan Google",
-                description:
-                  "Pendaftaran instan via Google belum diaktifkan pada server lokal. Silakan lengkapi formulir di atas untuk mendaftar langsung.",
-              })
-            }
-            className="w-full py-2 px-4 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-title font-semibold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 shadow-2xs"
+          <a
+            href={googleAuthUrl()}
+            className="w-full py-2 px-4 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-title font-semibold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
           >
             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
               <path
@@ -469,7 +476,7 @@ export default function RegisterPage() {
               />
             </svg>
             <span>Daftar dengan Google</span>
-          </button>
+          </a>
         </div>
       </form>
     </AuthSplitShell>

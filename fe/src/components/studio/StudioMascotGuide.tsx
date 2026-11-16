@@ -31,20 +31,20 @@ const STUDIO_STEPS: StudioTourStep[] = [
     expression: "happy",
   },
   {
-    targetId: "studio-roof-facet",
-    badge: "3 / 7 • Atap AI",
-    title: "3. Deteksi Kontur Atap Otomatis",
-    content: "AI telah mendeteksi batas bidang atap dari citra satelit. Bidang ditandai dengan garis putus-putus amber dan badge luas area [🏠].",
+    targetId: "studio-ai-scan-btn",
+    badge: "3 / 7 • Pindai AI",
+    title: "3. Pindai Kontur Atap dengan YOLOv8n-seg",
+    content: "Arahkan peta ke rumah target lalu klik tombol Pindai AI di toolbar kiri. Model YOLOv8n-seg & RDP akan mengekstrak poligon atap langsung dari citra satelit.",
     expression: "pointing",
-    setSolarMode: false,
   },
   {
-    targetId: "studio-roof-facet",
-    badge: "4 / 7 • Pasang Panel",
-    title: "4. Praktek Pasang Panel Surya",
-    content: "Saat bidang atap diklik, panel surya langsung terpasang otomatis memenuhi atap dengan modul silikon fotovoltaik berkapasitas optimal!",
+    targetId: "studio-pane-geometry",
+    badge: "4 / 7 • Pilih Bidang",
+    title: "4. Pilih Bidang & Pasang Panel Surya",
+    content: "Pilih satu atau beberapa bidang atap hasil deteksi di peta, lalu panel surya akan tersusun otomatis sesuai setback, jalur talang, dan orientasi atap.",
     expression: "celebrating",
-    setSolarMode: true,
+    requireOpenRightPanel: true,
+    tabTrigger: "geometry",
   },
   {
     targetId: "studio-pane-geometry",
@@ -77,6 +77,7 @@ const STUDIO_STEPS: StudioTourStep[] = [
 
 interface StudioMascotGuideProps {
   isOpen: boolean;
+  isCompleted?: boolean;
   onOpen: () => void;
   onClose: () => void;
   onPopulateActiveFacet?: () => void;
@@ -262,6 +263,7 @@ const AnimatedSunnyStudioMascot = memo(function AnimatedSunnyStudioMascot({
 
 export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
   isOpen,
+  isCompleted = false,
   onOpen,
   onClose,
   onPopulateActiveFacet,
@@ -431,11 +433,21 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
   };
 
   const handleComplete = useCallback(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sunsight_studio_tour_completed", "true");
-    }
+    setCurrentStepIdx(0);
     onClose();
   }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleComplete();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, handleComplete]);
 
   // Cegah render di SSR untuk menghilangkan 100% hydration mismatch
   if (!isMounted || !isOpen) {
@@ -534,9 +546,9 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
             height: `${targetRect.height + pad * 2}px`,
             borderRadius: `${radius}px`,
           }}
-          className="pointer-events-none z-[41] ring-2 ring-amber-300/80 shadow-[0_0_32px_rgba(251,191,36,0.36),inset_0_0_18px_rgba(251,191,36,0.12)] transition-all duration-500 ease-out"
+          className="pointer-events-none z-[41] ring-2 ring-amber-200/85 shadow-[0_0_36px_rgba(253,224,71,0.38),0_0_64px_rgba(56,189,248,0.16),inset_0_0_18px_rgba(254,249,195,0.22)] transition-all duration-500 ease-out"
         >
-          <div className="absolute -inset-1 rounded-[28px] border border-amber-200/50 animate-pulse pointer-events-none" />
+          <div className="absolute -inset-1 rounded-[28px] border border-yellow-100/60 animate-pulse pointer-events-none" />
         </div>
       )}
 
@@ -552,8 +564,13 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
         }}
         className="z-50 pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
       >
-        <div className="relative rounded-[28px] bg-white/92 backdrop-blur-2xl border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14)] p-4 sm:p-5 text-slate-800">
-          
+        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl border border-white/95 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_8px_28px_rgba(253,224,71,0.18),0_2px_14px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] p-4 sm:p-5 text-slate-800">
+          {/* Ambient Soft Radiant Glow Aura */}
+          <div className="pointer-events-none absolute inset-0 rounded-[28px] overflow-hidden -z-10">
+            <div className="absolute -top-10 -left-10 w-36 h-36 rounded-full bg-gradient-to-br from-yellow-200/45 via-amber-200/25 to-transparent blur-2xl" />
+            <div className="absolute -bottom-10 -right-10 w-36 h-36 rounded-full bg-gradient-to-tl from-sky-200/35 via-cyan-100/20 to-transparent blur-2xl" />
+          </div>
+
           {/* Maskot Sunny yang Bertengger Manis di Sudut Kiri Kartu (Sejajar Badge & Bebas Tabrakan Teks) */}
           <div className="absolute -top-2.5 sm:-top-3 left-2 sm:left-2.5">
             <AnimatedSunnyStudioMascot
@@ -563,19 +580,29 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
             />
           </div>
 
-          {/* Header Card: Badge Step & Tombol Tutup */}
+          {/* Header Card: Badge Step, Status Panduan & Tombol Tutup */}
           <div className="flex items-center justify-between gap-2 mb-3.5 pl-16 sm:pl-[74px]">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] sm:text-[11px] font-bold text-amber-900 bg-amber-50/90 px-2.5 py-0.5 rounded-full border border-amber-200/70 font-code-metric">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] sm:text-[11px] font-bold text-amber-950 bg-gradient-to-r from-amber-100/80 via-yellow-100/90 to-sky-50/80 px-2.5 py-0.5 rounded-full border border-white/90 shadow-[0_2px_10px_rgba(245,158,11,0.14),inset_0_1px_1px_rgba(255,255,255,0.9)] font-code-metric">
                 {currentStep.badge}
               </span>
+              {isCompleted ? (
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-emerald-800 bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-white/90 px-2 py-0.5 rounded-full border border-emerald-200/70 shadow-[0_2px_8px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)]">
+                  <span className="material-symbols-outlined text-[11px]">check_circle</span>
+                  Sudah dilewati
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-amber-950 bg-gradient-to-r from-amber-100/90 via-yellow-100/95 to-amber-100/85 px-2 py-0.5 rounded-full border border-amber-200/70 shadow-[0_2px_10px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]">
+                  Baru
+                </span>
+              )}
             </div>
 
             <button
               type="button"
               onClick={handleComplete}
-              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 flex items-center justify-center transition-colors cursor-pointer"
-              title="Tutup panduan"
+              className="w-7 h-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              title="Tutup & tandai panduan selesai"
             >
               <span className="material-symbols-outlined text-[16px]">close</span>
             </button>
@@ -600,8 +627,8 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
                   key={idx}
                   className={`h-1.5 rounded-full transition-all duration-400 ${
                     idx === currentStepIdx
-                      ? "w-5 bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
-                      : "w-1.5 bg-slate-200"
+                      ? "w-5 bg-gradient-to-r from-amber-100 via-yellow-200 to-amber-200 shadow-[0_0_10px_rgba(253,224,71,0.75)] border border-amber-200/70"
+                      : "w-1.5 bg-slate-200/90"
                   }`}
                 />
               ))}
@@ -609,6 +636,16 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
 
             {/* Navigation Buttons */}
             <div className="flex items-center gap-1.5">
+              {!isLastStep && (
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  className="h-8 px-2.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 text-[11px] font-medium transition-colors cursor-pointer"
+                  title="Lewati panduan dan jangan tampilkan otomatis lagi"
+                >
+                  Lewati
+                </button>
+              )}
               {currentStepIdx > 0 && (
                 <button
                   type="button"
@@ -623,7 +660,7 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
               <button
                 type="button"
                 onClick={handleNext}
-                className="group relative h-8 px-4 rounded-full bg-gradient-to-r from-amber-100 via-amber-200 to-amber-100 text-amber-950 text-xs font-semibold border border-amber-300/80 shadow-[0_2px_14px_rgba(245,158,11,0.20)] hover:from-amber-200 hover:to-amber-300 hover:shadow-[0_4px_20px_rgba(245,158,11,0.30)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer flex items-center gap-1"
+                className="group relative h-8 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 text-xs font-semibold border border-amber-200/90 shadow-[0_3px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:from-amber-200 hover:via-yellow-200 hover:to-amber-200 hover:shadow-[0_6px_22px_rgba(251,191,36,0.32),inset_0_1px_1px_rgba(255,255,255,0.95)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 cursor-pointer flex items-center gap-1"
               >
                 <span>{isLastStep ? "Selesai" : "Lanjut"}</span>
                 <span className="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">

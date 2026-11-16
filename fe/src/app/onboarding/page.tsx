@@ -4,7 +4,13 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
-import { isOnboardedFor, markOnboardingComplete, syncOnboardingToServer } from "@/lib/onboarding";
+import {
+  isOnboardedFor,
+  markOnboardingComplete,
+  markStudioGuideComplete,
+  resetStudioGuideComplete,
+  syncOnboardingToServer,
+} from "@/lib/onboarding";
 import { getStoredBiodata } from "@/lib/profile";
 
 export default function OnboardingPage() {
@@ -33,7 +39,9 @@ export default function OnboardingPage() {
 
   // Belum pernah: Simpan status & arahkan ke Beranda dengan tur panduan aktif
   const handleChooseNewUser = () => {
-    markOnboardingComplete(getStoredBiodata()?.email ?? null);
+    const email = getStoredBiodata()?.email ?? null;
+    markOnboardingComplete(email);
+    resetStudioGuideComplete(email);
     if (typeof window !== "undefined") {
       localStorage.setItem("sunsight_tour_pending", "true");
       localStorage.removeItem("sunsight_tour_completed");
@@ -44,7 +52,9 @@ export default function OnboardingPage() {
 
   // Sudah pernah: Simpan status & langsung masuk ke Beranda tanpa panduan
   const handleChooseExperiencedUser = () => {
-    markOnboardingComplete(getStoredBiodata()?.email ?? null);
+    const email = getStoredBiodata()?.email ?? null;
+    markOnboardingComplete(email);
+    markStudioGuideComplete(email);
     if (typeof window !== "undefined") {
       localStorage.setItem("sunsight_tour_completed", "true");
       localStorage.removeItem("sunsight_tour_pending");

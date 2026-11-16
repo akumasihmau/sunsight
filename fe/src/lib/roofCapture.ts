@@ -429,6 +429,81 @@ export async function captureMapForDetection(
   return { blob, width, height, bbox, zoom, footprintM };
 }
 
+export type ViewportScaleStatus =
+  | "optimal"
+  | "too-close"
+  | "too-wide-warn"
+  | "too-wide-blocked";
+
+export type MapScaleInfo = {
+  /** Perkiraan lebar cakupan sisi terpanjang layar saat ini, dalam meter. */
+  footprintM: number;
+  /** Skala fisik rata-rata pada pusat peta, dalam meter per piksel CSS. */
+  metersPerPixel: number;
+  /** Angka acuan penggaris skala (mis. 10, 20, 50, 100 m). */
+  barMeters: number;
+  /** Lebar garis penggaris skala pada layar, dalam piksel CSS. */
+  barPx: number;
+  /** Status kesiapan cakupan terhadap rentang optimal model YOLOv8n-seg (150–260 m). */
+  status: ViewportScaleStatus;
+};
+
+const SCALE_BAR_CANDIDATES_M = [5, 10, 20, 25, 50, 100, 200, 500];
+
+/**
+ * Mengukur skala penggaris (meter) dan perkiraan cakupan viewport peta saat ini
+ * secara ringan tanpa menunggu atau menggambar ubin satelit.
+ */
+export function measureMapViewportScale(map: MapLike): MapScaleInfo | null {
+  if (typeof window === "undefined") return null;
+  if (typeof map?.getSize !== "function" || typeof map?.distance !== "function") {
+    return null;
+  }
+
+  const size = map.getSize();
+  const availW = Math.round(size.x);
+  const availH = Math.round(size.y);
+  if (availW < 64 || availH < 64) return null;
+
+  const metersPerPixel = measureMetersPerPixel(map, size);
+  if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return null;
+
+  const footprintM = Math.round(Math.max(availW, availH) * metersPerPixel);
+
+  // Pilih panjang batang skala yang paling nyaman dibaca (sekitar 48–104 px)
+  let barMeters = SCALE_BAR_CANDIDATES_M[0];
+  let barPx = Math.round(barMeters / metersPerPixel);
+  for (const candidate of SCALE_BAR_CANDIDATES_M) {
+    const px = Math.round(candidate / metersPerPixel);
+    if (px >= 48 && px <= 112) {
+      barMeters = candidate;
+      barPx = px;
+      break;
+    }
+    if (px < 112) {
+      barMeters = candidate;
+      barPx = px;
+    }
+  }
+
+  let status: ViewportScaleStatus = "optimal";
+  if (footprintM > MAX_FOOTPRINT_M) {
+    status = "too-wide-blocked";
+  } else if (footprintM > RECOMMENDED_MAX_FOOTPRINT_M) {
+    status = "too-wide-warn";
+  } else if (footprintM < RECOMMENDED_MIN_FOOTPRINT_M) {
+    status = "too-close";
+  }
+
+  return {
+    footprintM,
+    metersPerPixel,
+    barMeters,
+    barPx: Math.max(28, barPx),
+    status,
+  };
+}
+
 /** Geometri tampilan peta, tanpa berkas citra dan tanpa menunggu ubin. */
 export type CaptureGeometry = {
   /** Urutan selalu `[minLng, minLat, maxLng, maxLat]`. */

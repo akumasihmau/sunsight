@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { setToken } from "@/lib/api";
+import { api, setToken } from "@/lib/api";
+import { markOnboardingComplete } from "@/lib/onboarding";
+import { saveStoredBiodata, type PropertyType } from "@/lib/profile";
 
 /**
  * Titik balik alur OAuth Google.
@@ -31,7 +33,48 @@ export default function AuthCallbackPage() {
     // Token tidak boleh tertinggal di riwayat peramban atau ikut tersalin pengguna.
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
 
-    router.replace(params.get("onboarded") === "1" ? "/studio" : "/onboarding");
+    const onboardedFlag = params.get("onboarded") === "1";
+
+    let cancelled = false;
+
+    void (async () => {
+      let alreadyOnboarded = onboardedFlag;
+
+      try {
+        const user = await api.currentUser();
+        if (cancelled) return;
+
+        const propType: PropertyType =
+          user.property_type === "commercial" ||
+          user.property_type === "industrial" ||
+          user.property_type === "residential"
+            ? user.property_type
+            : "residential";
+
+        saveStoredBiodata({
+          name: user.name,
+          email: user.email,
+          phone: user.phone ?? "",
+          propertyType: propType,
+          location: user.location ?? "Kota Bogor, Jawa Barat",
+        });
+
+        alreadyOnboarded = onboardedFlag || user.onboarding_completed_at !== null;
+        if (alreadyOnboarded) {
+          markOnboardingComplete(user.email);
+        }
+      } catch {
+        // Jika profil gagal dimuat sementara, tetap lanjutkan navigasi dengan status flag URL.
+      }
+
+      if (!cancelled) {
+        router.replace(alreadyOnboarded ? "/" : "/onboarding");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   return (

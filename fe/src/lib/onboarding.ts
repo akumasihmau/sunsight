@@ -12,6 +12,10 @@ import { api } from "./api";
 /** Kunci tunggal status onboarding; nilai lama per-halaman tidak dipakai lagi. */
 export const ONBOARDING_STORAGE_KEY = "sunsight.onboarding_completed";
 
+/** Kunci status panduan interaktif Studio (per akun email + kompatibel kunci lama). */
+export const STUDIO_GUIDE_STORAGE_KEY = "sunsight_studio_tour_completed";
+const STUDIO_GUIDE_MAP_KEY = "sunsight.studio_guide_completed";
+
 export type OnboardingState = {
   completedAt: string | null;
   email: string | null;
@@ -97,5 +101,64 @@ export async function syncOnboardingToServer(): Promise<void> {
     await api.completeOnboarding();
   } catch {
     // Status lokal tetap menjadi acuan sampai sinkronisasi berikutnya berhasil.
+  }
+}
+
+function readStudioGuideMap(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STUDIO_GUIDE_MAP_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Mengecek apakah pengguna (berdasarkan email akun jika login, atau kunci lokal)
+ * sudah menyelesaikan/melewati panduan interaktif Studio.
+ */
+export function hasCompletedStudioGuide(email: string | null): boolean {
+  if (typeof window === "undefined") return false;
+
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) {
+    const map = readStudioGuideMap();
+    if (normalized in map) {
+      return Boolean(map[normalized]);
+    }
+  }
+
+  return window.localStorage.getItem(STUDIO_GUIDE_STORAGE_KEY) === "true";
+}
+
+/** Menandai panduan interaktif Studio sudah dilewati/diselesaikan. */
+export function markStudioGuideComplete(email: string | null): void {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(STUDIO_GUIDE_STORAGE_KEY, "true");
+
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) {
+    const map = readStudioGuideMap();
+    map[normalized] = true;
+    window.localStorage.setItem(STUDIO_GUIDE_MAP_KEY, JSON.stringify(map));
+  }
+}
+
+/** Mereset status panduan Studio (mis. saat pengguna baru memilih mode tur di onboarding). */
+export function resetStudioGuideComplete(email: string | null): void {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.removeItem(STUDIO_GUIDE_STORAGE_KEY);
+
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) {
+    const map = readStudioGuideMap();
+    delete map[normalized];
+    window.localStorage.setItem(STUDIO_GUIDE_MAP_KEY, JSON.stringify(map));
   }
 }

@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type React
 
 import { BogorProjectsMap } from "@/components/BogorProjectsMap";
 import { LandingView } from "@/components/landing/LandingView";
+import { ConfirmDialog } from "@/components/studio/ConfirmDialog";
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { MascotDashboardTour } from "@/components/dashboard/MascotDashboardTour";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
@@ -17,7 +18,7 @@ import {
   type SimulationParameters,
   type SimulationSummary,
 } from "@/lib/api";
-import { useHasToken, useStoredBiodata } from "@/lib/profile";
+import { saveStoredBiodata, useHasToken, useStoredBiodata, type PropertyType } from "@/lib/profile";
 
 type DashboardNavTab = "overview" | "history" | "calculator";
 
@@ -791,8 +792,10 @@ function HomePageContent() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedRoofProject[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [modulePresets, setModulePresets] = useState<Record<string, ModulePreset>>({});
+  const [pendingDeleteProject, setPendingDeleteProject] = useState<{ id: string; name: string } | null>(null);
   const [proposalOpen, setProposalOpen] = useState(false);
   const [proposalDetail, setProposalDetail] = useState<SimulationDetail | null>(null);
   const [proposalLoading, setProposalLoading] = useState(false);
@@ -812,12 +815,34 @@ function HomePageContent() {
    */
   const loadProjects = useCallback(async () => {
     if (getToken() === null) {
+      await Promise.resolve();
       setSavedProjects([]);
+      setProjectsLoading(false);
       return;
     }
 
     try {
-      const [page, options] = await Promise.all([api.listSimulations(1, 100), api.fetchOptions()]);
+      const [page, options, user] = await Promise.all([
+        api.listSimulations(1, 100),
+        api.fetchOptions(),
+        api.currentUser().catch(() => null),
+      ]);
+
+      if (user !== null) {
+        const propType: PropertyType =
+          user.property_type === "commercial" ||
+          user.property_type === "industrial" ||
+          user.property_type === "residential"
+            ? user.property_type
+            : "residential";
+        saveStoredBiodata({
+          name: user.name,
+          email: user.email,
+          phone: user.phone ?? "",
+          propertyType: propType,
+          location: user.location ?? "Kota Bogor, Jawa Barat",
+        });
+      }
 
       const byKey: Record<string, ModulePreset> = Object.fromEntries(
         options.modules.map((m) => [m.key, m])
@@ -831,6 +856,8 @@ function HomePageContent() {
       );
     } catch {
       setSavedProjects([]);
+    } finally {
+      setProjectsLoading(false);
     }
   }, []);
 
@@ -917,29 +944,31 @@ function HomePageContent() {
         .join("")
     : "PS";
 
-  // Delete project from saved projects
-  const handleDeleteProject = useCallback(
-    async (id: string, name: string) => {
-      if (!window.confirm(`Hapus proyek "${name}" dari riwayat?`)) return;
+  // Open non-blocking confirmation dialog before deleting a project
+  const handleDeleteProject = useCallback((id: string, name: string) => {
+    setPendingDeleteProject({ id, name });
+  }, []);
 
-      const numId = Number(id);
+  const confirmDeleteProject = useCallback(async () => {
+    if (!pendingDeleteProject) return;
+    const { id, name } = pendingDeleteProject;
+    setPendingDeleteProject(null);
 
-      if (!Number.isNaN(numId) && numId > 0) {
-        try {
-          await api.deleteSimulation(numId);
-        } catch {
-          showToast(`Gagal menghapus "${name}". Coba lagi.`);
-          return;
-        }
+    const numId = Number(id);
+    if (!Number.isNaN(numId) && numId > 0) {
+      try {
+        await api.deleteSimulation(numId);
+      } catch {
+        showToast(`Gagal menghapus "${name}". Coba lagi.`);
+        return;
       }
+    }
 
-      // Daftar dibaca ulang dari server supaya jumlah, urutan, dan pilihan aktif
-      // tidak menyimpang dari yang benar-benar tersimpan.
-      await loadProjects();
-      showToast(`Proyek "${name}" berhasil dihapus dari riwayat.`);
-    },
-    [loadProjects, showToast]
-  );
+    // Daftar dibaca ulang dari server supaya jumlah, urutan, dan pilihan aktif
+    // tidak menyimpang dari yang benar-benar tersimpan.
+    await loadProjects();
+    showToast(`Proyek "${name}" berhasil dihapus dari riwayat.`);
+  }, [pendingDeleteProject, loadProjects, showToast]);
 
   // Active Project for Bento display
   const activeProj = useMemo(() => {
@@ -1710,7 +1739,32 @@ function HomePageContent() {
                 />
 
                 <ul className="mt-3 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1.5">
-                  {savedProjects.map((proj, idx) => {
+                  {projectsLoading ? (
+                    [0, 1, 2].map((idx) => (
+                      <li
+                        key={idx}
+                        className="h-[62px] rounded-2xl bg-slate-100/80 animate-pulse border border-slate-200/50"
+                      />
+                    ))
+                  ) : savedProjects.length === 0 ? (
+                    <li className="h-full min-h-[220px] flex flex-col items-center justify-center text-center p-5 rounded-2xl bg-gradient-to-br from-amber-50/70 via-white to-sky-50/40 border border-dashed border-amber-300/80">
+                      <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mb-2.5 shadow-2xs">
+                        <span className="material-symbols-outlined text-[22px]">solar_power</span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-900">Belum ada simulasi tersimpan</p>
+                      <p className="text-[11px] text-slate-500 mt-1 max-w-[230px] leading-relaxed">
+                        Pindai bidang atap di Studio CAD untuk menghitung kapasitas &amp; penghematan PLTS Anda.
+                      </p>
+                      <Link
+                        href="/studio"
+                        className="mt-3.5 inline-flex items-center gap-1.5 h-8 px-4 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold text-[11px] border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18)] transition"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">add_location_alt</span>
+                        <span>Buka Studio CAD</span>
+                      </Link>
+                    </li>
+                  ) : (
+                    savedProjects.map((proj, idx) => {
                     const active = proj.id === selectedProjectId;
                     return (
                       <li key={proj.id}>
@@ -1781,7 +1835,8 @@ function HomePageContent() {
                         </div>
                       </li>
                     );
-                  })}
+                  })
+                  )}
                 </ul>
               </div>
 
@@ -1849,8 +1904,31 @@ function HomePageContent() {
             {/* Project Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {filteredProjects.length === 0 ? (
-                <div className="md:col-span-2 bg-white rounded-[22px] p-10 text-center text-slate-400 text-sm shadow-xs">
-                  Tidak ada proyek yang sesuai dengan pencarian &quot;{searchQuery}&quot;
+                <div className="md:col-span-2 bg-white rounded-[22px] p-10 text-center space-y-3 shadow-xs border border-slate-200/70">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+                    <span className="material-symbols-outlined text-[24px]">
+                      {savedProjects.length === 0 ? "solar_power" : "search_off"}
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {savedProjects.length === 0
+                      ? "Belum ada simulasi PLTS tersimpan"
+                      : `Tidak ada proyek yang sesuai dengan pencarian "${searchQuery}"`}
+                  </p>
+                  {savedProjects.length === 0 && (
+                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      Mulai dengan memindai atap bangunan di Kota Bogor menggunakan Studio CAD untuk melihat ringkasan teknis dan proposalnya di sini.
+                    </p>
+                  )}
+                  {savedProjects.length === 0 && (
+                    <Link
+                      href="/studio"
+                      className="inline-flex items-center gap-1.5 h-9 px-5 rounded-full bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:brightness-105 text-amber-950 font-bold text-xs border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18)] transition"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">draw</span>
+                      <span>Buat Simulasi Pertama</span>
+                    </Link>
+                  )}
                 </div>
               ) : (
                 filteredProjects.map((proj, idx) => {
@@ -2653,6 +2731,19 @@ function HomePageContent() {
           activeFacetName={proposalDetail.roofs[0]?.label ?? "Bidang Atap Utama"}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteProject !== null}
+        title="Hapus proyek dari riwayat?"
+        description={`Simulasi "${pendingDeleteProject?.name ?? ""}" akan dihapus permanen dari akun Anda dan tidak dapat dipulihkan.`}
+        confirmLabel="Hapus Proyek"
+        cancelLabel="Batal"
+        tone="danger"
+        onCancel={() => setPendingDeleteProject(null)}
+        onConfirm={() => {
+          void confirmDeleteProject();
+        }}
+      />
     </div>
   );
 }
@@ -2681,12 +2772,21 @@ function toSavedProject(
       ? Math.round((summary.effective_area_sqm / summary.total_area_sqm) * 100)
       : 0;
 
+  const addressParts = (summary.address ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const bogorDistrict =
+    addressParts.find((part) => /bogor/i.test(part)) ??
+    addressParts[1] ??
+    `${summary.roof_count} bidang atap`;
+
   return {
     id: String(summary.id),
     name: summary.address ?? `Simulasi #${summary.id}`,
     address: summary.address ?? "-",
-    district: "-",
-    city: "-",
+    district: bogorDistrict,
+    city: "Kota Bogor",
     lat: summary.center_point.lat,
     lng: summary.center_point.lng,
     roofShape: "rectangle",

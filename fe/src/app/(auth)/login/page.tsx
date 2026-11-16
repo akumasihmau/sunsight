@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AuthAlert } from "@/components/auth/AuthAlert";
 import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
@@ -33,6 +33,31 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [excited, setExcited] = useState(false);
+
+  // Tampilkan pesan jelas bila pengalihan OAuth Google gagal kembali dengan `?error=…`.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const oauthError = new URLSearchParams(window.location.search).get("error");
+    if (!oauthError) return;
+
+    const timer = window.setTimeout(() => {
+      if (oauthError === "google_email_missing") {
+        setAlert({
+          title: "Email Google Tidak Tersedia",
+          description:
+            "Akun Google Anda tidak menyertakan alamat email terverifikasi. Silakan gunakan akun lain atau masuk dengan email.",
+        });
+      } else if (oauthError === "google_failed") {
+        setAlert({
+          title: "Masuk dengan Google Gagal",
+          description:
+            "Autentikasi Google dibatalkan atau gagal diproses. Silakan coba lagi atau masuk dengan email dan kata sandi.",
+        });
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Clear specific field error when user modifies value
   const handleEmailChange = (val: string) => {
@@ -95,12 +120,19 @@ export default function LoginPage() {
       setToken(result.token);
 
       const existingBio = getStoredBiodata();
+      const propType =
+        result.user.property_type === "commercial" ||
+        result.user.property_type === "industrial" ||
+        result.user.property_type === "residential"
+          ? result.user.property_type
+          : existingBio?.propertyType || "residential";
+
       saveStoredBiodata({
         name: result.user.name || existingBio?.name || "Pengguna SunSight",
         email: result.user.email || email.trim(),
-        phone: existingBio?.phone || "",
-        propertyType: existingBio?.propertyType || "residential",
-        location: existingBio?.location || "Menteng, Jakarta Pusat",
+        phone: result.user.phone ?? existingBio?.phone ?? "",
+        propertyType: propType,
+        location: result.user.location ?? existingBio?.location ?? "Kota Bogor, Jawa Barat",
       });
 
       const redirectTarget =

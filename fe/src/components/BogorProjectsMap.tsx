@@ -39,6 +39,11 @@ export function BogorProjectsMap({
   const [mapReady, setMapReady] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(14);
   const [isPotentialOpen, setIsPotentialOpen] = useState(false);
+  const onSelectProjectRef = useRef(onSelectProject);
+
+  useEffect(() => {
+    onSelectProjectRef.current = onSelectProject;
+  }, [onSelectProject]);
 
   // Helper to construct marker HTML
   function createMarkerHtml(proj: MapProjectItem, active: boolean, isZoomedOut: boolean): string {
@@ -148,28 +153,7 @@ export function BogorProjectsMap({
         labels.addTo(map);
 
         mapInstanceRef.current = map;
-
-        // Render project markers
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const markerMap: Record<string, any> = {};
-
-        projects.forEach((proj) => {
-          const isSelected = proj.id === selectedProjectId;
-          const icon = L.divIcon({
-            html: createMarkerHtml(proj, isSelected, false),
-            className: "sunsight-leaflet-marker",
-            iconSize: [0, 0],
-          });
-
-          const marker = L.marker([proj.lat, proj.lng], { icon, zIndexOffset: isSelected ? 1000 : 0 });
-          marker.on("click", () => {
-            onSelectProject(proj.id);
-          });
-          marker.addTo(map);
-          markerMap[proj.id] = marker;
-        });
-
-        markersRef.current = markerMap;
+        markersRef.current = {};
         setMapReady(true);
 
         // Invalidate size once DOM stabilizes
@@ -204,30 +188,53 @@ export function BogorProjectsMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update marker icons and pan when selectedProjectId changes
+  // Sync markers dynamically whenever project list, selection, or zoom changes
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const L = (window as any).L;
-    if (!L || !mapInstanceRef.current || !mapReady) return;
+    const map = mapInstanceRef.current;
+    if (!L || !map || !mapReady) return;
 
+    const nextIds = new Set(projects.map((p) => p.id));
+
+    // Remove markers for deleted or unloaded projects
+    Object.keys(markersRef.current).forEach((id) => {
+      if (!nextIds.has(id)) {
+        markersRef.current[id]?.remove();
+        delete markersRef.current[id];
+      }
+    });
+
+    // Add missing markers or update existing ones
     projects.forEach((proj) => {
-      const marker = markersRef.current[proj.id];
-      if (!marker) return;
-
       const isSelected = proj.id === selectedProjectId;
-      marker.setIcon(
-        L.divIcon({
-          html: createMarkerHtml(proj, isSelected, zoomLevel < 12),
-          className: "sunsight-leaflet-marker",
-          iconSize: [0, 0],
-        })
-      );
-      marker.setZIndexOffset(isSelected ? 1000 : 0);
+      const icon = L.divIcon({
+        html: createMarkerHtml(proj, isSelected, zoomLevel < 12),
+        className: "sunsight-leaflet-marker",
+        iconSize: [0, 0],
+      });
+
+      const existing = markersRef.current[proj.id];
+      if (!existing) {
+        const marker = L.marker([proj.lat, proj.lng], {
+          icon,
+          zIndexOffset: isSelected ? 1000 : 0,
+        });
+        marker.on("click", () => {
+          onSelectProjectRef.current(proj.id);
+        });
+        marker.addTo(map);
+        markersRef.current[proj.id] = marker;
+      } else {
+        existing.setLatLng([proj.lat, proj.lng]);
+        existing.setIcon(icon);
+        existing.setZIndexOffset(isSelected ? 1000 : 0);
+      }
     });
 
     const activeProject = projects.find((p) => p.id === selectedProjectId);
-    if (activeProject && mapInstanceRef.current) {
-      mapInstanceRef.current.panTo([activeProject.lat, activeProject.lng], {
+    if (activeProject) {
+      map.panTo([activeProject.lat, activeProject.lng], {
         animate: true,
         duration: 0.6,
       });
@@ -249,8 +256,8 @@ export function BogorProjectsMap({
   const activeProject = projects.find((p) => p.id === selectedProjectId) || projects[0];
 
   function handleExpandToStudio() {
-    if (onOpenStudio && activeProject) {
-      onOpenStudio(activeProject.id);
+    if (onOpenStudio) {
+      onOpenStudio(activeProject?.id ?? "");
     }
   }
 
@@ -333,7 +340,7 @@ export function BogorProjectsMap({
               <div className="flex items-center justify-between gap-3 pt-0.5">
                 <div className="min-w-0">
                   <p className="text-[12px] sm:text-[13px] font-semibold text-slate-800 truncate">
-                    {activeProject.district}
+                    {activeProject.district !== "-" ? activeProject.district : "Kota Bogor"}
                   </p>
                   <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-snug">
                     {irradiance} kWh/m² per hari

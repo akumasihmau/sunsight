@@ -28,13 +28,17 @@ import {
   type SimulationRoofInput,
 } from "@/lib/api";
 import { formatRp } from "@/lib/format";
-import { getStoredBiodata, saveStoredBiodata, type UserBiodata } from "@/lib/profile";
+import { hasCompletedStudioGuide, markStudioGuideComplete } from "@/lib/onboarding";
+import { getStoredBiodata, type UserBiodata } from "@/lib/profile";
 import {
+  MAX_FOOTPRINT_M,
   RECOMMENDED_MAX_FOOTPRINT_M,
   RECOMMENDED_MIN_FOOTPRINT_M,
   captureGeometry,
   captureMapForDetection,
+  measureMapViewportScale,
   type CapturedMap,
+  type MapScaleInfo,
 } from "@/lib/roofCapture";
 
 type CvLayer = "satellite" | "cv" | "heatmap";
@@ -44,12 +48,12 @@ type Orientation = "portrait" | "landscape";
 type InverterType = "string" | "micro";
 type SlotState = "active" | "skylight" | "hvac" | "empty";
 
-export interface Point2D {
+interface Point2D {
   x: number;
   y: number;
 }
 
-export interface RoofFacet {
+interface RoofFacet {
   id: string;
   name: string;
   shape: RoofShape;
@@ -91,7 +95,7 @@ interface DragState {
   initLng: number;
 }
 
-export interface PanelSlotItem {
+interface PanelSlotItem {
   r: number;
   c: number;
   key: string;
@@ -232,13 +236,6 @@ const TARIFF_RATES_BY_KEY: Record<string, number> = {
   R2: 1700,
   B2: 1444.71,
 };
-
-/**
- * Penanda "panduan studio sudah ditutup". Nilainya sengaja dibaca setelah hidrasi,
- * bukan saat inisialisasi state: pra-render server tidak punya `localStorage`, dan
- * membuka panduan hanya di klien membuat HTML hasil hidrasi berbeda dari kiriman server.
- */
-const STUDIO_GUIDE_STORAGE_KEY = "sunsight_studio_tour_completed";
 
 /**
  * Tanda tangan isi studio, dipakai mendeteksi perubahan yang belum tersimpan.
@@ -440,7 +437,7 @@ const PRESET_ADDRESSES = STUDIO_SAVED_PROJECTS.map((p) => ({
   deg: p.deg,
 }));
 
-export function computePolygonArea(vertices: Point2D[]): number {
+function computePolygonArea(vertices: Point2D[]): number {
   if (!vertices || vertices.length < 3) return 0;
   let area = 0;
   for (let i = 0; i < vertices.length; i++) {
@@ -451,7 +448,7 @@ export function computePolygonArea(vertices: Point2D[]): number {
   return Math.abs(area) / 2;
 }
 
-export function pointInPolygon(pt: Point2D, poly: Point2D[]): boolean {
+function pointInPolygon(pt: Point2D, poly: Point2D[]): boolean {
   if (!poly || poly.length < 3) return true;
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -471,7 +468,7 @@ export function pointInPolygon(pt: Point2D, poly: Point2D[]): boolean {
 // Polygon geometry helpers (all coordinates in meters, facet-local frame)
 // ---------------------------------------------------------------------------
 
-export function polygonBounds(poly: Point2D[]) {
+function polygonBounds(poly: Point2D[]) {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -485,7 +482,7 @@ export function polygonBounds(poly: Point2D[]) {
   return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
 }
 
-export function polygonPerimeter(poly: Point2D[]): number {
+function polygonPerimeter(poly: Point2D[]): number {
   let p = 0;
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i];
@@ -510,7 +507,7 @@ function signedArea(poly: Point2D[]): number {
  * seamlessly falls back to centroid-directed inward scaling so the setback boundary and usable interior
  * always exist, preserve the polygon's exact shape, and never drop to 0.
  */
-export function insetPolygon(poly: Point2D[], d: number): Point2D[] {
+function insetPolygon(poly: Point2D[], d: number): Point2D[] {
   const n = poly.length;
   if (n < 3 || d <= 0) return poly;
   const originalSign = signedArea(poly);
@@ -666,7 +663,7 @@ const PACK_CACHE = new Map<string, { slots: PanelSlotItem[]; rows: number; cols:
  * Uses inset polygon clearance for setback, tests multi-phase vertical sweeps and adaptive horizontal alignments
  * (both column-grid snapped and interval-centered) to maximize whole module count without clipping or distortion.
  */
-export function packPanelsInPolygon(poly: Point2D[], opts: PackOptions) {
+function packPanelsInPolygon(poly: Point2D[], opts: PackOptions) {
   const key = `${poly.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(";")}|${opts.panelW}|${opts.panelL}|${opts.gap}|${opts.margin}|${opts.marginBottom}`;
   const cached = PACK_CACHE.get(key);
   if (cached) return cached;
@@ -792,7 +789,7 @@ export function packPanelsInPolygon(poly: Point2D[], opts: PackOptions) {
   return result;
 }
 
-export function rotatePoint(p: Point2D, rad: number): Point2D {
+function rotatePoint(p: Point2D, rad: number): Point2D {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
   return {
@@ -801,7 +798,7 @@ export function rotatePoint(p: Point2D, rad: number): Point2D {
   };
 }
 
-export function rotatePolygon(poly: Point2D[], rad: number): Point2D[] {
+function rotatePolygon(poly: Point2D[], rad: number): Point2D[] {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
   return poly.map((p) => ({
@@ -810,7 +807,7 @@ export function rotatePolygon(poly: Point2D[], rad: number): Point2D[] {
   }));
 }
 
-export function getFacetVertices(facet: RoofFacet): Point2D[] {
+function getFacetVertices(facet: RoofFacet): Point2D[] {
   if (facet.vertices && facet.vertices.length >= 3) {
     return facet.vertices;
   }
@@ -1338,8 +1335,6 @@ function StudioPageContent() {
 
   // Floating Capsule Navigation State (X-like bubble)
   const [capsuleExpanded, setCapsuleExpanded] = useState(false);
-  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   // Layers & CAD Tools State
   const [activeLayer, setActiveLayer] = useState<CvLayer>("satellite");
@@ -1354,8 +1349,10 @@ function StudioPageContent() {
   const [activeTab, setActiveTab] = useState<"geometry" | "pvarray" | "financials">("geometry");
   const [capexCollapsed, setCapexCollapsed] = useState(true);
   const [proposalOpen, setProposalOpen] = useState(false);
-  // Panduan dibuka setelah hidrasi bila pengguna belum pernah menutupnya.
+  // Panduan dibuka setelah hidrasi bila pengguna belum pernah menutup/melewatinya
+  // dan sedang tidak membuka simulasi tersimpan (`?analysis=…`).
   const [mascotGuideOpen, setMascotGuideOpen] = useState(false);
+  const [studioGuideCompleted, setStudioGuideCompleted] = useState(false);
 
   // Address search input (Defaulted to Kota Bogor)
   const [addressInput, setAddressInput] = useState("Komp. Baranangsiang Indah Blok C, Bogor Timur, Kota Bogor");
@@ -1436,6 +1433,9 @@ function StudioPageContent() {
   const [showDetectedRoofs, setShowDetectedRoofs] = useState(false);
   const [isAiScanning, setIsAiScanning] = useState(false);
   const [selectionDone, setSelectionDone] = useState(false);
+  /** Skala meter & cakupan viewport peta saat ini (diperbarui saat pan/zoom/resize). */
+  const [viewportScale, setViewportScale] = useState<MapScaleInfo | null>(null);
+
   /** Tangkapan di luar cakupan terbaik yang menunggu persetujuan pengguna. */
   const [scanConfirm, setScanConfirm] = useState<{ capture: CapturedMap } | null>(null);
 
@@ -1690,6 +1690,8 @@ function StudioPageContent() {
           `${detail.input.monthly_bill_idr}|${restoredRate}|` +
           `${detail.input.inverter_type}|${restoredSunHour}|${restoredExtraTilt}`;
 
+        const restoredAddress = detail.address ?? "Proyek tersimpan";
+
         setFacets(restored);
         setServerMetrics(detail.result);
         setServerDetail(detail);
@@ -1698,7 +1700,19 @@ function StudioPageContent() {
         setActiveFacetId(restored[restored.length - 1].id);
         setSelectionDone(true);
         setShowDetectedRoofs(false);
-        setAddressInput(detail.address ?? "Proyek tersimpan");
+        setAddressInput(restoredAddress);
+
+        // Perbarui pembanding rancangan tersimpan agar membuka simulasi lama tanpa
+        // modifikasi tidak langsung memicu konfirmasi "Keluar tanpa menyimpan?".
+        savedDesignSignatureRef.current = designSignatureOf({
+          facets: restored,
+          addressInput: restoredAddress,
+          monthlyBill: detail.input.monthly_bill_idr,
+          plnTariff: restoredRate,
+          inverterType: detail.input.inverter_type,
+          sunHour: restoredSunHour,
+          extraTilt: restoredExtraTilt,
+        });
 
         // Penanda agar simpan berikutnya tetap memakai acuan tangkapan yang sama.
         setDetection({
@@ -1750,7 +1764,7 @@ function StudioPageContent() {
     setCadToast(msg);
     toastTimeoutRef.current = setTimeout(() => {
       setCadToast(null);
-    }, 2400);
+    }, 3400);
   }, []);
 
   const toggleFacetSelection = useCallback(
@@ -2014,7 +2028,7 @@ function StudioPageContent() {
   const triggerGpsDetectionFlow = useCallback(
     (latitude: number, longitude: number) => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo([latitude, longitude], 21, { duration: 1.2 });
+        mapInstanceRef.current.flyTo([latitude, longitude], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
       }
 
       setAddressInput("Lokasi GPS Terkini");
@@ -2671,9 +2685,23 @@ function StudioPageContent() {
 
   useEffect(() => {
     setMounted(true);
-    setBiodata(getStoredBiodata());
-    setMascotGuideOpen(window.localStorage.getItem(STUDIO_GUIDE_STORAGE_KEY) !== "true");
+    const storedBio = getStoredBiodata();
+    setBiodata(storedBio);
+    const completed = hasCompletedStudioGuide(storedBio?.email ?? null);
+    setStudioGuideCompleted(completed);
+    const hasAnalysisParam =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("analysis") !== null;
+    if (!completed && !hasAnalysisParam) {
+      setMascotGuideOpen(true);
+    }
   }, []);
+
+  const closeStudioGuide = useCallback(() => {
+    markStudioGuideComplete(biodata?.email ?? null);
+    setStudioGuideCompleted(true);
+    setMascotGuideOpen(false);
+  }, [biodata?.email]);
 
   const initials = useMemo(() => {
     if (!mounted || !biodata?.name) return "PS";
@@ -2696,7 +2724,7 @@ function StudioPageContent() {
 
   const handleSelectStudioProject = (proj: (typeof STUDIO_SAVED_PROJECTS)[0]) => {
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([proj.lat, proj.lon], 21, { duration: 1.2 });
+      mapInstanceRef.current.flyTo([proj.lat, proj.lon], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
     }
     updateActiveFacet({
       lat: proj.lat,
@@ -2795,8 +2823,8 @@ function StudioPageContent() {
         const pLng = searchParams.get("lng") ? Number(searchParams.get("lng")) : 106.8150;
         const map = L.map("studio-leaflet-map", {
           center: [!isNaN(pLat) ? pLat : -6.6110, !isNaN(pLng) ? pLng : 106.8150],
-          zoom: 21,
-          maxZoom: 22,
+          zoom: GEOCODE_TARGET_ZOOM,
+          maxZoom: 21,
           minZoom: 16,
           zoomControl: false,
           attributionControl: false,
@@ -2809,10 +2837,16 @@ function StudioPageContent() {
         );
         map.setMaxBounds(bogorBounds);
 
-        // Update positions on all map pan, zoom, and resize events
-        map.on("move zoom viewreset resize", () => {
+        // Update positions & live viewport meter scale on all map pan, zoom, and resize events
+        const syncMapViewport = () => {
           setMapTick((t: number) => (t + 1) % 1000000);
-        });
+          const nextScale = measureMapViewportScale(map);
+          setViewportScale(nextScale);
+          if (nextScale?.status === "optimal") {
+            setScanConfirm(null);
+          }
+        };
+        map.on("move zoom viewreset resize", syncMapViewport);
 
         // Real Earth Esri World Imagery (High-resolution satellite nadir tiles)
         // `crossOrigin` wajib: tanpa itu kanvas tangkapan menjadi tainted dan
@@ -2843,6 +2877,7 @@ function StudioPageContent() {
         osmStreetLayerRef.current = osmStreet;
         labelsLayerRef.current = labelsLayer;
         setMapLoaded(true);
+        setViewportScale(measureMapViewportScale(map));
       } catch (err) {
         console.warn("Leaflet init error:", err);
       }
@@ -3137,7 +3172,7 @@ function StudioPageContent() {
       name: "Baranangsiang Indah",
     });
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([defaultLat, defaultLng], 21, { duration: 1.2 });
+      mapInstanceRef.current.flyTo([defaultLat, defaultLng], GEOCODE_TARGET_ZOOM, { duration: 1.2 });
     }
     showToast("Pencarian & lokasi peta direset ke posisi awal");
   };
@@ -4422,7 +4457,12 @@ function StudioPageContent() {
                     type="button"
                     onClick={() => {
                       setActiveLayer("cv");
-                      showToast("Lapisan: Deteksi AI (Computer Vision)");
+                      setShowDetectedRoofs(true);
+                      showToast(
+                        detection !== null
+                          ? "Lapisan: Overlay Deteksi AI (YOLOv8n-seg)"
+                          : "Mode Deteksi AI aktif — tekan Pindai AI di toolbar kiri"
+                      );
                       setFilterOpen(false);
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-2xl text-xs font-semibold transition cursor-pointer ${
@@ -4474,11 +4514,11 @@ function StudioPageContent() {
                         rotation: -4,
                         setback: 0.5,
                         gutter: 0.6,
-                        lat: -6.595038,
-                        lng: 106.797241,
+                        lat: -6.6110,
+                        lng: 106.8150,
                       });
                       if (mapInstanceRef.current) {
-                        mapInstanceRef.current.setView([-6.595038, 106.797241], 21);
+                        mapInstanceRef.current.setView([-6.6110, 106.8150], GEOCODE_TARGET_ZOOM);
                       }
                       showToast("Parameter & poligon direset ke standar");
                       setFilterOpen(false);
@@ -4564,7 +4604,7 @@ function StudioPageContent() {
               type="button"
               onClick={() => {
                 if (mapInstanceRef.current) {
-                  mapInstanceRef.current.setView([activeFacet.lat || -6.595038, activeFacet.lng || 106.797241], 21);
+                  mapInstanceRef.current.setView([activeFacet.lat || -6.6110, activeFacet.lng || 106.8150], GEOCODE_TARGET_ZOOM);
                 }
                 showToast("Peta diorientasikan ke Utara & dipusatkan ke atap");
               }}
@@ -4582,6 +4622,7 @@ function StudioPageContent() {
               type="button"
               onClick={() => {
                 setZoomScale((z) => Math.min(2.5, z + 0.15));
+                setScanConfirm(null);
                 if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
               }}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 transition cursor-pointer"
@@ -4595,6 +4636,7 @@ function StudioPageContent() {
               type="button"
               onClick={() => {
                 setZoomScale((z) => Math.max(0.6, z - 0.15));
+                setScanConfirm(null);
                 if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
               }}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-700 hover:text-amber-600 hover:bg-amber-50/70 transition cursor-pointer"
@@ -5114,119 +5156,12 @@ function StudioPageContent() {
             />
           )}
 
-          {/* CV Layer: Segmentasi Otsu + Tepi Canny + Deteksi Halangan */}
+          {/* Subtle Grid Tint when CV / Detection Overlay Mode is Selected */}
           <div
-            className={`absolute inset-0 pointer-events-none transition-opacity duration-500 z-10 ${
+            className={`absolute inset-0 pointer-events-none transition-opacity duration-500 z-10 bg-sky-950/10 ${
               activeLayer === "cv" ? "opacity-100" : "opacity-0"
             }`}
-          >
-            <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <filter id="neonGlowCanny" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="2.5" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              </defs>
-
-              <polygon
-                points="calc(50% - 130px),calc(50% - 75px) calc(50% + 125px),calc(50% - 92px) calc(50% + 135px),calc(50% + 65px) calc(50% - 120px),calc(50% + 82px)"
-                fill="rgba(16, 185, 129, 0.32)"
-                stroke="#10b981"
-                strokeWidth="2"
-                strokeDasharray="8,4"
-              />
-              <circle cx="calc(50% - 130px)" cy="calc(50% - 75px)" r="4" fill="#34d399" />
-              <circle cx="calc(50% + 125px)" cy="calc(50% - 92px)" r="4" fill="#34d399" />
-              <circle cx="calc(50% + 135px)" cy="calc(50% + 65px)" r="4" fill="#34d399" />
-              <circle cx="calc(50% - 120px)" cy="calc(50% + 82px)" r="4" fill="#34d399" />
-
-              <line
-                x1="calc(50% - 110px)"
-                y1="calc(50% - 15px)"
-                x2="calc(50% + 115px)"
-                y2="calc(50% - 31px)"
-                stroke="#00f0ff"
-                strokeWidth="2.5"
-                strokeDasharray="8,4"
-                filter="url(#neonGlowCanny)"
-              />
-              <polygon
-                points="calc(50% - 130px),calc(50% - 75px) calc(50% + 125px),calc(50% - 92px) calc(50% + 135px),calc(50% + 65px) calc(50% - 120px),calc(50% + 82px)"
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="2"
-                filter="url(#neonGlowCanny)"
-              />
-
-              <polygon
-                points="calc(50% - 145px),calc(50% + 78px) calc(50% + 145px),calc(50% + 60px) calc(50% + 150px),calc(50% + 95px) calc(50% - 140px),calc(50% + 115px)"
-                fill="rgba(99, 102, 241, 0.3)"
-                stroke="#818cf8"
-                strokeWidth="1.5"
-                strokeDasharray="4,3"
-              />
-
-              {/* Interactive HVAC Obstacle */}
-              <g
-                className="pointer-events-auto cursor-pointer"
-                onClick={() => {
-                  setHasHvac((prev) => !prev);
-                  showToast(!hasHvac ? "Rintangan HVAC Chiller diaktifkan" : "Rintangan HVAC dinonaktifkan");
-                }}
-              >
-                <rect
-                  x="calc(50% + 30px)"
-                  y="calc(50% - 30px)"
-                  width="38"
-                  height="26"
-                  rx="4"
-                  fill="rgba(239, 68, 68, 0.55)"
-                  stroke="#ef4444"
-                  strokeWidth="2"
-                />
-                <text x="calc(50% + 37px)" y="calc(50% - 14px)" fill="#ffffff" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                  HVAC
-                </text>
-                <rect
-                  x="calc(50% + 24px)"
-                  y="calc(50% - 36px)"
-                  width="50"
-                  height="38"
-                  rx="6"
-                  fill="none"
-                  stroke="#fca5a5"
-                  strokeWidth="1"
-                  strokeDasharray="3,2"
-                />
-              </g>
-
-              {/* Interactive Skylight */}
-              <g
-                className="pointer-events-auto cursor-pointer"
-                onClick={() => {
-                  setHasSkylight((prev) => !prev);
-                  showToast(!hasSkylight ? "Skylight kaca diaktifkan" : "Skylight dinonaktifkan");
-                }}
-              >
-                <rect
-                  x="calc(50% - 80px)"
-                  y="calc(50% - 45px)"
-                  width="28"
-                  height="24"
-                  rx="4"
-                  fill="rgba(245, 158, 11, 0.55)"
-                  stroke="#f59e0b"
-                  strokeWidth="2"
-                />
-                <text x="calc(50% - 76px)" y="calc(50% - 30px)" fill="#ffffff" fontSize="8" fontFamily="monospace" fontWeight="bold">
-                  SKY
-                </text>
-              </g>
-            </svg>
-          </div>
+          />
 
           {/* Heatmap Overlay */}
           <div
@@ -5378,6 +5313,113 @@ function StudioPageContent() {
                 className="px-2.5 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300/80 text-[10.5px] font-bold transition cursor-pointer"
               >
                 Tutup
+              </button>
+            </div>
+          )}
+
+          {/* Floating Scale Meter & Live Scan Range Indicator */}
+          {viewportScale && (
+            <div className="absolute bottom-3 left-3 z-25 pointer-events-none select-none flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/85 backdrop-blur-2xl border border-white/95 shadow-[0_8px_28px_rgba(251,191,36,0.12),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.95)] text-slate-800">
+              {/* Architectural Scale Ruler */}
+              <div className="flex flex-col items-center gap-0.5 pr-2.5 border-r border-slate-200/90">
+                <span className="font-code-metric text-[9.5px] font-bold text-slate-700 leading-none">
+                  {viewportScale.barMeters} m
+                </span>
+                <div
+                  className="h-1.5 border-x-2 border-b-2 border-slate-800/85 rounded-b-[1px]"
+                  style={{ width: `${viewportScale.barPx}px` }}
+                />
+              </div>
+
+              {/* Viewport Footprint vs Bounding Box Target */}
+              <div className="flex items-center gap-1.5 text-[10.5px] leading-none">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    viewportScale.status === "optimal"
+                      ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]"
+                      : viewportScale.status === "too-wide-blocked"
+                        ? "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]"
+                        : "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]"
+                  }`}
+                />
+                <span className="font-code-metric font-bold text-slate-900">
+                  {viewportScale.footprintM} m
+                </span>
+                <span
+                  className={`hidden sm:inline font-medium ${
+                    viewportScale.status === "optimal"
+                      ? "text-emerald-700"
+                      : viewportScale.status === "too-wide-blocked"
+                        ? "text-rose-700"
+                        : "text-amber-800"
+                  }`}
+                >
+                  {viewportScale.status === "optimal"
+                    ? `• Ideal pindai (${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`
+                    : viewportScale.status === "too-close"
+                      ? "• Terlalu dekat (perkecil zoom)"
+                      : viewportScale.status === "too-wide-warn"
+                        ? "• Agak luas (perbesar zoom)"
+                        : `• Melebihi batas (${MAX_FOOTPRINT_M} m)`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Non-blocking Floating Pill: Peringatan Cakupan Bounding Box di Luar Rentang Optimal (Soft Radiant Glow) */}
+          {scanConfirm !== null && !isAiScanning && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 flex flex-wrap sm:flex-nowrap items-center gap-2 px-3.5 py-2 rounded-full bg-white/88 backdrop-blur-2xl border border-white/95 shadow-[0_12px_36px_rgba(251,191,36,0.18),0_4px_16px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-100 via-yellow-100 to-amber-200/80 text-amber-900 border border-white/90 shadow-[0_2px_8px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[15px]">straighten</span>
+              </span>
+              <span className="font-medium text-slate-700 truncate">
+                Cakupan <strong className="font-code-metric text-slate-900">{scanConfirm.capture.footprintM} m</strong>{" "}
+                {scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
+                  ? `terlalu dekat (ideal ${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`
+                  : `agak luas (ideal ${RECOMMENDED_MIN_FOOTPRINT_M}–${RECOMMENDED_MAX_FOOTPRINT_M} m)`}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const map = mapInstanceRef.current;
+                  const isTooClose = scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M;
+                  setScanConfirm(null);
+                  if (map) {
+                    if (isTooClose) {
+                      map.zoomOut();
+                    } else {
+                      map.zoomIn();
+                    }
+                    showToast(
+                      isTooClose
+                        ? "Zoom diperkecil agar cakupan mendekati 150–260 m."
+                        : "Zoom diperbesar agar cakupan mendekati 150–260 m."
+                    );
+                  }
+                }}
+                className="px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-2xs text-[11px] font-semibold transition cursor-pointer shrink-0"
+              >
+                {scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M ? "Perkecil Zoom" : "Perbesar Zoom"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pending = scanConfirm;
+                  setScanConfirm(null);
+                  void runRoofDetection(pending.capture);
+                }}
+                className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] text-[11px] font-bold transition cursor-pointer shrink-0"
+              >
+                Pindai Tetap
+              </button>
+              <button
+                type="button"
+                onClick={() => setScanConfirm(null)}
+                title="Tutup peringatan"
+                aria-label="Tutup peringatan cakupan"
+                className="w-6 h-6 rounded-full hover:bg-slate-100/80 text-slate-400 hover:text-slate-700 flex items-center justify-center transition cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-[15px]">close</span>
               </button>
             </div>
           )}
@@ -5613,16 +5655,15 @@ function StudioPageContent() {
                       })()}
 
                       {/*
-                        Sisi poligon. Selalu digambar untuk bidang yang dipilih, di
-                        mode apa pun, supaya bentuknya terbaca walaupun tidak sedang
-                        mengedit — dan supaya sisi dapat ditunjuk langsung ketika mode
-                        Hapus Simpul aktif.
-
-                        Garis yang terlihat tidak menangkap klik; hanya garis
-                        transparan setebal 14 px di belakangnya yang menangkap, agar
-                        menggeser seluruh bidang di mode lain tidak terhalang.
+                        Sisi edit dan simpul hanya ditampilkan ketika mode pengeditan poligon aktif
+                        (`edit_polygon`, `pen`, `delete_vertex`, `resize_edge`) agar tampilan atap di
+                        mode `select` tetap bersih tanpa titik pengganggu di atas poligon.
                       */}
-                      {(isSelected || isActive) && (
+                      {(isSelected || isActive) &&
+                        (cadTool === "edit_polygon" ||
+                          cadTool === "pen" ||
+                          cadTool === "delete_vertex" ||
+                          cadTool === "resize_edge") && (
                         <g>
                           {facetVerts.map((_, edgeIdx) => {
                             const from = facetPoints[edgeIdx];
@@ -5818,23 +5859,12 @@ function StudioPageContent() {
                         </g>
                       )}
 
-                      {/*
-                        Simpul poligon tampil pada SEMUA mode untuk bidang yang dipilih,
-                        supaya batas bentuk selalu terbaca. Hanya pada mode yang mengubah
-                        bentuk (Edit Simpul, Pen, Hapus Simpul) simpul itu interaktif;
-                        di mode lain grup ini `pointer-events-none` agar tidak menghalangi
-                        geser bidang atau klik peta.
-                      */}
-                      {(isSelected || isActive) && (
-                        <g
-                          className={
-                            cadTool === "edit_polygon" ||
-                            cadTool === "pen" ||
-                            cadTool === "delete_vertex"
-                              ? "pointer-events-auto"
-                              : "pointer-events-none"
-                          }
-                        >
+                      {/* Simpul poligon hanya ditampilkan pada mode edit bentuk agar tampilan default bersih. */}
+                      {(isSelected || isActive) &&
+                        (cadTool === "edit_polygon" ||
+                          cadTool === "pen" ||
+                          cadTool === "delete_vertex") && (
+                        <g className="pointer-events-auto">
                           {facetPoints.map((point, vertexIdx) => {
                             const isDeleteMode = cadTool === "delete_vertex";
                             const canDeleteVertex = isDeleteMode && facetVerts.length > 3;
@@ -6344,6 +6374,7 @@ function StudioPageContent() {
 
             {/* 7. AI Rooftop Detection Tool (Under Ruler) */}
             <button
+              id="studio-ai-scan-btn"
               type="button"
               onClick={handleRunAiDetection}
               disabled={isAiScanning}
@@ -6364,29 +6395,53 @@ function StudioPageContent() {
             {/* Divider */}
             <div className="w-5 h-px bg-slate-200 my-0.5" />
 
-            {/* 8. Panduan Studio bersama Sunny (Ikon '?') */}
+            {/* 8. Panduan Studio bersama Sunny (Ikon '?' + Indikator Status) */}
             <button
               type="button"
-              onClick={() => setMascotGuideOpen((prev) => !prev)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              onClick={() => {
+                if (mascotGuideOpen) {
+                  closeStudioGuide();
+                } else {
+                  setMascotGuideOpen(true);
+                }
+              }}
+              className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 mascotGuideOpen
-                  ? "bg-amber-100 text-amber-950 border border-amber-300/80 shadow-2xs font-bold"
-                  : "bg-white text-slate-700 hover:bg-slate-100 hover:text-amber-800"
+                  ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] font-bold"
+                  : "bg-white/90 text-slate-700 hover:bg-amber-50/70 hover:text-amber-900"
               }`}
-              title="Panduan Studio bersama Sunny"
+              title={
+                studioGuideCompleted
+                  ? "Panduan Studio sudah dilewati • Klik untuk buka ulang"
+                  : "Panduan Studio bersama Sunny (Belum dilewati)"
+              }
               aria-label="Panduan Studio"
             >
-              <span className="material-symbols-outlined text-[19px] text-amber-600 font-bold">
+              <span className="material-symbols-outlined text-[19px] text-amber-700 font-bold">
                 help
               </span>
+              {studioGuideCompleted ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white border border-white flex items-center justify-center shadow-[0_1px_6px_rgba(16,185,129,0.35)]"
+                >
+                  <span className="material-symbols-outlined text-[9px] font-bold leading-none">check</span>
+                </span>
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gradient-to-r from-amber-300 to-yellow-400 ring-2 ring-white shadow-[0_0_8px_rgba(251,191,36,0.75)] animate-pulse"
+                />
+              )}
             </button>
           </div>
 
           {/* Interactive Studio Mascot Guide (Sunny) */}
           <StudioMascotGuide
             isOpen={mascotGuideOpen}
+            isCompleted={studioGuideCompleted}
             onOpen={() => setMascotGuideOpen(true)}
-            onClose={() => setMascotGuideOpen(false)}
+            onClose={closeStudioGuide}
             onPopulateActiveFacet={() => {
               if (activeFacet) {
                 populateFacetWithSolar(activeFacet.id);
@@ -6699,11 +6754,12 @@ function StudioPageContent() {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
+                          disabled={facets.length === 0}
                           onClick={selectedFacetIds.length === facets.length ? unselectAllFacets : selectAllFacets}
-                          className="px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-[10px] font-bold border border-slate-200 transition cursor-pointer"
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-[10px] font-bold border border-slate-200 transition cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
                           title={selectedFacetIds.length === facets.length ? "Batal pilih semua bidang" : "Pilih semua bidang atap"}
                         >
-                          {selectedFacetIds.length === facets.length ? "Batal Pilih" : "Pilih Semua"}
+                          {selectedFacetIds.length === facets.length && facets.length > 0 ? "Batal Pilih" : "Pilih Semua"}
                         </button>
                         <button
                           type="button"
@@ -6792,7 +6848,7 @@ function StudioPageContent() {
 
                     {/* Panduan & daftar bidang kandidat hasil deteksi */}
                     {facets.length === 0 ? (
-                      <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2 shadow-2xs">
+                      <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-300 text-amber-950 text-xs space-y-2.5 shadow-2xs">
                         <div className="flex items-center gap-2">
                           <span className="w-6 h-6 rounded-lg bg-amber-200 text-amber-900 flex items-center justify-center shrink-0">
                             <span className="material-symbols-outlined text-[16px]">psychology</span>
@@ -6800,10 +6856,21 @@ function StudioPageContent() {
                           <div>
                             <span className="font-bold text-slate-900 block text-xs">Deteksi Bidang Atap AI</span>
                             <span className="text-[10.5px] text-slate-500 block">
-                              Tekan tombol pindai AI untuk memindai area atap yang tampil di peta
+                              Pindai area peta yang tampil atau gambar poligon manual lewat Pen Tool
                             </span>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleRunAiDetection}
+                          disabled={isAiScanning}
+                          className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 font-bold text-xs flex items-center justify-center gap-1.5 border border-amber-300/90 shadow-2xs transition cursor-pointer disabled:opacity-60"
+                        >
+                          <span className={`material-symbols-outlined text-[16px] ${isAiScanning ? "animate-spin" : ""}`}>
+                            {isAiScanning ? "sync" : "radar"}
+                          </span>
+                          <span>{isAiScanning ? "Memindai Citra Satelit..." : "Pindai Area Atap AI"}</span>
+                        </button>
                         {remainingDetectedRoofs.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1 border-t border-amber-200/60">
                             {remainingDetectedRoofs.map((detected) => {
@@ -8573,183 +8640,6 @@ function StudioPageContent() {
         </div>
       </main>
 
-      {/* =======================================================
-          RIWAYAT POLIGON DRAWER (From History Button in Capsule)
-          ======================================================= */}
-      {historyDrawerOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end animate-fadeIn print:hidden">
-          <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col p-5 overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500 text-[22px]">history</span>
-                <h3 className="font-title font-bold text-slate-900 text-sm">Riwayat Poligon &amp; Desain Atap</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHistoryDrawerOpen(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </div>
-
-            <div className="py-4 space-y-3 flex-1 overflow-y-auto">
-              {PRESET_ADDRESSES.map((item, idx) => (
-                <div
-                  key={item.label}
-                  className="p-3.5 rounded-xl border border-slate-200 hover:border-amber-300 bg-slate-50 hover:bg-amber-50/40 transition cursor-pointer space-y-2"
-                  onClick={() => {
-                    setAddressInput(item.label);
-                    setRidge(item.ridge);
-                    setSlope(item.slope);
-                    setRoofShape(item.shape);
-                    setPolygonRotation(item.deg);
-                    setHistoryDrawerOpen(false);
-                    showToast(`Desain diterapkan: ${item.label}`);
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900">{item.label}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9.5px] font-bold">
-                      {item.shape}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-600 font-code-metric">
-                    <div>
-                      <span className="text-slate-400 block">Dimensi</span>
-                      <span className="font-bold text-slate-800">{item.ridge}m × {item.slope}m</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block">Kapasitas</span>
-                      <span className="font-bold text-slate-800">12.6 kWp</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block">Payback</span>
-                      <span className="font-bold text-emerald-600">4.8 Thn</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-[0_2px_10px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[15px] text-amber-900">draw</span>
-                    <span>Terapkan ke Studio CAD</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <Link
-              href="/history"
-              className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold text-center transition block"
-            >
-              Buka Halaman Riwayat Lengkap ➜
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* =======================================================
-          PENGATURAN PROFIL MODAL
-          ======================================================= */}
-      {profileModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn print:hidden">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 text-[20px]">person</span>
-                <h3 className="font-title font-bold text-slate-900 text-sm">Profil &amp; Pengaturan Akun</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setProfileModalOpen(false)}
-                className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#FAF9F5] border border-amber-200/50">
-                <div className="w-12 h-12 rounded-full bg-amber-200 text-amber-950 font-bold text-sm flex items-center justify-center border border-amber-300">
-                  {initials}
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm">{biodata?.name || "Pengguna SunSight"}</h4>
-                  <p className="text-slate-500">{biodata?.email || "user@sunsight.id"}</p>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-500">Nama Lengkap</label>
-                <input
-                  type="text"
-                  value={biodata?.name || "Pengguna SunSight"}
-                  onChange={(e) => setBiodata((b) => (b ? { ...b, name: e.target.value } : null))}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-medium focus:bg-white focus:border-amber-400 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-500">Email Akun</label>
-                <input
-                  type="email"
-                  disabled
-                  value={biodata?.email || "user@sunsight.id"}
-                  className="w-full p-2.5 rounded-xl bg-slate-100 border border-slate-200 font-medium text-slate-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-slate-500">Alamat Properti Rujukan</label>
-                <input
-                  type="text"
-                  value={biodata?.location || addressInput}
-                  onChange={(e) => setBiodata((b) => (b ? { ...b, location: e.target.value } : null))}
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 font-medium focus:bg-white focus:border-amber-400 focus:outline-none"
-                />
-              </div>
-            </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (biodata) saveStoredBiodata(biodata);
-                    setProfileModalOpen(false);
-                    showToast("Profil berhasil diperbarui!");
-                  }}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-300 via-amber-400 to-amber-300 hover:brightness-105 active:scale-[0.98] text-amber-950 font-title text-xs font-bold transition cursor-pointer shadow-[0_2px_10px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.75)] border border-amber-200/90"
-                >
-                  Simpan Perubahan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setProfileModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition cursor-pointer"
-                >
-                  Batal
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await api.logout();
-                  } catch {}
-                  setToken(null);
-                  setProfileModalOpen(false);
-                  router.replace("/login");
-                }}
-                className="w-full py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">logout</span>
-                <span>Keluar dari Akun (Logout)</span>
-              </button>
-            </div>
-          </div>
-      )}
-
       {/* Proposal PDF Modal */}
       <ProposalModal
         open={proposalOpen}
@@ -8757,8 +8647,8 @@ function StudioPageContent() {
         result={modalResult}
         assumptions={modalAssumptions}
         parameters={modalParameters}
-        latitude={activeFacet.lat ? activeFacet.lat.toFixed(6) : "-6.595500"}
-        longitude={activeFacet.lng ? activeFacet.lng.toFixed(6) : "106.799500"}
+        latitude={activeFacet.lat ? activeFacet.lat.toFixed(6) : "-6.611000"}
+        longitude={activeFacet.lng ? activeFacet.lng.toFixed(6) : "106.815000"}
         biodata={biodata}
         cumulative25={calc.cumulative25}
         irr={calc.irr}
@@ -8768,34 +8658,6 @@ function StudioPageContent() {
         modulePower={modulePower}
         activeFacetName={activeFacet.name}
         monthlyGenKwh={calc.monthlyGenKwh}
-      />
-
-      {/* Konfirmasi pindai di luar cakupan terbaik */}
-      <ConfirmDialog
-        open={scanConfirm !== null}
-        title="Cakupan peta di luar rentang terbaik"
-        description={
-          scanConfirm === null
-            ? ""
-            : `Cakupan area ${scanConfirm.capture.footprintM} m. Hasil terbaik ada di sekitar ${RECOMMENDED_MIN_FOOTPRINT_M}-${RECOMMENDED_MAX_FOOTPRINT_M} m. ${
-                scanConfirm.capture.footprintM < RECOMMENDED_MIN_FOOTPRINT_M
-                  ? "Perkecil zoom peta (zoom keluar) agar atap lebih banyak terbaca."
-                  : "Perbesar zoom peta agar atap terbaca lebih jelas."
-              } Pindai tetap?`
-        }
-        confirmLabel="Pindai tetap"
-        cancelLabel="Atur zoom dulu"
-        onCancel={() => setScanConfirm(null)}
-        onConfirm={() => {
-          const pending = scanConfirm;
-          setScanConfirm(null);
-
-          if (pending !== null) {
-            // Tangkapan yang sama dikirim ulang: mengambil ubin lagi hanya menambah
-            // waktu tunggu dan berisiko menangkap area yang sudah bergeser.
-            void runRoofDetection(pending.capture);
-          }
-        }}
       />
 
       {/* Konfirmasi keluar dengan rancangan yang belum tersimpan */}
