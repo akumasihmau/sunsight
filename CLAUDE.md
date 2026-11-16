@@ -34,33 +34,36 @@ Dokumen ini menjadi panduan konteks bersama antara tim Frontend, Backend, dan AI
 ## 2. Status Implementasi & Hal yang Perlu Disambungkan Tim (FE ↔ BE)
 
 ### A. Yang Sudah Selesai & Berjalan
-- **Frontend (`fe/`):** Seluruh halaman utama sudah selesai, tervalidasi `tsc --noEmit` & `next build --webpack` (`17/17` static pages), dan `.env.local` sudah diatur `NEXT_PUBLIC_USE_MOCK=false`.
+- **Frontend (`fe/`):** Seluruh halaman utama sudah selesai, tervalidasi `tsc --noEmit` & `next build --webpack`, `.env.local` diset `NEXT_PUBLIC_USE_MOCK=false`, dan search popover `/studio` kini menarik **proyek tersimpan user asli (`GET /analyses`)** di atas daftar area contoh Kota Bogor.
 - **Database PostgreSQL (`be/`):** Seluruh migrasi hingga `2026_11_13_000001` sudah dijalankan (`DONE`).
-- **Endpoint yang Sudah Aktif Terhubung:** `/register`, `/login`, `/logout`, `/user` (`GET`/`PATCH`), `/change-password`, `/onboarding/complete`, `/options`, `/captures`, `/simulate`, `/analyses` (CRUD + `PATCH /analyses/{id}/name`), `/reverse-geocode`, serta `SimulationSummaryResource` (`monthly_bill_idr`, `annual_saving_idr`).
+- **Keamanan & Rute Auth Backend (`be/`):**
+  - `GET /api/geocode` kini dibuka publik (`throttle:30,1`) agar live autocomplete alamat di Hero Landing Page berjalan untuk pengunjung sebelum login (masuk ke `/studio` tetap wajib login).
+  - Rate limit *brute-force* sudah dipasang pada `POST /login`, `POST /forgot-password`, `POST /reset-password` (`throttle:5,1`), serta `POST /register` (`throttle:10,1`).
+  - `AppServiceProvider` kini memakai `config('app.frontend_url')` + `urlencode($email)` sehingga link email reset password selalu mengarah valid ke `${FRONTEND_URL}/reset-password?token=...&email=...`.
+- **Endpoint Aktif Terhubung:** `/register`, `/login`, `/logout`, `/user` (`GET`/`PATCH`), `/change-password`, `/onboarding/complete`, `/options`, `/captures`, `/simulate`, `/analyses` (CRUD + `PATCH /analyses/{id}/name`), `/geocode`, `/reverse-geocode`, serta `SimulationSummaryResource` (`monthly_bill_idr`, `annual_saving_idr`).
 
-### B. Fitur FE yang Sudah Siap — Menunggu Penyambungan / Konfigurasi di BE & ML
-Frontend tidak perlu diubah lagi untuk fitur-fitur berikut; tim Backend/ML tinggal menyambungkan atau mengaktifkan konfigurasinya di `be/`:
+### B. Tinggal Konfigurasi Kredensial `.env` & Upgrade ML
+Frontend **tidak perlu diubah lagi**; tim Backend/ML cukup menyiapkan kredensial eksternal di `be/.env` dan melanjutkan upgrade ML:
 
-| Fitur di Frontend | Status di FE | Yang Harus Dilakukan di Backend / ML |
+| Fitur di Frontend | Status di FE & BE | Yang Tinggal Disiapkan di `be/.env` / ML Service |
 | :--- | :--- | :--- |
-| **Autocomplete Alamat di Hero Landing** (`Hero.tsx`) | Memanggil `GET /api/geocode?q=...` (punya fallback lokal jika 401/offline) | Saat ini `GET /geocode` di `be/routes/api.php` masih di dalam `auth:sanctum` (kena `401` sebelum login). Pindahkan ke grup publik **tetap dengan `throttle:30,1`** bila ingin live Nominatim aktif untuk tamu Landing Page. |
-| **Lupa & Reset Password** (`/forgot-password`, `/reset-password`) | UI & payload ke `POST /forgot-password` & `/reset-password` sudah siap | `be/.env` masih memakai `MAIL_MAILER=log` (link hanya masuk log). Isi konfigurasi SMTP asli (`MAIL_MAILER=smtp`, `MAIL_HOST`, dll.) agar email reset terkirim ke user. |
-| **Masuk dengan Google OAuth** (`/login`, `/register`, `/auth/callback`) | UI & parser fragment token `#token=` sudah siap | `GoogleAuthController` & route `/auth/google/redirect` sudah ada; tinggal isi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, dan `FRONTEND_URL` di `be/.env`. |
-| **Pindai Atap AI di Studio** (`POST /api/roof-detections`) | UI capture Esri & render poligon kandidat sudah siap | Selesaikan upgrade model ML + regularisasi poligon (lihat **Bagian 4**), lalu isi `ML_SERVICE_URL` & `ML_SERVICE_KEY` di `be/.env`. |
-| **Kalkulator Cepat** (`QuickCalculator.tsx` & tab Kalkulator Dashboard) | Hitung real-time di klien memakai konstanta yang sama dengan BE; `POST /simulate` tetap tersedia | Tidak wajib diubah; proyek tersimpan & Studio tetap selalu menghitung ulang angka resmi di server. |
-| **Daftar Contoh Lokal di Search Popover Studio** (`STUDIO_SAVED_PROJECTS` di `studio/page.tsx`) | Proyek tersimpan user dibuka lewat Dashboard / `/history` (`?analysis=<id>`); dropdown internal Studio memakai contoh preset Bogor | Sengaja dipertahankan agar tidak mengganggu performa Studio; bila ingin disambungkan ke `GET /analyses`, lakukan tanpa mengubah layout/toolbar Studio. |
+| **Autocomplete Alamat di Hero Landing** (`Hero.tsx`) | FE & BE `GET /geocode` publik (`throttle:30,1`) **sudah tersambung** | Siap langsung jalan; masuk `/studio` tetap lewat alur login/register. |
+| **Search Proyek Tersimpan di Studio** (`studio/page.tsx`) | FE & BE `GET /analyses` **sudah tersambung** (plus preset Kota Bogor) | Siap langsung jalan begitu backend + DB aktif. |
+| **Lupa & Reset Password** (`/forgot-password`, `/reset-password`) | URL redirect ke Next.js `${FRONTEND_URL}/reset-password` **sudah diperbaiki** di `AppServiceProvider` | Di dev lokal `MAIL_MAILER=log` menulis link reset valid ke `storage/logs/laravel.log`; untuk kirim email nyata tinggal isi konfigurasi SMTP (`MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_USERNAME`, `MAIL_PASSWORD`) di `be/.env`. |
+| **Masuk dengan Google OAuth** (`/login`, `/register`, `/auth/callback`) | UI, `/auth/callback`, & `GoogleAuthController` sudah lengkap | Tinggal isi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, dan `FRONTEND_URL=http://localhost:3000` di `be/.env`. |
+| **Pindai Atap AI di Studio** (`POST /api/roof-detections`) | UI capture Esri & Laravel `MlClient` sudah siap | Fokus utama berikutnya: upgrade model ML + regularisasi poligon (lihat **Bagian 4**), lalu isi `ML_SERVICE_URL` & `ML_SERVICE_KEY` di `be/.env`. |
+| **Kalkulator Cepat** (`QuickCalculator.tsx` & tab Kalkulator Dashboard) | Hitung real-time di klien; `POST /simulate` tetap tersedia | Tidak perlu diubah; proyek tersimpan & Studio selalu menghitung ulang di server. |
 
 ### C. Checklist Langkah Lanjutan untuk Tim Backend & ML
 1. **Sinkronisasi Lingkungan Lokal:**
    - `git pull origin main`
-   - Di `be/`: `composer install` (bila perlu), `php artisan migrate`, lalu `php artisan serve --port=8000`.
+   - Di `be/`: `composer install` (bila perlu), `php artisan migrate`, pastikan `FRONTEND_URL=http://localhost:3000`, lalu jalankan `php artisan serve --port=8000`.
    - Di `fe/`: `npm install` (termasuk `leaflet`, `@types/leaflet`, `material-symbols`), pastikan `fe/.env.local` berisi `NEXT_PUBLIC_USE_MOCK=false` dan `NEXT_PUBLIC_API_URL=http://localhost:8000/api`.
-2. **Hardening Keamanan Auth Backend:**
-   - Tambahkan middleware *rate limiting* (`throttle:5,1` atau sesuai kebijakan) pada `POST /login`, `POST /forgot-password`, dan `POST /reset-password` di `be/routes/api.php`.
-   - Tinjau `'expiration'` pada `be/config/sanctum.php` (saat ini `null`) serta pastikan `APP_DEBUG=false` saat deploy produksi.
+2. **Konfigurasi Produksi Backend:**
+   - Tinjau `'expiration'` pada `be/config/sanctum.php` (saat ini `null`), isi SMTP & Google OAuth di `.env`, dan set `APP_DEBUG=false` saat rilis.
 3. **Verifikasi Akhir:**
    - Jalankan `php artisan test` di environment yang terhubung PostgreSQL (`127.0.0.1:5433`).
-   - Uji E2E dengan `NEXT_PUBLIC_USE_MOCK=false`: Register/Login, Google OAuth, Pindai Atap AI (`/roof-detections`), Simpan/Edit/Hapus Simulasi, dan Proposal PDF.
+   - Fokuskan energi tim ke upgrade **ML Service & Jurnal SINTA 4 (Bagian 4)** lalu uji E2E `/roof-detections`.
 
 ---
 

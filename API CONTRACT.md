@@ -726,7 +726,7 @@ permintaan, dan hasil yang sama tidak perlu diambil ulang dari jaringan.
   wilayah itu tidak mengembalikan hasil.
 - Hasil disimpan di `geocode_cache` selama 30 hari; kueri yang sama dijawab dari cache.
 - `422` bila `q` kurang dari 3 karakter; `503` bila layanan pencarian tidak dapat dihubungi.
-- Route dibatasi `throttle:30,1` per pengguna.
+- Route bersifat publik dan dibatasi `throttle:30,1` per IP (dipakai baik di Landing Hero sebelum login maupun di Beranda/Studio).
 - Atribusi "© OpenStreetMap contributors" wajib ditampilkan bersama hasil.
 
 ### `GET /reverse-geocode`
@@ -769,7 +769,7 @@ Mencari nama jalan/area terdekat dari koordinat peta (`lat`, `lng`) menggunakan 
 | `/options` | GET | Bearer | `200` |
 | `/roof-detections` | POST | Bearer | `200` |
 | `/captures` | POST | Bearer | `201` |
-| `/geocode` | GET | Bearer | `200` |
+| `/geocode` | GET | — *(throttle:30,1)* | `200` |
 | `/reverse-geocode` | GET | Bearer | `200` |
 | `/simulate` | POST | Bearer | `200` |
 | `/analyses` | GET | Bearer | `200` |
