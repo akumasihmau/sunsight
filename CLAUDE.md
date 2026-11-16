@@ -72,25 +72,59 @@ Mohon **tidak menghapus atau mengembalikan perilaku lama** pada bagian-bagian be
 
 ## 4. Konteks Upgrade ML Deteksi Atap & Riset SINTA 4 (Untuk Tim ML & AI)
 
-Detail kontrak layanan model tetap mengacu pada [docs/ml-service-design.md](./docs/ml-service-design.md) dan tidak boleh memutus integrasi Laravel ([MlClient.php](./be/app/Services/Ml/MlClient.php)).
+Detail kontrak layanan model tetap mengacu pada [docs/ml-service-design.md](./docs/ml-service-design.md) dan tidak boleh memutus integrasi Laravel ([MlClient.php](./be/app/Services/Ml/MlClient.php) & [RoofDetectionController.php](./be/app/Http/Controllers/RoofDetectionController.php)).
 
-### A. Akar Masalah Model Saat Ini
-Bobot lama (`yolov8n-seg` pada `YOLO_Sunsight.ipynb`, ±200 foto Google Maps) mengalami 3 kendala saat dipakai langsung di peta **Esri World Imagery** SunSight:
-1. **Color & Domain Bias:** Lebih sensitif genteng oranye/merah; atap spandek/beton/asbes abu-abu sering terlewat.
-2. **False Positive Jalan Raya:** Jalan aspal/paving kemerahan kadang ikut terdeteksi sebagai `roof`.
-3. **Poligon Blobby:** Mask segmentasi mentah membentuk lekukan organik dan `RoofDetectionController` hanya menyederhanakan `0.5 px`, sehingga bentuk atap tidak tegas kotak/limas/L-shape.
+### A. Konteks Penelitian & Aplikasi
+- **Lingkup Aplikasi & Paper:** Project-Based Learning *Pemrosesan Citra & Visi Komputer Cerdas* (target artikel **Jurnal SINTA 4**) dengan batasan studi kasus **Kota Bogor** (6 kecamatan: Bogor Tengah, Bogor Timur, Bogor Utara, Bogor Selatan, Bogor Barat, Tanah Sareal) menggunakan peta satelit **Esri World Imagery** (`zoom 19`, cakupan viewport Studio `150–230 m`).
+- **Arah Judul Jurnal:** ~12–13 kata menggabungkan `SunSight`, metode/model (`YOLO11-Seg` + `Regularisasi Poligon` / `CLAHE`), dan batasan `Kota Bogor`, contoh:
+  `SunSight: Deteksi Atap Citra Satelit Menggunakan YOLO11-Seg dan Regularisasi Poligon di Kota Bogor`
 
-### B. Rencana Perbaikan Tanpa Mengubah Pipeline & Kontrak API
-1. **Kontrak API Tetap Sama (Wajib):**
-   - Pertahankan endpoint `GET /health`, `GET /ready`, dan `POST /api/v1/predict` (`file` multipart + query `min_confidence`), `MODEL_IMAGE_SIZE=1280`, serta format respons JSON (`detections[].{id, class_id, class_name, confidence, bbox, polygon, area_px}`).
-2. **Kurasi Dataset Esri Kota Bogor + *Hard Negatives*:**
-   - Tambah ±250–300 tangkapan *tile* **Esri World Imagery wilayah Kota Bogor** (`zoom 19`, cakupan 150–230 m) mencakup semua warna/material atap (genteng tanah liat, beton gelap, spandek biru/hijau/merah, asbes, dak beton).
-   - Wajib tambahkan **15–20% *Hard Negative Images*** (jalan aspal, paving blok, lapangan parkir, kanopi pohon tanpa label `roof`).
-3. **Training & Benchmark untuk Artikel SINTA 4 (Kaggle / Colab GPU):**
-   - Lanjutkan notebook training di **Kaggle / Google Colab GPU** dengan dataset Roboflow yang diperbarui.
-   - Upgrade base model ke **`yolo11s-seg`** (atau `yolo11n-seg`) dengan `imgsz=1024/1280` dan augmentasi warna-invarian agresif (`hsv_h=0.04, hsv_s=0.7, hsv_v=0.5`, rotasi penuh `degrees=180`, `flipud=0.5`, `fliplr=0.5`, plus uji *CLAHE* / normalisasi pencahayaan).
-   - Catat metrik evaluasi (`Precision`, `Recall`, `mAP@50`, `mAP@50-95`, `IoU`, waktu inferensi CPU) dibanding *baseline* `yolov8n-seg` untuk Bab 3 artikel SINTA 4.
-4. **Post-Processing "Anti-Blobby" di `/api/v1/predict`:**
-   - Sebelum mengembalikan `polygon`, terapkan pembersihan morfologis (`open/close`), penyederhanaan Douglas-Peucker adaptif (`~2.0–3.5 px`), dan **Regularisasi Poligon Ortogonal** (`cv2.minAreaRect` bila *rectangularity* ≥ 0.80, atau *orthogonal edge snapping* untuk atap L/kompleks), serta filter *aspect ratio* ekstrem (`> 4.5`) untuk menyaring *false positive* jalan raya.
-5. **Ekspor ONNX & Serving FastAPI:**
-   - Ekspor model terbaik ke **ONNX** (`onnxruntime` CPU-only) agar ringan tanpa `torch` multi-GB — bisa tetap dideploy di server AWS/EC2 yang sudah ada (`docs/ml-service-design.md`) **atau** alternatif gratis di **Hugging Face Spaces (Docker, port 7860, 2 vCPU, 16 GB RAM)**. Backend Laravel tinggal diarahkan lewat `ML_SERVICE_URL`.
+### B. Akar Masalah Model Saat Ini (Harus Diperbaiki)
+Bobot lama (`yolov8n-seg` di `YOLO_Sunsight.ipynb`, ±200 foto Google Maps) memiliki 3 bug nyata ketika dijalankan di peta **Esri World Imagery** SunSight:
+1. **Color & Domain Bias:** Overfit ke warna genteng tanah liat oranye/merah dari Google Maps; atap spandek biru/hijau, beton gelap, dan asbes abu-abu sering terlewat.
+2. **False Positive Jalan Raya:** Jalan aspal/paving kemerahan sering ikut terdeteksi sebagai kelas `roof`.
+3. **Poligon Blobby:** Mask segmentasi mentah membentuk kontur organik membulat, sementara backend [RoofDetectionController.php](./be/app/Http/Controllers/RoofDetectionController.php#L38) hanya menyederhanakan `0.5 px` (*Douglas-Peucker*), sehingga poligon tidak berbentuk siku persegi/limas/L-shape yang layak untuk *geometric module packing*.
+
+### C. Spesifikasi Teknis Upgrade ML (Tanpa Mengubah Kontrak Laravel/FE)
+
+#### 1. Kontrak API yang HARUS Dipertahankan
+- FastAPI ML Service wajib tetap menyediakan:
+  - `GET /health` -> `{"status": "ok"}`
+  - `GET /ready` -> `{"status": "ready", "model_loaded": true}` (atau `503` saat loading)
+  - `POST /api/v1/predict` (`file` JPEG/PNG/WebP via `multipart/form-data`, `min_confidence` via **query parameter**, header opsional `X-Api-Key`).
+- Format output `detections[]` tetap wajib sama: `{id, class_id, class_name, confidence, bbox: {x1,y1,x2,y2}, polygon: [[x,y], ...], area_px}` dalam **piksel citra penuh** yang dikirim Laravel (`MODEL_IMAGE_SIZE=1280`).
+- **DILARANG** mengubah logika konversi meter persegi, geo-mapping, maupun kalkulasi energi/finansial ke layanan ML — seluruh angka final tetap dihitung Laravel sesuai [API CONTRACT.md](./API%20CONTRACT.md).
+
+#### 2. Kurasi Dataset & Augmentasi (Roboflow -> Kaggle/Colab GPU)
+- Tambah **250–350 tangkapan *tile* langsung dari Esri World Imagery Kota Bogor** (`zoom 19`, cakupan 150–230 m) mewakili seluruh jenis penutup atap (genteng merah/cokelat, genteng beton abu/hitam, spandek biru/hijau/merah, asbes, dak beton).
+- **Wajib sertakan 15–20% *Hard Negative Images*:** gambar jalan aspal, paving blok, area parkir, lapangan, sungai, dan kanopi pohon **tanpa anotasi poligon** (label kosong) agar model menekan *false positive* jalan.
+- Gunakan pembagian dataset terstratifikasi (`train ~75–80%`, `val ~15%`, `test ~10%`) di Roboflow dan ekspor format segmentasi YOLO.
+
+#### 3. Konfigurasi Training & Eksperimen Benchmark (`YOLO11-Seg`)
+- Lanjutkan notebook training di **Kaggle / Google Colab GPU**:
+  - Upgrade base model ke **`yolo11s-seg.pt`** (rekomendasi utama untuk akurasi tepi di citra Esri) dan simpan juga hasil **`yolo11n-seg.pt`** serta baseline **`yolov8n-seg.pt`** untuk tabel komparasi jurnal.
+  - Parameter training yang direkomendasikan (`ultralytics`):
+    - `imgsz=1024` atau `1280` (jangan `640` karena deteksi drop ke 0 pada tangkapan 180–230 m).
+    - Augmentasi anti-bias warna & orientasi nadir: `hsv_h=0.04, hsv_s=0.7, hsv_v=0.5, degrees=180.0, flipud=0.5, fliplr=0.5, mosaic=1.0, close_mosaic=15`.
+    - Opsional (sangat baik untuk sudut pandang pemrosesan citra di jurnal): uji perbandingan **Raw RGB** vs **CLAHE (luminance normalization di ruang LAB)** saat pra-pemrosesan sebelum inferensi/training.
+
+#### 4. Post-Processing "Anti-Blobby" & Filter Anti-Jalan (Di FastAPI `/api/v1/predict`)
+Terapkan langsung di pipeline inferensi FastAPI pada setiap kontur mask sebelum dikonversi ke JSON `detections[]`:
+1. **Pembersihan Mask Morfologis:** `cv2.morphologyEx` (`MORPH_CLOSE` lalu `MORPH_OPEN`, kernel `3x3`) untuk menutup lubang kecil & merapikan tepi bergerigi.
+2. **Filter Geometri Anti-Jalan & Noise:**
+   - Hitung `rect = cv2.minAreaRect(contour)` -> `(w, h)`. Tolak kandidat bila `min(w, h) <= 0`, luas `< 200` piksel², atau *aspect ratio* `max(w, h) / min(w, h) > 4.5` (membuang ruas jalan memanjang).
+3. **Regularisasi Poligon (*Blobby -> Architectural*):**
+   - Hitung `rectangularity = contour_area / (w * h)`.
+   - Jika `rectangularity >= 0.80` (atap pelana/persegi/limas) -> langsung *snap* memakai **`cv2.boxPoints(rect)`** menjadi **4 titik sudut `90°` yang tegas dan rapi**.
+   - Jika `0.55 <= rectangularity < 0.80` (atap bentuk L/T/kompleks) -> jalankan `cv2.approxPolyDP(contour, epsilon = 0.015 * perimeter, closed=True)` lalu lanjutkan *orthogonal edge snapping* terhadap sudut orientasi utama (`rect[2]`) sehingga segmen tepi sejajar `0°/90°`.
+4. **Sinkronkan Field Output:** Hitung ulang `area_px` (Shoelace) dan `bbox` (`min/max x, y`) dari poligon yang sudah diregularisasi agar konsisten saat diterima Laravel.
+
+#### 5. Data Wajib untuk Evaluasi Jurnal SINTA 4 (Simpan Output CSV/Gambar!)
+Pastikan AI/notebook menyimpan hasil kuantitatif berikut untuk Bab 3 artikel jurnal:
+- **Tabel 1 (Benchmark Model & Lintas Sumber):** `Precision`, `Recall`, `mAP@50`, `mAP@50-95 (mask)`, *False Positive Rate* pada jalan raya, serta latensi CPU per gambar (`yolov8n-seg` baseline vs `yolo11n-seg` vs `yolo11s-seg`, Raw vs Esri+Augmentasi/CLAHE).
+- **Tabel 2 (Uji Ablasi Regularisasi Poligon):** Perbandingan Raw Mask vs *Douglas-Peucker* vs **Regularisasi Ortogonal** pada metric `IoU`, jumlah rata-rata *vertex*, **`% Galat Luas (m²)`** vs *ground truth* ukur manual, dan dampaknya pada **akurasi jumlah panel surya (`N_modul`)**.
+- **Tabel 3 (Validasi Sampel Kota Bogor):** Uji pada 6 sampel bangunan lintas kecamatan di Kota Bogor.
+
+#### 6. Ekspor ONNX & Serving FastAPI
+- Ekspor bobot terbaik ke **ONNX** (`model.export(format="onnx", imgsz=1280, simplify=True)`) dan jalankan di FastAPI dengan **`onnxruntime` CPU-only** (hindari PyTorch CUDA multi-GB di container produksi).
+- Tetap kompatibel untuk deploy ke server AWS EC2 yang sudah ada **atau** alternatif gratis **Hugging Face Spaces (Docker Space, `port 7860`, 2 vCPU, 16 GB RAM)**. Backend Laravel cukup diarahkan lewat env `ML_SERVICE_URL`.

@@ -187,10 +187,16 @@ Ditulis di sini supaya tidak dianggap tersedia: `/predict/batch`, `/predict/asyn
 caching hasil per-hash citra, auto-scaling, dan pemilihan bobot per versi. Layanan saat ini
 memuat tepat satu berkas bobot dan melayani permintaan secara sinkron, satu per satu.
 
-## 8. Rencana Upgrade Model, Regularisasi Poligon, & Hosting Gratis
+## 8. Rencana Upgrade Model, Regularisasi Poligon, & Serving Ringan
 
-Untuk mengatasi *domain shift* Google Maps → Esri World Imagery (bias atap merah/oranye, salah deteksi jalan raya, dan kontur *blobby*) sekaligus mendukung riset jurnal SINTA 4 tanpa mengubah kontrak `POST /api/v1/predict`:
+Untuk mengatasi *domain shift* Google Maps → Esri World Imagery (bias atap oranye/merah, *false positive* jalan raya, dan poligon *blobby*) sekaligus menjadi fokus eksperimen jurnal SINTA 4 **tanpa mengubah kontrak `POST /api/v1/predict`**:
 
-1. **Dataset & Training (`YOLO11s-Seg` / `YOLO11n-Seg`)**: tambah ±250–300 *tile* Esri Kota Bogor (`zoom 19`, cakupan 150–230 m) dengan material atap heterogen + 15–20% *hard negatives* jalan/kanopi pohon tanpa anotasi, plus augmentasi HSV tinggi (`hsv_h`, `hsv_s`, `hsv_v`) dan rotasi penuh di notebook Kaggle/Colab GPU.
-2. **Post-Processing Anti-Blobby di `/api/v1/predict`**: tambahkan pembersihan mask morfologis, penyederhanaan Douglas-Peucker adaptif (`2.0–3.5 px`), *rectangularity / orthogonal edge snapping* (`minAreaRect` bila rectangularity ≥ 0.80), dan filter *aspect ratio* ekstrem untuk membuang kontur jalan.
-3. **Serving Ringan (`ONNX` — AWS EC2 atau Alternatif Gratis)**: ekspor bobot ke **ONNX (`onnxruntime` CPU-only)** agar image container ~400–500 MB dan cepat di CPU, lalu jalankan di EC2 yang sudah ada atau alternatif gratis **Hugging Face Spaces (Docker `port 7860`, 2 vCPU, 16 GB RAM)**. Detail handoff lengkap tersedia di [CLAUDE.md](../CLAUDE.md).
+1. **Dataset & Training (`YOLO11s-Seg` / `YOLO11n-Seg`)**:
+   - Tambah ±250–350 *tile* **Esri World Imagery Kota Bogor** (`zoom 19`, cakupan `150–230 m`) berisi beragam warna atap (spandek, beton, asbes, genteng) + **15–20% *hard negatives*** jalan/paving/kanopi pohon tanpa anotasi `roof`.
+   - Latih di notebook Kaggle/Colab GPU (`imgsz=1024/1280`) dengan augmentasi tahan bias warna & orientasi (`hsv_h=0.04, hsv_s=0.7, hsv_v=0.5, degrees=180, flipud=0.5, fliplr=0.5`, serta uji pra-pemrosesan *CLAHE* LAB), lalu catat benchmark `Precision`, `Recall`, `mAP@50`, `mAP@50-95`, dan `IoU` terhadap baseline `yolov8n-seg`.
+2. **Post-Processing Anti-Blobby & Filter Anti-Jalan di `/api/v1/predict`**:
+   - Terapkan `cv2.morphologyEx` (`CLOSE` + `OPEN` kernel `3x3`) pada mask biner.
+   - Buang kandidat dengan *aspect ratio* `minAreaRect` $> 4.5$ atau luas piksel terlalu kecil (filter jalan memanjang & noise).
+   - Hitung `rectangularity = contour_area / min_area_rect_area`: bila $\ge 0.80$ lakukan *snap* ke 4 titik `cv2.boxPoints(cv2.minAreaRect)` agar tegak lurus `90°`; bila $0.55\text{–}0.80$ pakai `cv2.approxPolyDP` adaptif (`0.015 * perimeter`) + *orthogonal edge snapping*. Hitung ulang `bbox` dan `area_px` dari poligon ter-regularisasi.
+3. **Serving Ringan (`ONNX` — AWS EC2 atau Alternatif Gratis)**:
+   - Ekspor model ke **ONNX** (`model.export(format="onnx", imgsz=1280, simplify=True)`) dengan runtime `onnxruntime` CPU-only (tanpa `torch` multi-GB) agar image container ±400–500 MB dan inferensi cepat di EC2 maupun alternatif gratis **Hugging Face Spaces (Docker `port 7860`, 2 vCPU, 16 GB RAM)**. Detail checklist handoff tersedia di [CLAUDE.md](../CLAUDE.md).
