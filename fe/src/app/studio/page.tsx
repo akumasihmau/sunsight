@@ -24,6 +24,7 @@ import {
   type SimulationResult,
   type GeocodeResult,
   type SimulationDetail,
+  type SimulationSummary,
   type RoofObstacleInput,
   type SimulationRoofInput,
 } from "@/lib/api";
@@ -2778,6 +2779,33 @@ function StudioPageContent() {
   }, [mounted, biodata?.name]);
 
   const [isGpsLoading, setIsGpsLoading] = useState(false);
+  const [userSavedSimulations, setUserSavedSimulations] = useState<SimulationSummary[]>([]);
+
+  const refreshUserSimulations = useCallback(async () => {
+    if (getToken() === null) {
+      setUserSavedSimulations([]);
+      return;
+    }
+    try {
+      const page = await api.listSimulations(1, 50);
+      setUserSavedSimulations(page.data);
+    } catch {
+      // Abaikan bila sesi belum siap/offline; preset Bogor tetap tersedia
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshUserSimulations();
+  }, [refreshUserSimulations]);
+
+  const filteredUserSimulations = useMemo(() => {
+    const q = addressInput.trim().toLowerCase();
+    if (!q) return userSavedSimulations;
+    return userSavedSimulations.filter((sim) => {
+      const label = (sim.address || `Simulasi #${sim.id}`).toLowerCase();
+      return label.includes(q) || `simulasi #${sim.id}`.includes(q);
+    });
+  }, [addressInput, userSavedSimulations]);
 
   const filteredStudioProjects = useMemo(() => {
     const q = addressInput.trim().toLowerCase();
@@ -3692,6 +3720,7 @@ function StudioPageContent() {
       setProjectName(finalProjectName);
       setHasCustomProjectName(true);
       setAddressInput(finalProjectName);
+      void refreshUserSimulations();
 
       // Penanda tur aplikasi; tidak ada data proyek yang ditulis ke peramban.
       if (typeof window !== "undefined") {
@@ -4659,9 +4688,9 @@ function StudioPageContent() {
                     </div>
                   )}
 
-                  {/* List Proyek Tersimpan (Format Persis Beranda) */}
-                  <div className="max-h-72 overflow-y-auto mt-1 space-y-1">
-                    {filteredStudioProjects.length === 0 ? (
+                  {/* List Proyek Tersimpan Asli User + Area Contoh Kota Bogor */}
+                  <div className="max-h-72 overflow-y-auto mt-1 space-y-2">
+                    {filteredUserSimulations.length === 0 && filteredStudioProjects.length === 0 ? (
                       <div className="py-5 text-center px-2">
                         <p className="text-xs text-slate-400 m-0">Tidak ada proyek yang cocok</p>
                         {addressInput.toLowerCase().includes("gps") || addressInput.toLowerCase().includes("terkini") ? (
@@ -4690,41 +4719,94 @@ function StudioPageContent() {
                         )}
                       </div>
                     ) : (
-                      filteredStudioProjects.map((proj) => {
-                        const isCurrent =
-                          activeFacet.name === proj.name ||
-                          activeFacet.name === proj.address ||
-                          (Math.abs((activeFacet.lat ?? 0) - proj.lat) < 0.0001 &&
-                            Math.abs((activeFacet.lng ?? 0) - proj.lon) < 0.0001);
-                        return (
-                          <button
-                            key={proj.id}
-                            type="button"
-                            onClick={() => {
-                              handleSelectStudioProject(proj);
-                              setSearchOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
-                              isCurrent
-                                ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
-                                : "hover:bg-slate-50 text-slate-700"
-                            }`}
-                          >
-                            <span
-                              className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
-                                isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[18px]">roofing</span>
-                            </span>
-                            <span className="flex-1 min-w-0">
-                              <span className="block text-sm font-semibold truncate text-slate-900">{proj.name}</span>
-                              <span className="block text-xs text-slate-400 truncate">{proj.address}</span>
-                            </span>
-                            <span className="text-xs font-semibold text-slate-700 shrink-0">{proj.capacityKwp} kWp</span>
-                          </button>
-                        );
-                      })
+                      <>
+                        {filteredUserSimulations.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="px-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Proyek Tersimpan Saya ({filteredUserSimulations.length})
+                            </p>
+                            {filteredUserSimulations.map((sim) => {
+                              const isCurrent = openedSimulationId === sim.id;
+                              const title = sim.address || `Simulasi #${sim.id}`;
+                              return (
+                                <button
+                                  key={`user-sim-${sim.id}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchOpen(false);
+                                    router.push(`/studio?analysis=${sim.id}`);
+                                  }}
+                                  className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
+                                    isCurrent
+                                      ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
+                                      : "hover:bg-slate-50 text-slate-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                                      isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">folder_special</span>
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-sm font-semibold truncate text-slate-900">{title}</span>
+                                    <span className="block text-xs text-slate-400 truncate">
+                                      {sim.roof_count} bidang · {sim.installed} modul · {Math.round(sim.total_area_sqm)} m²
+                                    </span>
+                                  </span>
+                                  <span className="text-xs font-semibold text-slate-700 shrink-0">
+                                    {sim.capacity_kwp.toFixed(1)} kWp
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {filteredStudioProjects.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="px-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Area Contoh Kota Bogor
+                            </p>
+                            {filteredStudioProjects.map((proj) => {
+                              const isCurrent =
+                                activeFacet.name === proj.name ||
+                                activeFacet.name === proj.address ||
+                                (Math.abs((activeFacet.lat ?? 0) - proj.lat) < 0.0001 &&
+                                  Math.abs((activeFacet.lng ?? 0) - proj.lon) < 0.0001);
+                              return (
+                                <button
+                                  key={proj.id}
+                                  type="button"
+                                  onClick={() => {
+                                    handleSelectStudioProject(proj);
+                                    setSearchOpen(false);
+                                  }}
+                                  className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
+                                    isCurrent
+                                      ? "bg-gradient-to-r from-amber-100/90 via-amber-200/80 to-amber-100/90 text-amber-950 font-semibold border border-amber-300/80 shadow-2xs"
+                                      : "hover:bg-slate-50 text-slate-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                                      isCurrent ? "bg-amber-300/80 text-amber-950" : "bg-amber-100 text-amber-700"
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">roofing</span>
+                                  </span>
+                                  <span className="flex-1 min-w-0">
+                                    <span className="block text-sm font-semibold truncate text-slate-900">{proj.name}</span>
+                                    <span className="block text-xs text-slate-400 truncate">{proj.address}</span>
+                                  </span>
+                                  <span className="text-xs font-semibold text-slate-700 shrink-0">{proj.capacityKwp} kWp</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
