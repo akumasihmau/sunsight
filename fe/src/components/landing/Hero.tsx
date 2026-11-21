@@ -40,13 +40,17 @@ export default function Hero() {
   useEffect(() => {
     const q = address.trim();
     if (!suggestionsOpen || q.length < 3) {
-      if (q.length < 3) setSuggestions([]);
-      setSuggestionsLoading(false);
-      return;
+      const frame = window.requestAnimationFrame(() => {
+        if (q.length < 3) setSuggestions([]);
+        setSuggestionsLoading(false);
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
 
     let cancelled = false;
-    setSuggestionsLoading(true);
+    const loadingFrame = window.requestAnimationFrame(() => {
+      if (!cancelled) setSuggestionsLoading(true);
+    });
     const timer = window.setTimeout(async () => {
       try {
         const res = await api.geocode(q);
@@ -62,6 +66,7 @@ export default function Hero() {
 
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(loadingFrame);
       window.clearTimeout(timer);
     };
   }, [address, suggestionsOpen]);
@@ -146,9 +151,9 @@ export default function Hero() {
           <div ref={searchContainerRef} className="relative">
             <form
               onSubmit={handleStartSimulation}
-              className="p-1.5 sm:p-2 rounded-full bg-white/88 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_14px_38px_rgba(245,158,11,0.14),0_4px_12px_rgba(15,23,42,0.06),inset_0_1px_1px_rgba(255,255,255,0.92)] flex items-center gap-2 transition-all focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-200/40"
+              className="p-2 rounded-[26px] sm:rounded-full bg-white/88 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_14px_38px_rgba(245,158,11,0.14),0_4px_12px_rgba(15,23,42,0.06),inset_0_1px_1px_rgba(255,255,255,0.92)] flex flex-col sm:flex-row sm:items-center gap-2 transition-all focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-200/40"
             >
-              <div className="flex-1 flex items-center pl-3 sm:pl-4 gap-2.5 min-w-0">
+              <div className="w-full sm:flex-1 flex items-center pl-2.5 pr-1 sm:pl-4 sm:pr-0 py-1.5 sm:py-0 gap-2 sm:gap-2.5 min-w-0">
                 <span className="material-symbols-outlined text-amber-500 text-[20px] shrink-0">
                   location_on
                 </span>
@@ -162,7 +167,7 @@ export default function Hero() {
                     setSuggestionsOpen(true);
                   }}
                   placeholder="Cari alamat bangunan atau nama jalan..."
-                  className="w-full text-xs sm:text-sm text-slate-900 placeholder-slate-400 bg-transparent border-none outline-none font-medium truncate"
+                  className="w-full text-sm text-slate-900 placeholder-slate-400 bg-transparent border-none outline-none font-medium truncate"
                 />
                 {address.length > 0 && (
                   <button
@@ -184,7 +189,7 @@ export default function Hero() {
               <button
                 type="submit"
                 disabled={isResolving}
-                className="h-10 sm:h-11 px-5 sm:px-6 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-title text-xs sm:text-sm font-semibold border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.24),inset_0_1px_1px_rgba(255,255,255,0.88)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-75"
+                className="w-full sm:w-auto h-10 sm:h-11 px-5 sm:px-6 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 font-title text-xs sm:text-sm font-semibold border border-amber-300/80 shadow-[0_4px_14px_rgba(245,158,11,0.24),inset_0_1px_1px_rgba(255,255,255,0.88)] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-75"
               >
                 <span>{isResolving ? "Mencari lokasi..." : "Mulai Simulasi"}</span>
                 <span className={`material-symbols-outlined text-[16px] ${isResolving ? "animate-spin" : ""}`}>
@@ -195,7 +200,7 @@ export default function Hero() {
 
             {/* Dynamic Address Autocomplete Dropdown */}
             {suggestionsOpen && (suggestionsLoading || suggestions.length > 0) && (
-              <div className="absolute left-0 right-0 top-full mt-2 z-30 rounded-[24px] bg-white/94 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_22px_54px_rgba(15,23,42,0.14),0_0_24px_rgba(245,158,11,0.10)] p-2 text-left animate-fadeIn">
+              <div className="absolute left-0 right-0 top-full mt-2 z-30 max-h-72 overflow-y-auto rounded-[24px] bg-white/94 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_22px_54px_rgba(15,23,42,0.14),0_0_24px_rgba(245,158,11,0.10)] p-2 text-left animate-fadeIn">
                 {suggestionsLoading && suggestions.length === 0 ? (
                   <div className="px-3.5 py-2.5 text-xs text-slate-500 flex items-center gap-2">
                     <span className="material-symbols-outlined text-[15px] text-amber-600 animate-spin">sync</span>
@@ -237,7 +242,7 @@ export default function Hero() {
           </div>
 
           {/* Auth Hint */}
-          <div className="mt-2.5 flex items-center justify-center gap-2 text-[11px] text-slate-600">
+          <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
             <span>Gratis tanpa survei lapangan</span>
             <span className="text-slate-400">·</span>
             <Link href="/login?redirect=/studio" className="font-semibold text-amber-900 hover:underline">
@@ -276,7 +281,7 @@ export default function Hero() {
             {/* Authentic Studio Shell (Map Viewport Left + Frosted Inspector Panel Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 rounded-[22px] sm:rounded-[26px] overflow-hidden border border-slate-200/70 bg-slate-100 min-h-[380px] sm:min-h-[430px] text-left">
               {/* LEFT: Satellite Map + Floating Studio Top Bar + CAD Polygon + Dock */}
-              <div className="lg:col-span-7 relative min-h-[280px] sm:min-h-[430px] overflow-hidden bg-slate-900">
+              <div className="lg:col-span-7 relative min-h-[300px] sm:min-h-[430px] overflow-hidden bg-slate-900">
                 <div
                   className="absolute inset-0 bg-cover bg-center opacity-90"
                   style={{ backgroundImage: "url('/satellite_map.jpg')" }}
@@ -313,7 +318,7 @@ export default function Hero() {
                     </div>
 
                     {/* Main CAD Polygon Frame */}
-                    <div className="relative w-60 sm:w-72 h-36 sm:h-44 rounded-lg border-2 border-amber-400 bg-amber-400/12 p-2.5 shadow-[0_0_32px_rgba(251,191,36,0.3)]">
+                    <div className="relative w-52 sm:w-72 h-32 sm:h-44 rounded-lg border-2 border-amber-400 bg-amber-400/12 p-2.5 shadow-[0_0_32px_rgba(251,191,36,0.3)]">
                       {/* 4 Corner CAD Vertex Dots (Matches Real Pen / Edit Mode) */}
                       <span className="absolute -top-1.5 -left-1.5 w-3 h-3 rounded-full bg-white border-2 border-amber-500 shadow-xs" />
                       <span className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-white border-2 border-amber-500 shadow-xs" />
@@ -337,20 +342,20 @@ export default function Hero() {
                 </div>
 
                 {/* Bottom Studio Controls: Scale Pill (left) + Floating CAD Dock (center) */}
-                <div className="absolute inset-x-3 bottom-3 z-10 flex items-center justify-between gap-2">
+                <div className="absolute inset-x-2.5 sm:inset-x-3 bottom-2.5 sm:bottom-3 z-10 flex items-center justify-between gap-1.5 sm:gap-2">
                   {/* Scale Indicator Matching Real Studio */}
-                  <div className="h-7 px-2.5 rounded-full bg-white/88 backdrop-blur-xl border border-white/95 shadow-xs flex items-center gap-2 text-[10px] font-medium text-slate-700 font-code-metric">
+                  <div className="h-7 px-2 sm:px-2.5 rounded-full bg-white/88 backdrop-blur-xl border border-white/95 shadow-xs flex items-center gap-1.5 sm:gap-2 text-[10px] font-medium text-slate-700 font-code-metric shrink-0">
                     <span className="border-b-2 border-x-2 border-slate-600 px-1.5 leading-none pb-0.5 text-[9px]">
                       20 m
                     </span>
                     <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Optimal
+                      <span className="hidden sm:inline">Optimal</span>
                     </span>
                   </div>
 
                   {/* Floating CAD Toolbar Dock */}
-                  <div className="h-9 px-2 rounded-full bg-white/90 backdrop-blur-2xl border border-white/95 shadow-md flex items-center gap-1">
+                  <div className="h-8 sm:h-9 px-1.5 sm:px-2 rounded-full bg-white/90 backdrop-blur-2xl border border-white/95 shadow-md flex items-center gap-0.5 sm:gap-1">
                     {[
                       { icon: "near_me", active: false, label: "Pilih" },
                       { icon: "polyline", active: true, label: "Edit Atap" },
@@ -361,13 +366,13 @@ export default function Hero() {
                       <span
                         key={tool.label}
                         title={tool.label}
-                        className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                        className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center ${
                           tool.active
                             ? "bg-amber-200/90 text-amber-950 shadow-2xs"
                             : "text-slate-600"
                         }`}
                       >
-                        <span className="material-symbols-outlined text-[15px]">{tool.icon}</span>
+                        <span className="material-symbols-outlined text-[14px] sm:text-[15px]">{tool.icon}</span>
                       </span>
                     ))}
                   </div>
@@ -378,8 +383,8 @@ export default function Hero() {
               <div className="lg:col-span-5 bg-white/92 backdrop-blur-2xl border-t lg:border-t-0 lg:border-l border-slate-200/70 p-3.5 sm:p-4 flex flex-col justify-between gap-3">
                 <div className="space-y-3">
                   {/* 4-Cell Minimal Metrics Ribbon (Exact Match to Studio Header) */}
-                  <div className="grid grid-cols-4 divide-x divide-slate-200/70 bg-slate-50/90 rounded-2xl border border-slate-200/70 py-2 px-0.5">
-                    <div className="text-center px-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(even)]:border-l sm:[&>*:nth-child(n+3)]:border-t-0 sm:[&>*:nth-child(even)]:border-l-0 sm:divide-x divide-slate-200/70 [&>*]:border-slate-200/70 bg-slate-50/90 rounded-2xl border border-slate-200/70 overflow-hidden py-1 sm:py-2 px-0.5">
+                    <div className="text-center py-1.5 sm:py-0 px-1">
                       <span className="text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider block">
                         Kapasitas
                       </span>
@@ -387,7 +392,7 @@ export default function Hero() {
                         9.9 <span className="text-[9px] text-amber-700 font-semibold">kWp</span>
                       </span>
                     </div>
-                    <div className="text-center px-1">
+                    <div className="text-center py-1.5 sm:py-0 px-1">
                       <span className="text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider block">
                         Produksi
                       </span>
@@ -395,7 +400,7 @@ export default function Hero() {
                         14.2 <span className="text-[9px] text-slate-500 font-semibold">MWh</span>
                       </span>
                     </div>
-                    <div className="text-center px-1">
+                    <div className="text-center py-1.5 sm:py-0 px-1">
                       <span className="text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider block">
                         Hemat/Bln
                       </span>
@@ -403,7 +408,7 @@ export default function Hero() {
                         2.04M
                       </span>
                     </div>
-                    <div className="text-center px-1">
+                    <div className="text-center py-1.5 sm:py-0 px-1">
                       <span className="text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider block">
                         Payback
                       </span>
@@ -481,17 +486,17 @@ export default function Hero() {
                         </span>
                       </div>
                       <div className="p-2.5 rounded-xl bg-white border border-slate-200/60 space-y-1.5 text-[11px]">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Tipe Modul</span>
-                          <span className="font-semibold text-slate-900">550 W Mono PERC</span>
+                          <span className="font-semibold text-slate-900 text-right">550 W Mono PERC</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Orientasi</span>
-                          <span className="font-semibold text-slate-900">Potret · Setback 0,3 m</span>
+                          <span className="font-semibold text-slate-900 text-right">Potret · Setback 0,3 m</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Inverter</span>
-                          <span className="font-semibold text-slate-900">On-Grid String (PR 80%)</span>
+                          <span className="font-semibold text-slate-900 text-right">On-Grid String (PR 80%)</span>
                         </div>
                       </div>
                     </div>
@@ -499,26 +504,26 @@ export default function Hero() {
 
                   {previewTab === "financials" && (
                     <div className="rounded-2xl bg-slate-50/85 border border-slate-200/70 p-3 space-y-2.5 animate-fadeIn">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="font-title text-xs font-semibold text-slate-900">
                           Ringkasan Finansial
                         </span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-[10px] font-semibold">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/70 text-emerald-700 text-[10px] font-semibold shrink-0">
                           BEP 2,4 Tahun
                         </span>
                       </div>
                       <div className="p-2.5 rounded-xl bg-white border border-slate-200/60 space-y-1.5 text-[11px]">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Estimasi Investasi</span>
-                          <span className="font-semibold text-slate-900 font-code-metric">Rp 58,9 jt</span>
+                          <span className="font-semibold text-slate-900 font-code-metric text-right">Rp 58,9 jt</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Hemat per Tahun</span>
-                          <span className="font-semibold text-emerald-700 font-code-metric">Rp 24,5 jt</span>
+                          <span className="font-semibold text-emerald-700 font-code-metric text-right">Rp 24,5 jt</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-slate-500">Reduksi CO₂</span>
-                          <span className="font-semibold text-slate-900 font-code-metric">11,4 ton/thn</span>
+                          <span className="font-semibold text-slate-900 font-code-metric text-right">11,4 ton/thn</span>
                         </div>
                       </div>
                     </div>

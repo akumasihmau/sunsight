@@ -45,7 +45,7 @@ export default function HowItWorks() {
         {steps.map((step) => (
           <div
             key={step.num}
-            className="p-7 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_48px_rgba(245,158,11,0.10)] transition-all duration-300 flex flex-col justify-between"
+            className="p-5 sm:p-6 lg:p-7 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_48px_rgba(245,158,11,0.10)] transition-all duration-300 flex flex-col justify-between"
           >
             <div>
               <div className="flex items-center justify-between mb-5">

@@ -273,10 +273,17 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
   const [isMounted, setIsMounted] = useState(false);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const [viewport, setViewport] = useState<{ vw: number; vh: number }>({ vw: 1280, vh: 800 });
 
   // Mencegah Hydration Mismatch pada SSR
   useEffect(() => {
-    setIsMounted(true);
+    const frame = window.requestAnimationFrame(() => {
+      setIsMounted(true);
+      if (typeof window !== "undefined") {
+        setViewport({ vw: window.innerWidth, vh: window.innerHeight });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   // Gliding Flight State saat transisi langkah
@@ -333,21 +340,39 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
 
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
+      // Intersect dengan viewport & kontainer sidebar agar elemen scrollable panjang tidak melewati layar
+      let left = Math.max(0, rect.left);
+      let top = Math.max(0, rect.top);
+      let right = Math.min(window.innerWidth, rect.right);
+      let bottom = Math.min(window.innerHeight, rect.bottom);
+
+      const sidebar = document.getElementById("studio-sidebar-inspector");
+      if (sidebar && sidebar.contains(el)) {
+        const sRect = sidebar.getBoundingClientRect();
+        left = Math.max(left, sRect.left);
+        top = Math.max(top, sRect.top);
+        right = Math.min(right, sRect.right);
+        bottom = Math.min(bottom, sRect.bottom);
+      }
+
+      const clippedW = Math.max(24, right - left);
+      const clippedH = Math.max(24, bottom - top);
+
       setTargetRect((prev) => {
         if (
           prev &&
-          Math.abs(prev.x - rect.left) < 0.75 &&
-          Math.abs(prev.y - rect.top) < 0.75 &&
-          Math.abs(prev.width - rect.width) < 0.75 &&
-          Math.abs(prev.height - rect.height) < 0.75
+          Math.abs(prev.x - left) < 0.75 &&
+          Math.abs(prev.y - top) < 0.75 &&
+          Math.abs(prev.width - clippedW) < 0.75 &&
+          Math.abs(prev.height - clippedH) < 0.75
         ) {
           return prev;
         }
         return {
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
+          x: left,
+          y: top,
+          width: clippedW,
+          height: clippedH,
         };
       });
       return true;
@@ -395,6 +420,11 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
       if (rafId !== null) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
+        setViewport((prev) =>
+          prev.vw === window.innerWidth && prev.vh === window.innerHeight
+            ? prev
+            : { vw: window.innerWidth, vh: window.innerHeight }
+        );
         updateTargetRect();
       });
     };
@@ -456,47 +486,60 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
   const isLastStep = currentStepIdx === STUDIO_STEPS.length - 1;
 
   // Dimensi Padding & Sudut Lingkaran Spotlight
-  const pad = 12;
-  const radius = 24;
+  const vw = viewport.vw;
+  const vh = viewport.vh;
+  const isCompactMobile = vw < 640;
+  const pad = isCompactMobile ? 6 : 12;
+  const radius = isCompactMobile ? 20 : 24;
+
+  const spotX = targetRect ? Math.max(4, targetRect.x - pad) : 0;
+  const spotY = targetRect ? Math.max(4, targetRect.y - pad) : 0;
+  const spotW = targetRect ? Math.min(vw - 4 - spotX, targetRect.width + pad * 2) : 0;
+  const spotH = targetRect ? Math.min(vh - 4 - spotY, targetRect.height + pad * 2) : 0;
 
   // Perhitungan Posisi Dialog Card yang Adaptif terhadap Posisi Target
-  const cardWidth = typeof window !== "undefined" ? Math.min(380, window.innerWidth - 32) : 380;
-  const cardHeight = 220;
+  const cardWidth = Math.min(380, Math.max(280, vw - 32));
+  const estCardHeight = isCompactMobile ? 265 : 220;
 
-  let cardTop = 100;
+  let cardTop: number | undefined = 100;
+  let cardBottom: number | undefined = undefined;
   let cardLeft = 24;
 
-  if (targetRect && typeof window !== "undefined") {
-    const isTargetOnRightSide = targetRect.x > window.innerWidth / 2;
+  if (targetRect) {
+    const canPlaceSideBySide = vw >= 1024 && targetRect.x > vw / 2 && targetRect.x >= cardWidth + 36;
 
-    if (isTargetOnRightSide) {
-      // Jika target berada di panel kanan (Tab 1, Tab 2, Tab 3), letakkan kartu di sebelah KIRI panel
+    if (canPlaceSideBySide) {
+      // Jika target berada di panel kanan (desktop), letakkan kartu di sebelah KIRI panel
       cardLeft = Math.max(16, targetRect.x - cardWidth - 20);
-      cardTop = Math.max(80, Math.min(window.innerHeight - cardHeight - 30, targetRect.y + 20));
+      cardTop = Math.max(80, Math.min(vh - estCardHeight - 30, targetRect.y + 20));
     } else {
-      // Jika target berada di kanvas tengah (atap), posisikan di bawah atau di atas bidang atap
-      const spaceBelow = window.innerHeight - (targetRect.y + targetRect.height);
+      // Posisikan di bawah atau di atas target; fallback ke bottom anchor agar tombol tak terpotong
+      const spaceBelow = vh - (targetRect.y + targetRect.height);
       const spaceAbove = targetRect.y;
 
-      if (spaceBelow >= cardHeight + 30) {
+      if (spaceBelow >= estCardHeight + 28) {
         cardTop = targetRect.y + targetRect.height + 16;
-      } else if (spaceAbove >= cardHeight + 30) {
-        cardTop = targetRect.y - cardHeight - 16;
+      } else if (spaceAbove >= estCardHeight + 28) {
+        cardTop = Math.max(16, targetRect.y - estCardHeight - 16);
       } else {
-        cardTop = Math.max(16, window.innerHeight - cardHeight - 20);
+        cardTop = undefined;
+        cardBottom = 16;
       }
 
-      cardLeft = targetRect.x + (targetRect.width / 2) - (cardWidth / 2);
-      if (cardLeft + cardWidth > window.innerWidth - 16) {
-        cardLeft = window.innerWidth - cardWidth - 16;
+      cardLeft = isCompactMobile
+        ? Math.round((vw - cardWidth) / 2)
+        : targetRect.x + targetRect.width / 2 - cardWidth / 2;
+      if (cardLeft + cardWidth > vw - 16) {
+        cardLeft = vw - cardWidth - 16;
       }
       if (cardLeft < 16) {
         cardLeft = 16;
       }
     }
-  } else if (typeof window !== "undefined") {
-    cardTop = window.innerHeight - cardHeight - 32;
-    cardLeft = window.innerWidth - cardWidth - 32;
+  } else {
+    cardTop = undefined;
+    cardBottom = isCompactMobile ? 16 : 32;
+    cardLeft = isCompactMobile ? Math.round((vw - cardWidth) / 2) : Math.max(16, vw - cardWidth - 32);
   }
 
   return (
@@ -510,10 +553,10 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
             <rect width="100%" height="100%" fill="white" />
             {targetRect && (
               <rect
-                x={targetRect.x - pad}
-                y={targetRect.y - pad}
-                width={targetRect.width + pad * 2}
-                height={targetRect.height + pad * 2}
+                x={spotX}
+                y={spotY}
+                width={spotW}
+                height={spotH}
                 rx={radius}
                 ry={radius}
                 fill="black"
@@ -538,10 +581,10 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
         <div
           style={{
             position: "fixed",
-            left: `${targetRect.x - pad}px`,
-            top: `${targetRect.y - pad}px`,
-            width: `${targetRect.width + pad * 2}px`,
-            height: `${targetRect.height + pad * 2}px`,
+            left: `${spotX}px`,
+            top: `${spotY}px`,
+            width: `${spotW}px`,
+            height: `${spotH}px`,
             borderRadius: `${radius}px`,
           }}
           className="pointer-events-none z-[41] ring-2 ring-amber-200/85 shadow-[0_0_36px_rgba(253,224,71,0.38),0_0_64px_rgba(56,189,248,0.16),inset_0_0_18px_rgba(254,249,195,0.22)] transition-all duration-500 ease-out"
@@ -557,12 +600,12 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
         style={{
           position: "fixed",
           left: `${cardLeft}px`,
-          top: `${cardTop}px`,
+          ...(cardTop !== undefined ? { top: `${cardTop}px` } : { bottom: `${cardBottom ?? 16}px` }),
           width: `${cardWidth}px`,
         }}
         className="z-50 pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
       >
-        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_8px_28px_rgba(253,224,71,0.18),0_2px_14px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 text-slate-800">
+        <div className="relative max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/95 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_8px_28px_rgba(253,224,71,0.18),0_2px_14px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.95)] p-4 sm:p-5 text-slate-800">
           {/* Ambient Soft Radiant Glow Aura */}
           <div className="pointer-events-none absolute inset-0 rounded-[28px] overflow-hidden -z-10">
             <div className="absolute -top-10 -left-10 w-36 h-36 rounded-full bg-gradient-to-br from-yellow-200/45 via-amber-200/25 to-transparent blur-2xl" />
@@ -604,7 +647,7 @@ export const StudioMascotGuide: React.FC<StudioMascotGuideProps> = ({
           </div>
 
           {/* Footer Bar: Indikator Dots & Tombol Aksi Radiant Soft Glow */}
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100/80">
+          <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100/80">
             {/* Step Progress Dots */}
             <div className="flex items-center gap-1.5">
               {STUDIO_STEPS.map((_, idx) => (

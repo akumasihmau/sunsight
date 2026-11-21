@@ -294,7 +294,7 @@ export default function HistoryPage() {
 
         {/* Detail Panel (Apple Glass + Soft Radiant Glow + Flat Hairline Spec Lists) */}
         {detail !== null && (
-          <section className="rounded-[28px] bg-white/80 bg-gradient-to-br from-white/92 via-amber-50/20 to-sky-50/20 backdrop-blur-2xl saturate-150 border border-white/85 p-6 sm:p-7 space-y-6 shadow-[0_14px_38px_rgba(15,23,42,0.05)] animate-fadeIn">
+          <section className="rounded-[28px] bg-white/80 bg-gradient-to-br from-white/92 via-amber-50/20 to-sky-50/20 backdrop-blur-2xl saturate-150 border border-white/85 p-4 sm:p-7 space-y-6 shadow-[0_14px_38px_rgba(15,23,42,0.05)] animate-fadeIn">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900/[0.06] pb-4">
               <div className="min-w-0">
                 {editingDetailName ? (
@@ -318,7 +318,7 @@ export default function HistoryPage() {
                         }
                       }}
                       placeholder="Nama proyek..."
-                      className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/60 min-w-[220px]"
+                      className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/60 w-full sm:w-auto sm:min-w-[220px]"
                     />
                     <button
                       type="submit"
@@ -399,31 +399,31 @@ export default function HistoryPage() {
             />
 
             {/* Unified 4-KPI Apple Strip */}
-            <div className="rounded-2xl bg-slate-900/[0.035] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-900/[0.07]">
-              <div className="p-4">
+            <div className="rounded-2xl overflow-hidden bg-slate-900/[0.035] grid grid-cols-2 sm:grid-cols-4 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(even)]:border-l sm:[&>*:nth-child(n+3)]:border-t-0 sm:[&>*:nth-child(even)]:border-l-0 sm:divide-x divide-slate-900/[0.07] [&>*]:border-slate-900/[0.07]">
+              <div className="p-3 sm:p-4">
                 <span className="text-[11px] text-slate-500 block">Kapasitas Sistem</span>
-                <span className="text-lg sm:text-xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5 block">
+                <span className="text-base sm:text-xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5 block">
                   {decimal.format(detail.result.capacity_kwp)} kWp
                 </span>
               </div>
 
-              <div className="p-4">
+              <div className="p-3 sm:p-4">
                 <span className="text-[11px] text-slate-500 block">Produksi/Tahun</span>
-                <span className="text-lg sm:text-xl font-semibold tracking-tight text-sky-900 font-code-metric tabular-nums mt-0.5 block">
+                <span className="text-base sm:text-xl font-semibold tracking-tight text-sky-900 font-code-metric tabular-nums mt-0.5 block">
                   {integer.format(detail.result.annual_production_kwh)} kWh
                 </span>
               </div>
 
-              <div className="p-4">
+              <div className="p-3 sm:p-4">
                 <span className="text-[11px] text-slate-500 block">Hemat/Bulan</span>
-                <span className="text-lg sm:text-xl font-semibold tracking-tight text-emerald-700 font-code-metric tabular-nums mt-0.5 block">
+                <span className="text-base sm:text-xl font-semibold tracking-tight text-emerald-700 font-code-metric tabular-nums mt-0.5 block">
                   {idr.format(detail.result.monthly_saving_idr)}
                 </span>
               </div>
 
-              <div className="p-4">
+              <div className="p-3 sm:p-4">
                 <span className="text-[11px] text-slate-500 block">Balik Modal (BEP)</span>
-                <span className="text-lg sm:text-xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5 block">
+                <span className="text-base sm:text-xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5 block">
                   {paybackYearsText(detail.result.payback_years)}
                 </span>
               </div>
@@ -432,30 +432,30 @@ export default function HistoryPage() {
             {/* 3 Grouped Hairline Columns */}
             <div className="grid gap-4 lg:grid-cols-3">
               {/* Card 1: Masukan */}
-              <div className="p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
                 <h3 className="text-xs font-semibold text-slate-900">
                   Geometri &amp; Input
                 </h3>
                 <div className="divide-y divide-slate-900/[0.06] text-xs">
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Bidang Atap</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {integer.format(detail.roofs.length)}
                     </span>
                   </div>
                   {Object.entries(detail.input).map(([key, value]) => (
-                    <div key={key} className="py-2 flex items-center justify-between">
+                    <div key={key} className="py-2 flex items-center justify-between gap-2">
                       <span className="text-slate-500">{INPUT_LABELS[key] ?? key}</span>
-                      <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                      <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                         {inputValueText(key, value as string | number | null)}
                       </span>
                     </div>
                   ))}
                   {primaryRoof !== null &&
                     Object.entries(primaryRoof.input).map(([key, value]) => (
-                      <div key={key} className="py-2 flex items-center justify-between">
+                      <div key={key} className="py-2 flex items-center justify-between gap-2">
                         <span className="text-slate-500">{INPUT_LABELS[key] ?? key}</span>
-                        <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                        <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                           {inputValueText(key, value as string | number | null)}
                         </span>
                       </div>
@@ -464,44 +464,44 @@ export default function HistoryPage() {
               </div>
 
               {/* Card 2: Tata Letak & Hasil */}
-              <div className="p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
                 <h3 className="text-xs font-semibold text-slate-900">
                   Hasil &amp; Tata Letak
                 </h3>
                 <div className="divide-y divide-slate-900/[0.06] text-xs">
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Luas Bidang</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.result.total_area_sqm)} m²
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Luas Efektif</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.result.effective_area_sqm)} m²
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Luas Modul</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.result.module_area_sqm)} m²
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Panel Terpasang</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {integer.format(detail.result.installed)} / {integer.format(detail.result.max_slots)} slot
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Hemat Tahunan</span>
-                    <span className="font-semibold text-emerald-700 font-code-metric tabular-nums">
+                    <span className="font-semibold text-emerald-700 font-code-metric tabular-nums text-right">
                       {idr.format(detail.result.annual_saving_idr)}
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Reduksi CO₂</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.result.co2_reduction_kg_per_year)} kg/thn
                     </span>
                   </div>
@@ -509,38 +509,38 @@ export default function HistoryPage() {
               </div>
 
               {/* Card 3: Asumsi & Standar */}
-              <div className="p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5">
                 <h3 className="text-xs font-semibold text-slate-900">
                   Asumsi Radiasi &amp; Tarif
                 </h3>
                 <div className="divide-y divide-slate-900/[0.06] text-xs">
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Iradiasi Harian</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.assumptions.daily_irradiance_kwh_per_sqm)} kWh/m²/hari
                     </span>
                   </div>
                   <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Sumber Data</span>
-                    <span className="font-medium text-slate-800 truncate max-w-[155px]">
+                    <span className="font-medium text-slate-800 truncate max-w-[155px] text-right">
                       {detail.assumptions.irradiance_source}
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Sudut Datang</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.assumptions.incidence_factor)}
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Performance Ratio</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {decimal.format(detail.assumptions.performance_ratio)}
                     </span>
                   </div>
-                  <div className="py-2 flex items-center justify-between">
+                  <div className="py-2 flex items-center justify-between gap-2">
                     <span className="text-slate-500">Tarif PLN</span>
-                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums">
+                    <span className="font-semibold text-slate-900 font-code-metric tabular-nums text-right">
                       {idr.format(detail.assumptions.tariff_idr_per_kwh)}/kWh
                     </span>
                   </div>
@@ -549,14 +549,16 @@ export default function HistoryPage() {
             </div>
 
             {/* Capex Card */}
-            <div className="p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5 max-w-xl">
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/[0.03] space-y-2.5 max-w-xl">
               <h3 className="text-xs font-semibold text-slate-900">
                 Rincian Investasi Awal (CAPEX)
               </h3>
-              <CapexTable
-                breakdown={detail.assumptions.capex_breakdown}
-                total={detail.result.capex_total_idr}
-              />
+              <div className="overflow-x-auto">
+                <CapexTable
+                  breakdown={detail.assumptions.capex_breakdown}
+                  total={detail.result.capex_total_idr}
+                />
+              </div>
             </div>
           </section>
         )}

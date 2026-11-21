@@ -1,0 +1,23 @@
+# Virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Raw downloaded imagery, datasets & generated previews (heavy binary files)
+data/
+runs/
+outputs/
+*.zip
+
+# Trained model weights & raw training logs (host on GitHub Releases / HF Hub, not git)
+weights/*.pt
+weights/*.onnx
+service/weights/*.pt
+service/weights/*.onnx
+service/weights/logs.txt
+
+# Local environment secrets
+service/.env
+.env

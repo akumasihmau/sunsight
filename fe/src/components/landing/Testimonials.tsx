@@ -48,7 +48,7 @@ export default function Testimonials() {
         {testimonials.map((item) => (
           <div
             key={item.id}
-            className="p-7 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col justify-between"
+            className="p-5 sm:p-6 lg:p-7 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col justify-between"
           >
             <div className="space-y-3.5">
               <div className="text-amber-500 text-xs tracking-widest">★★★★★</div>
@@ -58,10 +58,10 @@ export default function Testimonials() {
             </div>
 
             <div className="pt-5 mt-5 border-t border-slate-900/[0.06] flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 text-amber-950 font-semibold flex items-center justify-center text-xs font-title">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 text-amber-950 font-semibold flex items-center justify-center text-xs font-title shrink-0">
                 {item.initials}
               </div>
-              <div>
+              <div className="min-w-0">
                 <span className="font-semibold text-slate-900 text-xs sm:text-sm block font-title">
                   {item.name}
                 </span>

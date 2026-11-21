@@ -55,16 +55,16 @@ export default function Comparison() {
 
       <div className="rounded-[28px] bg-white/80 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_18px_48px_rgba(15,23,42,0.05)] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs sm:text-sm">
+          <table className="w-full min-w-[560px] text-left text-xs sm:text-sm">
             <thead>
               <tr className="border-b border-slate-900/[0.06] bg-slate-900/[0.03]">
-                <th className="p-4 sm:p-5 font-semibold text-slate-700 w-1/3 font-title">
+                <th className="p-3.5 sm:p-5 font-semibold text-slate-700 w-1/3 font-title">
                   Aspek
                 </th>
-                <th className="p-4 sm:p-5 font-medium text-slate-400 w-1/3">
+                <th className="p-3.5 sm:p-5 font-medium text-slate-400 w-1/3">
                   Konvensional
                 </th>
-                <th className="p-4 sm:p-5 font-semibold text-amber-950 bg-amber-50/75 w-1/3 font-title">
+                <th className="p-3.5 sm:p-5 font-semibold text-amber-950 bg-amber-50/75 w-1/3 font-title">
                   SunSight
                 </th>
               </tr>
@@ -72,15 +72,15 @@ export default function Comparison() {
             <tbody className="divide-y divide-slate-900/[0.05]">
               {comparisonData.map((row, idx) => (
                 <tr key={idx} className="hover:bg-slate-900/[0.02] transition-colors">
-                  <td className="p-4 sm:p-5 font-semibold text-slate-800 font-title">
+                  <td className="p-3.5 sm:p-5 font-semibold text-slate-800 font-title">
                     {row.aspect}
                   </td>
-                  <td className="p-4 sm:p-5 text-slate-500">
+                  <td className="p-3.5 sm:p-5 text-slate-500">
                     {row.manual}
                   </td>
-                  <td className="p-4 sm:p-5 font-medium text-amber-950 bg-amber-50/35">
-                    <span className="inline-flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0">check_circle</span>
+                  <td className="p-3.5 sm:p-5 font-medium text-amber-950 bg-amber-50/35">
+                    <span className="inline-flex items-start sm:items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5 sm:mt-0">check_circle</span>
                       <span>{row.sunsight}</span>
                     </span>
                   </td>

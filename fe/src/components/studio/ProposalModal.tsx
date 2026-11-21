@@ -52,12 +52,13 @@ export function ProposalModal({
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const frame = window.requestAnimationFrame(() => setMounted(true));
     const cleanupPrintClass = () => {
       document.body.classList.remove("printing-proposal");
     };
     window.addEventListener("afterprint", cleanupPrintClass);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("afterprint", cleanupPrintClass);
       cleanupPrintClass();
     };
@@ -95,18 +96,18 @@ export function ProposalModal({
       id="proposal-print-portal"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/45 backdrop-blur-md print:static print:block print:w-full print:h-auto print:overflow-visible print:bg-white print:p-0 print:m-0"
     >
-      <div className="relative w-full max-w-3xl bg-white/86 bg-gradient-to-br from-white/95 via-amber-50/30 to-sky-50/25 backdrop-blur-2xl saturate-150 rounded-3xl shadow-[0_24px_70px_rgba(245,158,11,0.18),0_8px_28px_rgba(15,23,42,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/90 overflow-hidden flex flex-col max-h-[92vh] print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:overflow-visible print:shadow-none print:border-0 print:rounded-none print:bg-white print:p-0 print:m-0">
+      <div className="relative w-full max-w-3xl bg-white/86 bg-gradient-to-br from-white/95 via-amber-50/30 to-sky-50/25 backdrop-blur-2xl saturate-150 rounded-2xl sm:rounded-3xl shadow-[0_24px_70px_rgba(245,158,11,0.18),0_8px_28px_rgba(15,23,42,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/90 overflow-hidden flex flex-col max-h-[92dvh] print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:overflow-visible print:shadow-none print:border-0 print:rounded-none print:bg-white print:p-0 print:m-0">
         {/* Modal Top Bar (Apple Frosted Glass - Hidden on print) */}
-        <div className="px-6 py-4 border-b border-slate-900/[0.06] flex items-center justify-between bg-white/75 backdrop-blur-xl print:hidden">
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 to-yellow-100 text-amber-800 flex items-center justify-center border border-amber-200/70 shadow-[inset_0_1px_1px_rgba(255,255,255,0.85)]">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-900/[0.06] flex items-center justify-between gap-2 bg-white/75 backdrop-blur-xl print:hidden">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 to-yellow-100 text-amber-800 flex items-center justify-center border border-amber-200/70 shadow-[inset_0_1px_1px_rgba(255,255,255,0.85)] shrink-0">
               <span className="material-symbols-outlined text-[18px]">description</span>
             </span>
-            <div>
-              <h3 className="font-title font-semibold text-slate-900 text-sm tracking-tight leading-tight m-0">
+            <div className="min-w-0">
+              <h3 className="font-title font-semibold text-slate-900 text-sm tracking-tight leading-tight m-0 truncate">
                 Proposal Kelayakan PLTS Atap
               </h3>
-              <p className="text-[11px] text-slate-500 m-0">
+              <p className="text-[11px] text-slate-500 m-0 truncate">
                 Ringkasan teknis, finansial &amp; standar kepatuhan instalasi
               </p>
             </div>
@@ -114,7 +115,7 @@ export function ProposalModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.05] active:scale-95 transition cursor-pointer"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.05] active:scale-95 transition cursor-pointer shrink-0"
             title="Tutup Pratinjau"
             aria-label="Tutup Pratinjau"
           >
@@ -123,8 +124,8 @@ export function ProposalModal({
         </div>
 
         {/* Printable Document Sheet */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-900/[0.02] flex justify-center items-start print:static print:block print:w-full print:h-auto print:overflow-visible print:bg-white print:p-0 print:m-0">
-          <article className="w-full max-w-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.06)] border border-slate-900/[0.06] p-6 sm:p-8 rounded-2xl text-slate-900 text-xs space-y-6 print:max-w-none print:w-full print:border-0 print:shadow-none print:p-0 print:rounded-none print:space-y-5">
+        <div className="p-2.5 sm:p-6 overflow-y-auto flex-1 bg-slate-900/[0.02] flex justify-center items-start print:static print:block print:w-full print:h-auto print:overflow-visible print:bg-white print:p-0 print:m-0">
+          <article className="w-full max-w-2xl bg-white shadow-[0_10px_32px_rgba(15,23,42,0.06)] border border-slate-900/[0.06] p-4 sm:p-8 rounded-2xl text-slate-900 text-xs space-y-6 print:max-w-none print:w-full print:border-0 print:shadow-none print:p-0 print:rounded-none print:space-y-5">
             {/* 1. Document Header (ISO 7200 Controlled Metadata) */}
             <header className="proposal-section-block break-inside-avoid print:break-inside-avoid flex flex-col sm:flex-row print:flex-row items-start sm:items-center print:items-center justify-between border-b border-slate-200/80 pb-4 gap-3">
               <div className="flex items-center gap-3">
@@ -224,7 +225,7 @@ export function ProposalModal({
 
             {/* 4. Section 1: Spesifikasi Teknis (Unified 2-Col Apple Spec Sheet) */}
             <section className="proposal-section-block break-inside-avoid print:break-inside-avoid space-y-2.5">
-              <div className="flex items-baseline justify-between border-b border-slate-200/70 pb-1.5">
+              <div className="flex flex-wrap print:flex-nowrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-slate-200/70 pb-1.5">
                 <h4 className="font-title font-semibold text-slate-900 text-[12.5px] m-0">
                   1. Spesifikasi Teknis Bidang Atap
                 </h4>
@@ -280,7 +281,7 @@ export function ProposalModal({
 
             {/* 5. Section 2: Analisis Tagihan & Arus Kas */}
             <section className="proposal-section-block break-inside-avoid print:break-inside-avoid space-y-2.5">
-              <div className="flex items-baseline justify-between border-b border-slate-200/70 pb-1.5">
+              <div className="flex flex-wrap print:flex-nowrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-slate-200/70 pb-1.5">
                 <h4 className="font-title font-semibold text-slate-900 text-[12.5px] m-0">
                   2. Analisis Tagihan &amp; Proyeksi Penghematan
                 </h4>
@@ -313,20 +314,20 @@ export function ProposalModal({
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-slate-900/[0.03] grid grid-cols-3 print:grid-cols-3 divide-x divide-slate-900/[0.08] py-2.5 text-center">
-                <div className="px-2">
+              <div className="rounded-2xl bg-slate-900/[0.03] grid grid-cols-1 sm:grid-cols-3 print:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x print:divide-y-0 print:divide-x divide-slate-900/[0.08] py-1 sm:py-2.5 print:py-2.5 text-center">
+                <div className="px-2 py-2 sm:py-0 print:py-0">
                   <span className="text-[10px] text-slate-500 block">Hemat Tahun 1</span>
                   <span className="text-[12.5px] font-semibold text-slate-900 font-code-metric tabular-nums block mt-0.5">
                     {idr.format(result.annual_saving_idr)}
                   </span>
                 </div>
-                <div className="px-2">
+                <div className="px-2 py-2 sm:py-0 print:py-0">
                   <span className="text-[10px] text-slate-500 block">Akumulasi 25 Tahun</span>
                   <span className="text-[12.5px] font-semibold text-emerald-700 font-code-metric tabular-nums block mt-0.5">
                     {idr.format(effectiveCumulative25)}
                   </span>
                 </div>
-                <div className="px-2">
+                <div className="px-2 py-2 sm:py-0 print:py-0">
                   <span className="text-[10px] text-slate-500 block">Balik Modal &amp; IRR</span>
                   <span className="text-[12.5px] font-semibold text-slate-900 font-code-metric tabular-nums block mt-0.5">
                     {paybackYearsText(result.payback_years)} ({irr}%)
@@ -337,7 +338,7 @@ export function ProposalModal({
 
             {/* 6. Section 3: Estimasi Investasi (CAPEX) */}
             <section className="proposal-section-block break-inside-avoid print:break-inside-avoid space-y-2">
-              <div className="flex items-baseline justify-between border-b border-slate-200/70 pb-1.5">
+              <div className="flex flex-wrap print:flex-nowrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-slate-200/70 pb-1.5">
                 <h4 className="font-title font-semibold text-slate-900 text-[12.5px] m-0">
                   3. Estimasi Investasi Turnkey (CAPEX)
                 </h4>
@@ -346,70 +347,72 @@ export function ProposalModal({
                 </span>
               </div>
 
-              <table className="w-full text-[11px] text-left border border-slate-200/80 rounded-xl overflow-hidden">
-                <thead className="bg-slate-50 text-slate-600">
-                  <tr>
-                    <th className="py-2 px-3 font-semibold">Komponen</th>
-                    <th className="py-2 px-3 font-semibold">Spesifikasi</th>
-                    <th className="py-2 px-3 text-right font-semibold">Estimasi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  <tr>
-                    <td className="py-2 px-3 font-medium text-slate-900">Modul Surya</td>
-                    <td className="py-2 px-3 text-slate-500">
-                      {integer.format(result.installed)} × Tier-1 Mono {modulePower} Wp
-                    </td>
-                    <td className="py-2 px-3 text-right font-code-metric tabular-nums font-medium text-slate-800">
-                      {idr.format(assumptions.capex_breakdown.modules_idr)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-medium text-slate-900">Inverter &amp; Proteksi</td>
-                    <td className="py-2 px-3 text-slate-500">
-                      {parameters.inverter_type === "micro" ? "Microinverter IP67" : "String Inverter On-Grid"} + SPD AC/DC
-                    </td>
-                    <td className="py-2 px-3 text-right font-code-metric tabular-nums font-medium text-slate-800">
-                      {idr.format(assumptions.capex_breakdown.inverter_idr)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-medium text-slate-900">Racking Aluminium</td>
-                    <td className="py-2 px-3 text-slate-500">AL6005-T5 Anodized tahan korosi</td>
-                    <td className="py-2 px-3 text-right font-code-metric tabular-nums font-medium text-slate-800">
-                      {idr.format(assumptions.capex_breakdown.racking_idr)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 px-3 font-medium text-slate-900">Instalasi &amp; SLO</td>
-                    <td className="py-2 px-3 text-slate-500">Pemasangan, uji kelayakan PUIL 2020 &amp; perizinan</td>
-                    <td className="py-2 px-3 text-right font-code-metric tabular-nums font-medium text-slate-800">
-                      {idr.format(assumptions.capex_breakdown.installation_idr)}
-                    </td>
-                  </tr>
-                  <tr className="bg-amber-50/75 font-semibold border-t border-amber-200/80">
-                    <td className="py-2.5 px-3 text-slate-950" colSpan={2}>
-                      Total Estimasi Investasi
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-code-metric tabular-nums text-amber-950">
-                      {idr.format(result.capex_total_idr)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="overflow-x-auto print:overflow-visible rounded-xl border border-slate-200/80 print:border-0">
+                <table className="w-full text-[11px] text-left print:border print:border-slate-200/80 rounded-xl overflow-hidden">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="py-2 px-2 sm:px-3 print:px-3 font-semibold">Komponen</th>
+                      <th className="py-2 px-2 sm:px-3 print:px-3 font-semibold">Spesifikasi</th>
+                      <th className="py-2 px-2 sm:px-3 print:px-3 text-right font-semibold whitespace-nowrap">Estimasi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 font-medium text-slate-900">Modul Surya</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-slate-500">
+                        {integer.format(result.installed)} × Tier-1 Mono {modulePower} Wp
+                      </td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-right font-code-metric tabular-nums font-medium text-slate-800 whitespace-nowrap">
+                        {idr.format(assumptions.capex_breakdown.modules_idr)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 font-medium text-slate-900">Inverter &amp; Proteksi</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-slate-500">
+                        {parameters.inverter_type === "micro" ? "Microinverter IP67" : "String Inverter On-Grid"} + SPD AC/DC
+                      </td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-right font-code-metric tabular-nums font-medium text-slate-800 whitespace-nowrap">
+                        {idr.format(assumptions.capex_breakdown.inverter_idr)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 font-medium text-slate-900">Racking Aluminium</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-slate-500">AL6005-T5 Anodized tahan korosi</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-right font-code-metric tabular-nums font-medium text-slate-800 whitespace-nowrap">
+                        {idr.format(assumptions.capex_breakdown.racking_idr)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 font-medium text-slate-900">Instalasi &amp; SLO</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-slate-500">Pemasangan, uji kelayakan PUIL 2020 &amp; perizinan</td>
+                      <td className="py-2 px-2 sm:px-3 print:px-3 text-right font-code-metric tabular-nums font-medium text-slate-800 whitespace-nowrap">
+                        {idr.format(assumptions.capex_breakdown.installation_idr)}
+                      </td>
+                    </tr>
+                    <tr className="bg-amber-50/75 font-semibold border-t border-amber-200/80">
+                      <td className="py-2.5 px-2 sm:px-3 print:px-3 text-slate-950" colSpan={2}>
+                        Total Estimasi Investasi
+                      </td>
+                      <td className="py-2.5 px-2 sm:px-3 print:px-3 text-right font-code-metric tabular-nums text-amber-950 whitespace-nowrap">
+                        {idr.format(result.capex_total_idr)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </section>
 
             {/* 7. Section 4: Dampak Lingkungan & Standar Kepatuhan */}
             <section className="proposal-section-block break-inside-avoid print:break-inside-avoid space-y-3">
-              <div className="flex items-baseline justify-between border-b border-slate-200/70 pb-1.5">
+              <div className="flex flex-wrap print:flex-nowrap items-baseline justify-between gap-x-2 gap-y-0.5 border-b border-slate-200/70 pb-1.5">
                 <h4 className="font-title font-semibold text-slate-900 text-[12.5px] m-0">
                   4. Dampak Lingkungan (ISO 14064) &amp; Standar Mutu
                 </h4>
                 <span className="text-[10px] text-slate-400">Faktor emisi Grid Jamali 0,80 kg CO₂/kWh</span>
               </div>
 
-              <div className="rounded-2xl bg-emerald-50/60 border border-emerald-200/70 grid grid-cols-2 print:grid-cols-2 divide-x divide-emerald-200/60 p-3">
-                <div className="pr-3">
+              <div className="rounded-2xl bg-emerald-50/60 border border-emerald-200/70 grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x print:divide-y-0 print:divide-x divide-emerald-200/60 p-3">
+                <div className="pb-2.5 sm:pb-0 sm:pr-3 print:pb-0 print:pr-3">
                   <span className="text-[10.5px] text-emerald-800 block">Reduksi Emisi CO₂</span>
                   <span className="font-title text-sm font-semibold text-emerald-950 font-code-metric tabular-nums">
                     {decimal.format(result.co2_reduction_kg_per_year / 1000)} ton / tahun
@@ -418,7 +421,7 @@ export function ProposalModal({
                     25 thn: ~{decimal.format((result.co2_reduction_kg_per_year * 25) / 1000)} ton CO₂
                   </span>
                 </div>
-                <div className="pl-3">
+                <div className="pt-2.5 sm:pt-0 sm:pl-3 print:pt-0 print:pl-3">
                   <span className="text-[10.5px] text-emerald-800 block">Setara Serapan Pohon</span>
                   <span className="font-title text-sm font-semibold text-emerald-950 font-code-metric tabular-nums">
                     {integer.format(result.trees_equivalent)} pohon / tahun
@@ -452,7 +455,7 @@ export function ProposalModal({
         </div>
 
         {/* Modal Bottom Action Bar (Frosted Glass + Soft Radiant Glow CTA - Hidden on print) */}
-        <div className="px-6 py-3.5 border-t border-slate-900/[0.06] bg-white/80 backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-2 print:hidden">
+        <div className="px-4 sm:px-6 py-3 sm:py-3.5 border-t border-slate-900/[0.06] bg-white/80 backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-2 print:hidden">
           <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[15px] text-amber-600">info</span>
             <span>Pilih <em>“Save as PDF”</em> pada dialog cetak peramban untuk menyimpan berkas.</span>

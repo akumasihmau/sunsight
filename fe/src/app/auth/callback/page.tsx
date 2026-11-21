@@ -24,8 +24,8 @@ export default function AuthCallbackPage() {
     const token = params.get("token");
 
     if (!token) {
-      setIsInvalid(true);
-      return;
+      const id = window.requestAnimationFrame(() => setIsInvalid(true));
+      return () => window.cancelAnimationFrame(id);
     }
 
     setToken(token);

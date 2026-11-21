@@ -227,7 +227,7 @@ export default function RegisterPage() {
               setName(e.target.value);
               clearFieldError("name");
             }}
-            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+            className={`w-full px-3.5 py-2.5 sm:py-2 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
               fieldErrors.name
                 ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                 : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -259,7 +259,7 @@ export default function RegisterPage() {
               setEmail(e.target.value);
               clearFieldError("email");
             }}
-            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+            className={`w-full px-3.5 py-2.5 sm:py-2 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
               fieldErrors.email
                 ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                 : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -292,7 +292,7 @@ export default function RegisterPage() {
                 setPhone(e.target.value);
                 clearFieldError("phone");
               }}
-              className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              className={`w-full px-3.5 py-2.5 sm:py-2 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
                 fieldErrors.phone
                   ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                   : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -315,7 +315,7 @@ export default function RegisterPage() {
               disabled={busy}
               value={propertyType}
               onChange={(e) => setPropertyType(e.target.value as PropertyType)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition cursor-pointer"
+              className="w-full px-3 py-2.5 sm:py-2 rounded-xl bg-slate-50 border border-slate-200 text-sm sm:text-xs font-medium text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15 focus:outline-none transition cursor-pointer"
             >
               <option value="residential">Rumah Tinggal</option>
               <option value="commercial">Ruko / Komersial</option>
@@ -342,7 +342,7 @@ export default function RegisterPage() {
               setLocation(e.target.value);
               clearFieldError("location");
             }}
-            className={`w-full px-3.5 py-2 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+            className={`w-full px-3.5 py-2.5 sm:py-2 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
               fieldErrors.location
                 ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                 : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -377,7 +377,7 @@ export default function RegisterPage() {
                   setPassword(e.target.value);
                   clearFieldError("password");
                 }}
-                className={`w-full px-3.5 py-2 pr-9 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+                className={`w-full px-3.5 py-2.5 sm:py-2 pr-10 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
                   fieldErrors.password
                     ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                     : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -387,7 +387,7 @@ export default function RegisterPage() {
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition cursor-pointer p-0.5"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition cursor-pointer p-2"
                 title="Tampilkan / Sembunyikan Password"
               >
                 <span className="material-symbols-outlined text-[16px] leading-none block">
@@ -422,7 +422,7 @@ export default function RegisterPage() {
                   setConfirmation(e.target.value);
                   clearFieldError("password_confirmation");
                 }}
-                className={`w-full px-3.5 py-2 pr-9 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+                className={`w-full px-3.5 py-2.5 sm:py-2 pr-9 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
                   fieldErrors.password_confirmation
                     ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                     : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"

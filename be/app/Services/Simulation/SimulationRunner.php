@@ -48,6 +48,7 @@ class SimulationRunner
         // dibaca di sini supaya jalur hitung dan jalur simpan tidak dapat berbeda.
         $sunHour = (float) ($input['sun_hour'] ?? 12.0);
         $extraTilt = (float) ($input['extra_tilt'] ?? 10.0);
+        $shadingLossPct = (float) ($input['shading_loss_pct'] ?? 0.0);
 
         $roofs = [];
         $breakdowns = [];
@@ -108,6 +109,7 @@ class SimulationRunner
                 extraTiltDeg: $extraTilt,
                 sunHour: $sunHour,
                 inverterType: $inverterType,
+                shadingLossPct: $shadingLossPct,
             );
 
             $breakdowns[] = FinanceModel::capex(

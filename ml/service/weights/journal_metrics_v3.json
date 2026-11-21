@@ -1,0 +1,8 @@
+{
+  "v3_yolo11m_seg_clahe_desat": {
+    "mask_precision": 0.4192,
+    "mask_recall": 0.4241,
+    "mask_map50": 0.3363,
+    "mask_map50_95": 0.1292
+  }
+}

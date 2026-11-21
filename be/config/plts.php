@@ -110,27 +110,34 @@ return [
     */
 
     'energy' => [
-        // Rugi suhu, kabel, kotoran, dan penuaan dalam satu angka.
+        // Rugi sistem dasar sesuai IEC 61724-1: derating suhu sel tropis (-0,34%/°C
+        // di atas STC 25°C), kabel DC/AC, mismatch, dan debu/kotoran dalam satu faktor.
         'system_loss_ratio' => (float) env('PLTS_SYSTEM_LOSS_RATIO', 0.82),
 
-        // Efisiensi inverter menurut arsitekturnya.
+        // Efisiensi inverter menurut arsitekturnya (Euro Efficiency).
         'inverter_efficiency' => [
             'string' => 0.984,
             'micro' => 0.975,
         ],
 
-        // Puncak kurva efisiensi terhadap kemiringan dan azimuth.
-        'optimal_tilt_deg' => 22.0,
-        'optimal_azimuth_deg' => 188.0,
+        // Sudut optimal tahunan untuk Kota Bogor (6,6° LS, belahan bumi selatan):
+        // kemiringan landai 10° menghadap Utara (0°), sekaligus membantu aliran hujan.
+        'optimal_tilt_deg' => 10.0,
+        'optimal_azimuth_deg' => 0.0,
 
-        // Jam matahari puncak pada penggeser posisi matahari studio.
+        // Jam matahari puncak (GHI / Peak Sun Hours, kWh/m²/hari) terkalibrasi
+        // klimatologi NASA POWER (ALLSKY_SFC_SW_DWN) & Global Solar Atlas Kota Bogor
+        // yang sudah memasukkan tutupan awan & pola awan konvektif sore hari.
         'peak_sun_hours' => [
-            'morning' => 3.8,
-            'noon' => 4.85,
-            'afternoon' => 3.9,
+            'morning' => 3.82,
+            'noon' => 4.42,
+            'afternoon' => 3.95,
             'morning_hour' => 9.0,
             'afternoon_hour' => 15.0,
         ],
+
+        'irradiance_source' => 'NASA POWER & Global Solar Atlas (Kota Bogor)',
+        'irradiance_period' => 'Klimatologi 2001–2024',
 
         // Bonus membersihkan diri dari hujan pada dudukan yang dimiringkan.
         'racking_bonus' => [
@@ -170,8 +177,8 @@ return [
         'inverter_type' => 'string',
         'setback_m' => 0.5,
         'gutter_m' => 0.6,
-        'tilt_deg' => 22.0,
-        'azimuth_deg' => 188.0,
+        'tilt_deg' => 10.0,
+        'azimuth_deg' => 0.0,
         'clearance_m' => 0.03,
         'monthly_bill_idr' => 2_800_000,
     ],

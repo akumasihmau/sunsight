@@ -72,19 +72,19 @@ export function AzimuthCompass({ azimuthDeg, tiltDeg, disabled = false, onChange
 
   return (
     <div className="rounded-2xl bg-slate-50 border border-slate-200/90 p-3.5 space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-amber-600 text-[18px]">explore</span>
           <span className="text-xs font-bold text-slate-900 font-title">
             Kompas Azimuth &amp; Profil Sudut
           </span>
         </div>
-        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300/80 text-[11px] font-bold tracking-tight">
+        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300/80 text-[11px] font-bold tracking-tight shrink-0 whitespace-nowrap">
           {azimuthDeg}° · {cardinalLabel(azimuthDeg)}
         </span>
       </div>
 
-      <div className="grid grid-cols-[7.5rem_1fr] items-center gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[7.5rem_1fr] items-center gap-3">
         <div className="flex items-center justify-center">
           <svg
             ref={dialRef}
@@ -143,7 +143,7 @@ export function AzimuthCompass({ azimuthDeg, tiltDeg, disabled = false, onChange
           </svg>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 min-w-0">
           <div className="rounded-xl bg-white border border-slate-200/80 p-2">
             <div className="flex items-center justify-between text-[10px] font-semibold text-slate-600 mb-1">
               <span>Profil Kemiringan</span>
@@ -187,7 +187,7 @@ export function AzimuthCompass({ azimuthDeg, tiltDeg, disabled = false, onChange
                 type="button"
                 disabled={disabled}
                 onClick={() => onChangeAzimuth(preset.deg)}
-                className={`py-1 px-1.5 rounded-lg text-[10.5px] font-semibold border transition cursor-pointer ${
+                className={`py-1.5 sm:py-1 px-1.5 rounded-lg text-[10.5px] font-semibold border transition cursor-pointer ${
                   azimuthDeg === preset.deg
                     ? "bg-slate-900 text-white border-slate-900"
                     : "bg-white hover:bg-amber-50 text-slate-700 border-slate-200"

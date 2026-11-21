@@ -261,10 +261,17 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
   const [isVisible, setIsVisible] = useState(false);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const [viewport, setViewport] = useState<{ vw: number; vh: number }>({ vw: 1280, vh: 800 });
 
   // Mencegah Hydration Mismatch pada SSR
   useEffect(() => {
-    setIsMounted(true);
+    const frame = window.requestAnimationFrame(() => {
+      setIsMounted(true);
+      if (typeof window !== "undefined") {
+        setViewport({ vw: window.innerWidth, vh: window.innerHeight });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   // Animasi Maskot Gliding State (Hanya diaktifkan saat transisi langkah, lalu mati sendiri)
@@ -282,25 +289,28 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
 
   // Inisialisasi status tur dari URL / localStorage (Hanya dijalankan sekali saat mount/forceOpen)
   useEffect(() => {
-    if (forceOpen) {
-      setIsVisible(true);
-      setCurrentStepIdx(0);
-      prevTriggeredStepRef.current = null;
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const tourParam = urlParams.get("tour");
-      const pendingTour = localStorage.getItem("sunsight_tour_pending");
-      const completedTour = localStorage.getItem("sunsight_tour_completed");
-
-      if (tourParam === "dashboard" || tourParam === "welcome" || (pendingTour === "true" && !completedTour)) {
+    const frame = window.requestAnimationFrame(() => {
+      if (forceOpen) {
         setIsVisible(true);
         setCurrentStepIdx(0);
         prevTriggeredStepRef.current = null;
+        return;
       }
-    }
+
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tourParam = urlParams.get("tour");
+        const pendingTour = localStorage.getItem("sunsight_tour_pending");
+        const completedTour = localStorage.getItem("sunsight_tour_completed");
+
+        if (tourParam === "dashboard" || tourParam === "welcome" || (pendingTour === "true" && !completedTour)) {
+          setIsVisible(true);
+          setCurrentStepIdx(0);
+          prevTriggeredStepRef.current = null;
+        }
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [forceOpen]);
 
   // Handler Pindah Tab saat Langkah Berubah (Dijamin HANYA dipanggil 1x per perubahan currentStepIdx)
@@ -399,6 +409,11 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
       if (rafId !== null) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
+        setViewport((prev) =>
+          prev.vw === window.innerWidth && prev.vh === window.innerHeight
+            ? prev
+            : { vw: window.innerWidth, vh: window.innerHeight }
+        );
         updateTargetRect();
       });
     };
@@ -454,43 +469,51 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
   const isLastStep = currentStepIdx === TOUR_STEPS.length - 1;
 
   // Dimensi Padding & Sudut Lingkaran Spotlight
-  const pad = 12;
-  const radius = 24;
+  const vw = viewport.vw;
+  const vh = viewport.vh;
+  const isCompactMobile = vw < 640;
+  const pad = isCompactMobile ? 6 : 12;
+  const radius = isCompactMobile ? 20 : 24;
 
-  // Perhitungan Posisi Dialog Card (Clamped dalam batas layar)
-  const cardWidth = typeof window !== "undefined" ? Math.min(390, window.innerWidth - 32) : 380;
-  const cardHeight = 220;
+  // Clamp spotlight agar cincin glow tidak melewati tepi layar mobile
+  const spotX = targetRect ? Math.max(4, targetRect.x - pad) : 0;
+  const spotY = targetRect ? Math.max(4, targetRect.y - pad) : 0;
+  const spotW = targetRect ? Math.min(vw - 4 - spotX, targetRect.width + pad * 2) : 0;
+  const spotH = targetRect ? targetRect.height + pad * 2 : 0;
 
-  let cardTop = 100;
+  // Perhitungan Posisi Dialog Card (Clamped dalam batas layar; pakai anchor bottom bila ruang terbatas)
+  const cardWidth = Math.min(390, Math.max(280, vw - 32));
+  const estCardHeight = isCompactMobile ? 270 : 220;
+
+  let cardTop: number | undefined = 100;
+  let cardBottom: number | undefined = undefined;
   let cardLeft = 24;
-  let placeBelow = true;
 
-  if (targetRect && typeof window !== "undefined") {
-    const spaceBelow = window.innerHeight - (targetRect.y + targetRect.height);
+  if (targetRect) {
+    const spaceBelow = vh - (targetRect.y + targetRect.height);
     const spaceAbove = targetRect.y;
 
-    if (spaceBelow >= cardHeight + 30) {
+    if (spaceBelow >= estCardHeight + 28) {
       cardTop = targetRect.y + targetRect.height + 16;
-      placeBelow = true;
-    } else if (spaceAbove >= cardHeight + 30) {
-      cardTop = targetRect.y - cardHeight - 16;
-      placeBelow = false;
+    } else if (spaceAbove >= estCardHeight + 28) {
+      cardTop = Math.max(16, targetRect.y - estCardHeight - 16);
     } else {
-      cardTop = Math.max(16, window.innerHeight - cardHeight - 20);
-      placeBelow = true;
+      cardTop = undefined;
+      cardBottom = 16;
     }
 
     // Hitung posisi horizontal sejajar dengan target atau pojok nyaman
-    cardLeft = targetRect.x + 16;
-    if (cardLeft + cardWidth > window.innerWidth - 16) {
-      cardLeft = window.innerWidth - cardWidth - 16;
+    cardLeft = isCompactMobile ? Math.round((vw - cardWidth) / 2) : targetRect.x + 16;
+    if (cardLeft + cardWidth > vw - 16) {
+      cardLeft = vw - cardWidth - 16;
     }
     if (cardLeft < 16) {
       cardLeft = 16;
     }
-  } else if (typeof window !== "undefined") {
-    cardTop = window.innerHeight - cardHeight - 32;
-    cardLeft = window.innerWidth - cardWidth - 32;
+  } else {
+    cardTop = undefined;
+    cardBottom = isCompactMobile ? 16 : 32;
+    cardLeft = isCompactMobile ? Math.round((vw - cardWidth) / 2) : Math.max(16, vw - cardWidth - 32);
   }
 
   return (
@@ -507,10 +530,10 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
             {/* Cutout Hitam (Membuat jendela transparan sempurna pada elemen target) */}
             {targetRect && (
               <rect
-                x={targetRect.x - pad}
-                y={targetRect.y - pad}
-                width={targetRect.width + pad * 2}
-                height={targetRect.height + pad * 2}
+                x={spotX}
+                y={spotY}
+                width={spotW}
+                height={spotH}
                 rx={radius}
                 ry={radius}
                 fill="black"
@@ -536,10 +559,10 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
         <div
           style={{
             position: "fixed",
-            left: `${targetRect.x - pad}px`,
-            top: `${targetRect.y - pad}px`,
-            width: `${targetRect.width + pad * 2}px`,
-            height: `${targetRect.height + pad * 2}px`,
+            left: `${spotX}px`,
+            top: `${spotY}px`,
+            width: `${spotW}px`,
+            height: `${spotH}px`,
             borderRadius: `${radius}px`,
           }}
           className="pointer-events-none z-[41] ring-2 ring-amber-300/80 shadow-[0_0_32px_rgba(251,191,36,0.36),inset_0_0_18px_rgba(251,191,36,0.12)] transition-all duration-500 ease-out"
@@ -556,12 +579,12 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
         style={{
           position: "fixed",
           left: `${cardLeft}px`,
-          top: `${cardTop}px`,
+          ...(cardTop !== undefined ? { top: `${cardTop}px` } : { bottom: `${cardBottom ?? 16}px` }),
           width: `${cardWidth}px`,
         }}
         className="z-50 pointer-events-auto transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)"
       >
-        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14),inset_0_1px_1px_rgba(255,255,255,0.92)] p-5 text-slate-800">
+        <div className="relative rounded-[28px] bg-white/88 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.16),0_4px_20px_rgba(251,191,36,0.14),inset_0_1px_1px_rgba(255,255,255,0.92)] p-4 sm:p-5 text-slate-800">
           {/* Header Card: Sunny Proporsional + Badge Step + Tombol Tutup */}
           <div className="flex items-center justify-between gap-2.5 mb-3">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -596,7 +619,7 @@ export const MascotDashboardTour: React.FC<MascotDashboardTourProps> = ({
           </div>
 
           {/* Footer Bar: Indikator Dots & Tombol Aksi Radiant Soft Glow */}
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100/80">
+          <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100/80">
             {/* Step Progress Dots */}
             <div className="flex items-center gap-1.5">
               {TOUR_STEPS.map((_, idx) => (

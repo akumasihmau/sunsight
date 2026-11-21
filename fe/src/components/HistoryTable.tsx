@@ -46,7 +46,7 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
 
   if (items.length === 0) {
     return (
-      <div className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-12 text-center shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col items-center justify-center max-w-xl mx-auto">
+      <div className="rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-6 sm:p-12 text-center shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col items-center justify-center max-w-xl mx-auto">
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-100 to-yellow-100 border border-amber-200/70 text-amber-800 flex items-center justify-center mb-4">
           <span className="material-symbols-outlined text-[30px]">history</span>
         </div>
@@ -68,17 +68,17 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
   return (
     <div className="rounded-[24px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
+        <table className="w-full min-w-[760px] text-left text-xs">
           <thead className="bg-slate-900/[0.03] border-b border-slate-900/[0.06] text-[11px] font-medium text-slate-500">
             <tr>
-              <th className="py-3.5 px-4 font-medium">ID</th>
-              <th className="py-3.5 px-4 font-medium">Proyek &amp; Koordinat</th>
-              <th className="py-3.5 px-4 text-right font-medium">Kapasitas</th>
-              <th className="py-3.5 px-4 text-right font-medium">Produksi/Thn</th>
-              <th className="py-3.5 px-4 text-right font-medium">Hemat/Bln</th>
-              <th className="py-3.5 px-4 text-right font-medium">Balik Modal</th>
-              <th className="py-3.5 px-4 font-medium">Tanggal (ISO)</th>
-              <th className="py-3.5 px-4 text-right font-medium">Aksi</th>
+              <th className="py-3.5 px-4 font-medium whitespace-nowrap">ID</th>
+              <th className="py-3.5 px-4 font-medium whitespace-nowrap">Proyek &amp; Koordinat</th>
+              <th className="py-3.5 px-4 text-right font-medium whitespace-nowrap">Kapasitas</th>
+              <th className="py-3.5 px-4 text-right font-medium whitespace-nowrap">Produksi/Thn</th>
+              <th className="py-3.5 px-4 text-right font-medium whitespace-nowrap">Hemat/Bln</th>
+              <th className="py-3.5 px-4 text-right font-medium whitespace-nowrap">Balik Modal</th>
+              <th className="py-3.5 px-4 font-medium whitespace-nowrap">Tanggal (ISO)</th>
+              <th className="py-3.5 px-4 text-right font-medium whitespace-nowrap">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-900/[0.05]">
@@ -93,10 +93,10 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
                     isSelected ? "bg-amber-50/55" : "hover:bg-slate-900/[0.025]"
                   }`}
                 >
-                  <td className="py-3.5 px-4 font-medium text-slate-400 font-code-metric tabular-nums">
+                  <td className="py-3.5 px-4 font-medium text-slate-400 font-code-metric tabular-nums whitespace-nowrap">
                     #{item.id}
                   </td>
-                  <td className="py-3.5 px-4 text-slate-800 max-w-[260px]">
+                  <td className="py-3.5 px-4 text-slate-800 min-w-[180px] max-w-[260px]">
                     {isEditing ? (
                       <form
                         onSubmit={(e) => {
@@ -149,7 +149,7 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
                             type="button"
                             disabled={busy}
                             onClick={() => startEdit(item)}
-                            className="opacity-65 group-hover:opacity-100 w-6 h-6 rounded-md hover:bg-amber-50 text-slate-400 hover:text-amber-700 flex items-center justify-center transition cursor-pointer shrink-0"
+                            className="opacity-100 sm:opacity-65 sm:group-hover:opacity-100 w-8 h-8 sm:w-6 sm:h-6 rounded-md hover:bg-amber-50 text-slate-400 hover:text-amber-700 flex items-center justify-center transition cursor-pointer shrink-0"
                             title="Ubah nama proyek"
                             aria-label={`Ubah nama proyek ${displayName}`}
                           >
@@ -163,22 +163,22 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
                       </div>
                     )}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-slate-900 font-code-metric tabular-nums">
+                  <td className="py-3.5 px-4 text-right font-semibold text-slate-900 font-code-metric tabular-nums whitespace-nowrap">
                     {decimal.format(item.capacity_kwp)} kWp
                   </td>
-                  <td className="py-3.5 px-4 text-right font-medium text-slate-700 font-code-metric tabular-nums">
+                  <td className="py-3.5 px-4 text-right font-medium text-slate-700 font-code-metric tabular-nums whitespace-nowrap">
                     {integer.format(item.annual_production_kwh)} kWh
                   </td>
-                  <td className="py-3.5 px-4 text-right font-semibold text-emerald-700 font-code-metric tabular-nums">
+                  <td className="py-3.5 px-4 text-right font-semibold text-emerald-700 font-code-metric tabular-nums whitespace-nowrap">
                     {idr.format(item.monthly_saving_idr)}
                   </td>
-                  <td className="py-3.5 px-4 text-right font-medium text-slate-700 font-code-metric tabular-nums">
+                  <td className="py-3.5 px-4 text-right font-medium text-slate-700 font-code-metric tabular-nums whitespace-nowrap">
                     {paybackYearsText(item.payback_years)}
                   </td>
                   <td className="py-3.5 px-4 text-slate-500 text-[11px] font-code-metric tabular-nums whitespace-nowrap">
                     {formatIsoTimestamp(item.created_at)}
                   </td>
-                  <td className="py-3.5 px-4 text-right">
+                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1.5">
                       <button
                         type="button"
@@ -196,7 +196,7 @@ export function HistoryTable({ items, activeId, busy, onOpen, onRename, onDelete
                         type="button"
                         onClick={() => onDelete(item.id)}
                         disabled={busy}
-                        className="w-7 h-7 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
+                        className="w-8 h-8 sm:w-7 sm:h-7 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
                         title="Hapus simulasi ini"
                         aria-label={`Hapus simulasi #${item.id}`}
                       >

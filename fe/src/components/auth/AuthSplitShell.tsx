@@ -323,12 +323,12 @@ export function AuthSplitShell({
   return (
     <section
       ref={containerRef}
-      className="min-h-screen w-full flex flex-col lg:flex-row bg-[#FAF9F5] select-none relative overflow-x-hidden font-sans text-slate-800"
+      className="min-h-screen w-full flex flex-col lg:flex-row bg-[#FAF9F5] relative overflow-x-clip font-sans text-slate-800"
     >
       {/* =====================================================
           SECTION KIRI: RADIANT SUN MASCOT SHOWCASE (Full Half Section)
           ===================================================== */}
-      <div className="w-full lg:w-1/2 min-h-[300px] lg:min-h-screen flex flex-col justify-between p-6 sm:p-10 lg:p-12 relative overflow-hidden bg-gradient-to-br from-[#FAF9F5] via-amber-50/40 to-amber-100/25 border-b lg:border-b-0 lg:border-r border-amber-200/40">
+      <div className="w-full lg:w-1/2 min-h-[190px] sm:min-h-[230px] lg:min-h-screen flex flex-col justify-between p-4 sm:p-8 lg:p-12 select-none relative overflow-hidden bg-gradient-to-br from-[#FAF9F5] via-amber-50/40 to-amber-100/25 border-b lg:border-b-0 lg:border-r border-amber-200/40">
         {/* Soft Ambient Radiant Glow behind Mascot */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gradient-to-tr from-amber-300/25 via-amber-200/15 to-transparent rounded-full blur-3xl pointer-events-none" />
 
@@ -346,8 +346,8 @@ export function AuthSplitShell({
         </div>
 
         {/* Center Stage: Mascot Tanpa Box Container Terpisah */}
-        <div className="relative z-10 my-auto w-full flex items-center justify-center py-4 sm:py-8">
-          <div className="w-full max-w-[340px] sm:max-w-[440px] lg:max-w-[480px] flex items-center justify-center">
+        <div className="relative z-10 my-auto w-full flex items-center justify-center py-2 sm:py-4 lg:py-8">
+          <div className="w-full max-w-[180px] sm:max-w-[230px] lg:max-w-[480px] flex items-center justify-center">
             <svg
               ref={svgRef}
               viewBox="0 0 460 360"
@@ -617,7 +617,7 @@ export function AuthSplitShell({
       {/* =====================================================
           SECTION KANAN: CLEAN FULL-HEIGHT FORM SECTION (Tanpa Card Terpisah)
           ===================================================== */}
-      <div className="w-full lg:w-1/2 lg:min-h-screen bg-white flex flex-col justify-center items-center px-6 sm:px-12 lg:px-16 py-8 sm:py-12 relative z-10">
+      <div className="w-full lg:w-1/2 lg:min-h-screen bg-white flex flex-col justify-center items-center px-4 sm:px-12 lg:px-16 py-6 sm:py-12 relative z-10">
         <div className="w-full max-w-[420px] my-auto flex flex-col justify-center">
           {/* Header with SunSight Brand */}
           <div className="text-center pb-2">
