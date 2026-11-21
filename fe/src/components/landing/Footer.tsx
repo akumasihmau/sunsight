@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function Footer() {
   return (
     <footer className="relative z-10 w-full border-t border-white/85 bg-white/78 backdrop-blur-2xl saturate-150 py-12 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 text-xs text-slate-500">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8 text-xs text-slate-500">
         <div className="space-y-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="SunSight Logo" className="h-7.5 w-auto" />
@@ -79,7 +79,7 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto pt-6 border-t border-slate-900/[0.06] flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
+      <div className="max-w-7xl mx-auto pt-6 border-t border-slate-900/[0.06] flex flex-col sm:flex-row items-center justify-between text-center sm:text-left text-[11px] text-slate-400 gap-2">
         <span>© {new Date().getFullYear()} SunSight Platform · Hak Cipta Dilindungi</span>
         <span>Energi Surya Atap Indonesia</span>
       </div>

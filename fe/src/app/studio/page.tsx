@@ -1,10 +1,23 @@
 "use client";
 
+import type * as LeafletNS from "leaflet";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import { ConfirmDialog } from "@/components/studio/ConfirmDialog";
+import { FinancialTab } from "@/components/studio/FinancialTab";
+import { GeometryTab } from "@/components/studio/GeometryTab";
+import { ModuleTab } from "@/components/studio/ModuleTab";
 import { ProposalModal } from "@/components/studio/ProposalModal";
 import { StudioMascotGuide } from "@/components/studio/StudioMascotGuide";
 import { SunnyMascot } from "@/components/mascot/SunnyMascot";
@@ -41,244 +54,49 @@ import {
   type CapturedMap,
   type MapScaleInfo,
 } from "@/lib/roofCapture";
-
-type CvLayer = "satellite" | "cv" | "heatmap";
-type RoofShape = "rectangle" | "l-shape" | "trapezoid" | "custom_polygon";
-type CadTool = "select" | "edit_polygon" | "pen" | "delete_vertex" | "add_polygon" | "add_obstacle" | "measure";
-type Orientation = "portrait" | "landscape";
-type InverterType = "string" | "micro";
-type SlotState = "active" | "skylight" | "hvac" | "empty";
-
-interface Point2D {
-  x: number;
-  y: number;
-}
-
-interface RoofFacet {
-  id: string;
-  name: string;
-  shape: RoofShape;
-  ridge: number;
-  slope: number;
-  pitch: number;
-  azimuth: number;
-  setback: number;
-  gutter: number;
-  rotation: number;
-  lat: number;
-  lng: number;
-  offsetX: number;
-  offsetY: number;
-  hasHvac: boolean;
-  hasSkylight: boolean;
-  modulePower: number;
-  orientation: Orientation;
-  panelGap: number;
-  slotOverrides: Record<string, SlotState>;
-  customModuleCount: number | null;
-  vertices?: Point2D[];
-  alignToAzimuth?: boolean;
-  isSolarPopulated?: boolean;
-}
-
-type DragMode = "move" | "rot" | "br" | "r" | "b" | "tl" | "tr" | "bl";
-interface DragGroupTarget {
-  id: string;
-  initOx: number;
-  initOy: number;
-  initLat: number;
-  initLng: number;
-}
-interface DragState {
-  facetId: string;
-  mode: DragMode;
-  startX: number;
-  startY: number;
-  initRidge: number;
-  initSlope: number;
-  initRot: number;
-  initOx: number;
-  initOy: number;
-  initLat: number;
-  initLng: number;
-  groupTargets?: DragGroupTarget[];
-}
-
-interface PanelSlotItem {
-  r: number;
-  c: number;
-  key: string;
-  x: number;
-  y: number;
-  w: number;
-  l: number;
-  rotationDeg?: number;
-  state?: SlotState;
-}
-
-interface VertexDragState {
-  facetId: string;
-  vertexIdx: number;
-  startX: number;
-  startY: number;
-  initVertices: Point2D[];
-  initOx: number;
-  initOy: number;
-  initLat?: number;
-  initLng?: number;
-  /** Rotasi bidang yang sedang diedit, dibekukan agar tidak bergantung pada facet aktif. */
-  rotation: number;
-}
-
-/** Sisi yang sedang disorot kursor pada mode Edit Poligon atau Pen Tool. */
-interface EdgeHoverState {
-  facetId: string;
-  edgeIdx: number;
-  point?: Point2D;
-  localPoint?: Point2D;
-}
-
-/**
- * Tarikan pada satu sisi poligon: menyeret garis atau kotak tengah sisi
- * menggeser kedua simpul ujungnya dengan vektor yang sama untuk mengubah ukuran.
- */
-interface EdgeDragState {
-  facetId: string;
-  edgeIdx: number;
-  startX: number;
-  startY: number;
-  initVertices: Point2D[];
-  initOx: number;
-  initOy: number;
-  initLat?: number;
-  initLng?: number;
-  rotation: number;
-}
-
-const MODULE_SPECS: Record<
-  number,
-  { name: string; w: number; l: number; eff: string; tech: string; price: number; desc: string }
-> = {
-  450: {
-    name: "Tier-1 450W Compact All-Black",
-    w: 1.04,
-    l: 1.76,
-    eff: "20.9%",
-    tech: "Compact All-Black Mono",
-    price: 1_600_000,
-    desc: "Compact All-Black",
-  },
-  550: {
-    name: "Tier-1 550W Mono PERC Bifacial",
-    w: 1.13,
-    l: 2.27,
-    eff: "21.5%",
-    tech: "Half-Cut Mono PERC",
-    price: 1_850_000,
-    desc: "Mono PERC Bifacial",
-  },
-  580: {
-    name: "Bifacial 580W Dual-Glass",
-    w: 1.13,
-    l: 2.38,
-    eff: "22.4%",
-    tech: "Dual-Glass Bifacial",
-    price: 2_150_000,
-    desc: "Bifacial Dual-Glass",
-  },
-};
-
-/**
- * `MODULE_SPECS` memakai daya sebagai kunci internal, sedangkan kontrak memakai
- * kunci katalog `GET /options`; pemetaan ini yang menjembatani keduanya.
- */
-const MODULE_KEYS_BY_POWER: Record<number, string> = {
-  450: "compact_450",
-  550: "mono_perc_550",
-  580: "bifacial_580",
-};
-
-function moduleKeyForPower(power: number): string {
-  return MODULE_KEYS_BY_POWER[power] ?? MODULE_KEYS_BY_POWER[550];
-}
-
-const MODULE_POWERS_BY_KEY: Record<string, number> = Object.fromEntries(
-  Object.entries(MODULE_KEYS_BY_POWER).map(([power, key]) => [key, Number(power)])
-);
-
-/**
- * Golongan tarif studio dipilih lewat harga per kWh, sedangkan server memakai
- * kunci katalog. Opsi yang harganya sama jatuh ke kunci yang sama.
- */
-const TARIFF_KEYS_BY_RATE: Record<number, string> = {
-  1700: "R2",
-  1699.53: "R2",
-  1444.7: "R1",
-  1444.71: "B2",
-  1114.74: "B2",
-  996.74: "B2",
-};
-
-function tariffKeyForRate(rate: number): string {
-  return TARIFF_KEYS_BY_RATE[rate] ?? "R2";
-}
-
-/**
- * Kebalikan peta di atas untuk membuka simulasi tersimpan: kunci tarif server
- * dipetakan ke satu harga yang pasti menghasilkan kunci yang sama saat disimpan
- * ulang.
- */
-const TARIFF_RATES_BY_KEY: Record<string, number> = {
-  R1: 1444.7,
-  R2: 1700,
-  B2: 1444.71,
-};
-
-/**
- * Tanda tangan isi studio, dipakai mendeteksi perubahan yang belum tersimpan.
- *
- * Hanya field yang memengaruhi hasil simulasi yang ikut dihitung: memilih bidang atau
- * membuka panel tidak mengubah apa pun yang akan dikirim ke server, jadi keduanya
- * tidak boleh memicu peringatan keluar.
- */
-function designSignatureOf(input: {
-  facets: RoofFacet[];
-  addressInput: string;
-  monthlyBill: number;
-  plnTariff: number;
-  inverterType: InverterType;
-  sunHour: number;
-  extraTilt: number;
-}): string {
-  return JSON.stringify({
-    facets: input.facets.map((facet) => ({
-      id: facet.id,
-      vertices: getFacetVertices(facet),
-      shape: facet.shape,
-      ridge: facet.ridge,
-      slope: facet.slope,
-      pitch: facet.pitch,
-      azimuth: facet.azimuth,
-      setback: facet.setback,
-      gutter: facet.gutter,
-      rotation: facet.rotation,
-      lat: facet.lat,
-      lng: facet.lng,
-      modulePower: facet.modulePower,
-      orientation: facet.orientation,
-      panelGap: facet.panelGap,
-      customModuleCount: facet.customModuleCount,
-      isSolarPopulated: facet.isSolarPopulated,
-      slotOverrides: facet.slotOverrides,
-    })),
-    addressInput: input.addressInput,
-    monthlyBill: input.monthlyBill,
-    plnTariff: input.plnTariff,
-    inverterType: input.inverterType,
-    sunHour: input.sunHour,
-    extraTilt: input.extraTilt,
-  });
-}
+import {
+  DEFAULT_ROOF_AZIMUTH_DEG,
+  DEFAULT_ROOF_TILT_DEG,
+  FALLBACK_FACET,
+  GEOCODE_TARGET_ZOOM,
+  MODULE_SPECS,
+  PRESET_ADDRESSES,
+  STUDIO_SAVED_PROJECTS,
+  TARIFF_RATES_BY_KEY,
+  buildFacetFromDetectedRoof,
+  buildFacetFromSavedRoof,
+  computeFacetMetrics,
+  computePolygonArea,
+  designSignatureOf,
+  facetPolygonPx,
+  getFacetVertices,
+  insetPolygon,
+  moduleKeyForPower,
+  optimizeFacetConfiguration,
+  pointInPolygon,
+  polygonBounds,
+  polygonInsideImage,
+  polygonPerimeter,
+  roundMeters,
+  slotPolygonPx,
+  tariffKeyForRate,
+  type CadTool,
+  type CvLayer,
+  type DragGroupTarget,
+  type DragMode,
+  type DragState,
+  type EdgeDragState,
+  type EdgeHoverState,
+  type InverterType,
+  type ModuleRecommendation,
+  type Orientation,
+  type PanelSlotItem,
+  type Point2D,
+  type RoofFacet,
+  type RoofShape,
+  type SlotState,
+  type VertexDragState,
+} from "@/lib/studioPhysics";
 
 const ECO_TREE_CONFIGS = [
   // --- Back Hill Layer (9 trees) ---
@@ -348,972 +166,11 @@ function renderTreeSvg(type: "pine" | "oak" | "poplar") {
   );
 }
 
-interface StudioSavedProject {
-  id: string;
-  name: string;
-  address: string;
-  lat: number;
-  lon: number;
-  capacityKwp: number;
-  ridge: number;
-  slope: number;
-  shape: RoofShape;
-  deg: number;
-}
-
-const STUDIO_SAVED_PROJECTS: StudioSavedProject[] = [
-  {
-    id: "proj-baranangsiang",
-    name: "Baranangsiang Indah",
-    address: "Komp. Baranangsiang Indah Blok C, Bogor Timur",
-    lat: -6.6110,
-    lon: 106.8150,
-    capacityKwp: 12.5,
-    ridge: 14.2,
-    slope: 8.0,
-    shape: "rectangle",
-    deg: 8,
-  },
-  {
-    id: "proj-bantarjati",
-    name: "Bantarjati Permai",
-    address: "Jl. Achmad Adnawijaya No. 15, Bogor Utara",
-    lat: -6.5780,
-    lon: 106.8080,
-    capacityKwp: 10.2,
-    ridge: 10.8,
-    slope: 6.4,
-    shape: "rectangle",
-    deg: -6,
-  },
-  {
-    id: "proj-yasmin",
-    name: "Taman Yasmin Sektor 3",
-    address: "Jl. Yasmin Raya No. 88, Bogor Barat",
-    lat: -6.5615,
-    lon: 106.7620,
-    capacityKwp: 6.5,
-    ridge: 11.5,
-    slope: 6.8,
-    shape: "rectangle",
-    deg: 0,
-  },
-  {
-    id: "proj-katulampa",
-    name: "Katulampa Residence",
-    address: "Jl. Katulampa Raya No. 24, Bogor Timur",
-    lat: -6.6230,
-    lon: 106.8280,
-    capacityKwp: 9.8,
-    ridge: 12.0,
-    slope: 7.0,
-    shape: "rectangle",
-    deg: 4,
-  },
-  {
-    id: "proj-menteng",
-    name: "Menteng Asri",
-    address: "Jl. Terapi Raya No. 12, Menteng, Bogor Barat",
-    lat: -6.5825,
-    lon: 106.7760,
-    capacityKwp: 8.3,
-    ridge: 12.48,
-    slope: 7.28,
-    shape: "rectangle",
-    deg: -4,
-  },
-];
-
-const PRESET_ADDRESSES = STUDIO_SAVED_PROJECTS.map((p) => ({
-  label: `${p.name}, ${p.address}`,
-  lat: p.lat,
-  lon: p.lon,
-  ridge: p.ridge,
-  slope: p.slope,
-  shape: p.shape,
-  deg: p.deg,
-}));
-
-function computePolygonArea(vertices: Point2D[]): number {
-  if (!vertices || vertices.length < 3) return 0;
-  let area = 0;
-  for (let i = 0; i < vertices.length; i++) {
-    const j = (i + 1) % vertices.length;
-    area += vertices[i].x * vertices[j].y;
-    area -= vertices[j].x * vertices[i].y;
-  }
-  return Math.abs(area) / 2;
-}
-
-function pointInPolygon(pt: Point2D, poly: Point2D[]): boolean {
-  if (!poly || poly.length < 3) return true;
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x;
-    const yi = poly[i].y;
-    const xj = poly[j].x;
-    const yj = poly[j].y;
-    const intersect =
-      yi > pt.y !== yj > pt.y &&
-      pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-// ---------------------------------------------------------------------------
-// Polygon geometry helpers (all coordinates in meters, facet-local frame)
-// ---------------------------------------------------------------------------
-
-function polygonBounds(poly: Point2D[]) {
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const p of poly) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
-}
-
-function polygonPerimeter(poly: Point2D[]): number {
-  let p = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-    p += Math.hypot(b.x - a.x, b.y - a.y);
-  }
-  return p;
-}
-
-function signedArea(poly: Point2D[]): number {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const j = (i + 1) % poly.length;
-    a += poly[i].x * poly[j].y - poly[j].x * poly[i].y;
-  }
-  return a / 2;
-}
-
-/** 
- * Inward offset of a polygon by distance d.
- * Uses miter offset first, but if lines cross, invert, or collapse on irregular/acute vertices,
- * seamlessly falls back to centroid-directed inward scaling so the setback boundary and usable interior
- * always exist, preserve the polygon's exact shape, and never drop to 0.
- */
-function insetPolygon(poly: Point2D[], d: number): Point2D[] {
-  const n = poly.length;
-  if (n < 3 || d <= 0) return poly;
-  const originalSign = signedArea(poly);
-  const origArea = Math.abs(originalSign);
-  if (origArea < 1e-4) return poly;
-
-  // Compute centroid as guaranteed fallback reference
-  const cx = poly.reduce((s, p) => s + p.x, 0) / n;
-  const cy = poly.reduce((s, p) => s + p.y, 0) / n;
-  const avgDist = poly.reduce((s, p) => s + Math.hypot(p.x - cx, p.y - cy), 0) / n;
-
-  const fallbackScale = (): Point2D[] => {
-    const s = Math.max(0.15, 1 - d / Math.max(avgDist, d * 1.25));
-    return poly.map((p) => ({
-      x: Math.round((cx + (p.x - cx) * s) * 1000) / 1000,
-      y: Math.round((cy + (p.y - cy) * s) * 1000) / 1000,
-    }));
-  };
-
-  // Interior is on the left of each edge for CCW (positive area in y-down screen = CW visually)
-  const sign = originalSign > 0 ? 1 : -1;
-  const lines: { px: number; py: number; dx: number; dy: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % n];
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    const dx = (b.x - a.x) / len;
-    const dy = (b.y - a.y) / len;
-    const nx = -dy * sign;
-    const ny = dx * sign;
-    lines.push({ px: a.x + nx * d, py: a.y + ny * d, dx, dy });
-  }
-
-  const out: Point2D[] = [];
-  for (let i = 0; i < n; i++) {
-    const l1 = lines[(i - 1 + n) % n];
-    const l2 = lines[i];
-    const denom = l1.dx * l2.dy - l1.dy * l2.dx;
-    const v = poly[i];
-    if (Math.abs(denom) < 1e-7) {
-      out.push({ x: l2.px, y: l2.py });
-      continue;
-    }
-    const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / denom;
-    let x = l1.px + l1.dx * t;
-    let y = l1.py + l1.dy * t;
-    // Clamp miter spikes on very sharp corners
-    const dist = Math.hypot(x - v.x, y - v.y);
-    const maxMiter = d * 2.8;
-    if (dist > maxMiter) {
-      x = v.x + ((x - v.x) / dist) * maxMiter;
-      y = v.y + ((y - v.y) / dist) * maxMiter;
-    }
-    out.push({ x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 });
-  }
-
-  // Prevent inverted, collapsed, or distorted insets: fallback to robust centroid-scaled inset
-  const newSign = signedArea(out);
-  const newArea = Math.abs(newSign);
-  if (newSign * sign <= 0 || newArea < 0.1 * origArea || newArea > origArea) {
-    return fallbackScale();
-  }
-  return out;
-}
-
-/** Horizontal inside-intervals of the polygon at scanline y. */
-function scanlineIntervals(poly: Point2D[], y: number): [number, number][] {
-  const xs: number[] = [];
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i];
-    const b = poly[j];
-    if (a.y > y !== b.y > y) {
-      xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
-    }
-  }
-  xs.sort((p, q) => p - q);
-  const res: [number, number][] = [];
-  for (let k = 0; k + 1 < xs.length; k += 2) res.push([xs[k], xs[k + 1]]);
-  return res;
-}
-
-function intersectIntervals(a: [number, number][], b: [number, number][]): [number, number][] {
-  const res: [number, number][] = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    const lo = Math.max(a[i][0], b[j][0]);
-    const hi = Math.min(a[i][1], b[j][1]);
-    if (hi > lo) res.push([lo, hi]);
-    if (a[i][1] < b[j][1]) i++;
-    else j++;
-  }
-  return res;
-}
-
-/** x-intervals where a full-height vertical segment spanning [yTop, yBot] stays inside the polygon. */
-function bandIntervals(poly: Point2D[], yTop: number, yBot: number): [number, number][] {
-  const eps = 1e-6;
-  const samples = [yTop + eps, yBot - eps, (yTop + yBot) / 2];
-  for (const v of poly) {
-    if (v.y > yTop && v.y < yBot) samples.push(v.y - eps, v.y + eps);
-  }
-  let res = scanlineIntervals(poly, samples[0]);
-  for (let k = 1; k < samples.length && res.length > 0; k++) {
-    res = intersectIntervals(res, scanlineIntervals(poly, samples[k]));
-  }
-  return res;
-}
-
-function segmentsIntersect(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): boolean {
-  const d = (a: Point2D, b: Point2D, c: Point2D) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  const d1 = d(p3, p4, p1);
-  const d2 = d(p3, p4, p2);
-  const d3 = d(p1, p2, p3);
-  const d4 = d(p1, p2, p4);
-  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
-}
-
-/** Exact test: axis-aligned rectangle fully inside a simple polygon. */
-function rectInsidePolygon(poly: Point2D[], x0: number, y0: number, x1: number, y1: number): boolean {
-  const corners: Point2D[] = [
-    { x: x0, y: y0 },
-    { x: x1, y: y0 },
-    { x: x1, y: y1 },
-    { x: x0, y: y1 },
-  ];
-  for (const c of corners) if (!pointInPolygon(c, poly)) return false;
-  for (const v of poly) {
-    if (v.x > x0 && v.x < x1 && v.y > y0 && v.y < y1) return false;
-  }
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-    for (let k = 0; k < 4; k++) {
-      if (segmentsIntersect(a, b, corners[k], corners[(k + 1) % 4])) return false;
-    }
-  }
-  return true;
-}
-
-interface PackOptions {
-  panelW: number;
-  panelL: number;
-  gap: number;
-  margin: number;
-  marginBottom: number;
-}
-
-const PACK_CACHE = new Map<string, { slots: PanelSlotItem[]; rows: number; cols: number }>();
-
-/**
- * Packs intact solar modules inside an arbitrary polygon (triangles, trapezoids, L-shapes, rectangles).
- * Uses inset polygon clearance for setback, tests multi-phase vertical sweeps and adaptive horizontal alignments
- * (both column-grid snapped and interval-centered) to maximize whole module count without clipping or distortion.
- */
-function packPanelsInPolygon(poly: Point2D[], opts: PackOptions) {
-  const key = `${poly.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(";")}|${opts.panelW}|${opts.panelL}|${opts.gap}|${opts.margin}|${opts.marginBottom}`;
-  const cached = PACK_CACHE.get(key);
-  if (cached) return cached;
-
-  const { panelW, panelL, gap, margin, marginBottom } = opts;
-  let usablePoly = margin > 0 ? insetPolygon(poly, margin) : poly;
-  if (!usablePoly || usablePoly.length < 3) {
-    usablePoly = poly;
-  }
-
-  let b = polygonBounds(usablePoly);
-  const stepX = panelW + gap;
-  const stepY = panelL + gap;
-  let extraBottom = Math.max(0, marginBottom - margin);
-
-  // Adaptive margin fallback if polygon bounds are tight
-  if (b.height < panelL + extraBottom && margin > 0.1) {
-    usablePoly = insetPolygon(poly, margin * 0.4);
-    b = polygonBounds(usablePoly);
-    extraBottom = 0;
-  }
-  if (b.height < panelL) {
-    usablePoly = poly;
-    b = polygonBounds(usablePoly);
-    extraBottom = 0;
-  }
-
-  const availH = b.height;
-  if (availH < panelL - 1e-9) {
-    return { slots: [], rows: 0, cols: 0 };
-  }
-
-  const maxPossibleRows = Math.max(0, Math.floor((availH - extraBottom + gap) / stepY + 1e-9));
-  if (maxPossibleRows <= 0) {
-    return { slots: [], rows: 0, cols: 0 };
-  }
-
-  const totalGridH = maxPossibleRows * stepY - gap;
-  const centeredPhase = Math.max(0, (availH - extraBottom - totalGridH) / 2);
-
-  // Candidate vertical phases: centered first (preserves symmetry), top-flush, bottom-flush, plus intermediate sweeps
-  const phases = [centeredPhase, 0, Math.max(0, availH - extraBottom - totalGridH)];
-  const PHASE_STEPS = 10;
-  for (let k = 1; k < PHASE_STEPS; k++) {
-    const ph = (k / PHASE_STEPS) * stepY;
-    if (ph < availH - extraBottom - panelL) {
-      phases.push(ph);
-    }
-  }
-
-  const nColsGlobal = Math.max(0, Math.floor((b.width + gap) / stepX + 1e-9));
-  const gridX0 = b.minX + Math.max(0, (b.width - (nColsGlobal * stepX - gap)) / 2);
-
-  let best: PanelSlotItem[] = [];
-  let bestRows = 0;
-  let bestCols = 0;
-
-  for (const phase of phases) {
-    for (const alignMode of ["grid", "center"] as const) {
-      const slots: PanelSlotItem[] = [];
-      let rowIdx = 0;
-      let maxCols = 0;
-
-      for (
-        let yTop = b.minY + phase;
-        yTop + panelL <= b.maxY - extraBottom + 1e-9;
-        yTop += stepY
-      ) {
-        const intervals = bandIntervals(usablePoly, yTop, yTop + panelL);
-        let c = 0;
-
-        for (const [l, r] of intervals) {
-          const availW = r - l;
-          if (availW < panelW - 1e-9) continue;
-          const nMax = Math.floor((availW + gap) / stepX + 1e-9);
-          if (nMax <= 0) continue;
-          const runW = nMax * stepX - gap;
-          const slack = availW - runW;
-
-          let start = l + slack / 2; // centered alignment
-          if (alignMode === "grid") {
-            const snapped = gridX0 + Math.ceil((l - gridX0) / stepX - 1e-9) * stepX;
-            if (snapped >= l - 1e-9 && snapped + runW <= r + 1e-9) {
-              start = snapped;
-            }
-          }
-
-          for (let i = 0; i < nMax; i++) {
-            const x0 = start + i * stepX;
-            const x1 = x0 + panelW;
-            if (!rectInsidePolygon(usablePoly, x0, yTop, x1, yTop + panelL)) continue;
-
-            slots.push({
-              r: rowIdx,
-              c,
-              key: `${rowIdx}_${c}`,
-              x: x0 + panelW / 2,
-              y: yTop + panelL / 2,
-              w: panelW,
-              l: panelL,
-            });
-            c++;
-          }
-        }
-
-        if (c > 0) {
-          maxCols = Math.max(maxCols, c);
-          rowIdx++;
-        }
-      }
-
-      if (slots.length > best.length) {
-        best = slots;
-        bestRows = rowIdx;
-        bestCols = maxCols;
-      }
-    }
-  }
-
-  const result = { slots: best, rows: Math.max(1, bestRows), cols: Math.max(1, bestCols) };
-  if (PACK_CACHE.size > 300) PACK_CACHE.clear();
-  PACK_CACHE.set(key, result);
-  return result;
-}
-
-function rotatePoint(p: Point2D, rad: number): Point2D {
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: p.x * cos - p.y * sin,
-    y: p.x * sin + p.y * cos,
-  };
-}
-
-function rotatePolygon(poly: Point2D[], rad: number): Point2D[] {
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return poly.map((p) => ({
-    x: p.x * cos - p.y * sin,
-    y: p.x * sin + p.y * cos,
-  }));
-}
-
-function getFacetVertices(facet: RoofFacet): Point2D[] {
-  if (facet.vertices && facet.vertices.length >= 3) {
-    return facet.vertices;
-  }
-  const w2 = facet.ridge / 2;
-  const h2 = facet.slope / 2;
-  if (facet.shape === "l-shape") {
-    return [
-      { x: -w2, y: -h2 },
-      { x: w2 * 0.3, y: -h2 },
-      { x: w2 * 0.3, y: -h2 * 0.16 },
-      { x: w2, y: -h2 * 0.16 },
-      { x: w2, y: h2 },
-      { x: -w2, y: h2 },
-    ];
-  }
-  if (facet.shape === "trapezoid") {
-    return [
-      { x: -w2 * 0.7, y: -h2 },
-      { x: w2 * 0.7, y: -h2 },
-      { x: w2, y: h2 },
-      { x: -w2, y: h2 },
-    ];
-  }
-  return [
-    { x: -w2, y: -h2 },
-    { x: w2, y: -h2 },
-    { x: w2, y: h2 },
-    { x: -w2, y: h2 },
-  ];
-}
-
-/**
- * Bidang contoh yang hanya dipakai sebagai bentuk cadangan ketika daftar bidang
- * masih kosong, mis. sebelum pengguna menjalankan pindai AI. Studio sendiri
- * mulai tanpa bidang apa pun supaya seluruh bidang berasal dari hasil deteksi.
- */
-const FALLBACK_FACET: RoofFacet = {
-  id: "facet-fallback",
-  name: "Bidang Atap",
-  shape: "rectangle",
-  ridge: 12.48,
-  slope: 7.28,
-  pitch: 22,
-  azimuth: 188,
-  setback: 0.5,
-  gutter: 0.6,
-  rotation: 0,
-  lat: -6.611,
-  lng: 106.815,
-  offsetX: 0,
-  offsetY: 0,
-  hasHvac: false,
-  hasSkylight: false,
-  modulePower: 550,
-  orientation: "portrait",
-  panelGap: 3,
-  slotOverrides: {},
-  customModuleCount: null,
-  vertices: [
-    { x: -6.24, y: -3.64 },
-    { x: 6.24, y: -3.64 },
-    { x: 6.24, y: 3.64 },
-    { x: -6.24, y: 3.64 },
-  ],
-  alignToAzimuth: true,
-  isSolarPopulated: false,
-};
-
-
-/**
- * Kemiringan dan azimuth adalah masukan pengguna, bukan hasil deteksi: dari satu
- * citra nadir arah kemiringan tidak dapat ditentukan. Keduanya diisi nilai awal
- * studio supaya panel properti langsung punya bentuk yang bisa dibaca.
- */
-/** Zoom tujuan setelah alamat ditemukan: cukup dekat untuk memilih atap. */
-const GEOCODE_TARGET_ZOOM = 19;
-
-const DEFAULT_ROOF_TILT_DEG = 22;
-const DEFAULT_ROOF_AZIMUTH_DEG = 188;
-
-function roundMeters(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/**
- * Mengubah bidang hasil deteksi menjadi `RoofFacet`.
- *
- * `polygon_px` diterjemahkan langsung memakai `meters_per_pixel` dari respons
- * deteksi, bukan dihitung ulang dari skala peta. Titik tengah `bbox_px` menjadi
- * acuan `lat`/`lng` lewat rumus piksel→geografis kontrak, sehingga konversi balik
- * saat menyimpan simulasi menghasilkan piksel yang sama persis walaupun peta
- * sudah digeser.
- *
- * `rotation` selalu 0 karena `vertices` sudah berada di frame piksel tangkapan.
- */
-function buildFacetFromDetectedRoof(
-  roof: DetectedRoof,
-  image: CapturedImage,
-  index: number
-): RoofFacet {
-  const centerX = (roof.bbox_px.x1 + roof.bbox_px.x2) / 2;
-  const centerY = (roof.bbox_px.y1 + roof.bbox_px.y2) / 2;
-  const metersPerPixel = image.meters_per_pixel;
-
-  const vertices: Point2D[] = roof.polygon_px.map(([x, y]) => ({
-    x: Math.round((x - centerX) * metersPerPixel * 1000) / 1000,
-    y: Math.round((y - centerY) * metersPerPixel * 1000) / 1000,
-  }));
-
-  const bounds = polygonBounds(vertices);
-  const [minLng, minLat, maxLng, maxLat] = image.bbox;
-
-  return {
-    id: roof.id,
-    name: `Bidang Atap ${index + 1}`,
-    shape: "custom_polygon",
-    ridge: Math.max(0.1, roundMeters(bounds.width)),
-    slope: Math.max(0.1, roundMeters(bounds.height)),
-    pitch: DEFAULT_ROOF_TILT_DEG,
-    azimuth: DEFAULT_ROOF_AZIMUTH_DEG,
-    setback: 0.5,
-    gutter: 0.5,
-    rotation: 0,
-    lat: maxLat - (centerY / image.height) * (maxLat - minLat),
-    lng: minLng + (centerX / image.width) * (maxLng - minLng),
-    offsetX: 0,
-    offsetY: 0,
-    hasHvac: false,
-    hasSkylight: false,
-    modulePower: 550,
-    orientation: "portrait",
-    panelGap: 3,
-    slotOverrides: {},
-    customModuleCount: null,
-    vertices,
-    alignToAzimuth: true,
-    // Bidang hasil deteksi sudah punya geometri yang pasti, jadi tata letak panel
-    // langsung diisi. Tombol "Susun Tata Letak Panel Otomatis" tetap tersedia untuk
-    // menyusun ulang setelah parameter diubah.
-    isSolarPopulated: true,
-  };
-}
-
-/**
- * Membangun kembali bidang studio dari simulasi yang tersimpan.
- *
- * Yang dipakai adalah `roof_polygon_px` asli bersama georeferensi tangkapan, bukan
- * kotak pembatasnya: bentuk atap, termasuk bentuk L dan poligon bebas, kembali
- * persis seperti saat disimpan. Parameter per bidang juga dibaca dari baris
- * tersimpan, sehingga kemiringan, azimuth, modul, dan penanda rintangan tidak
- * perlu diisi ulang.
- */
-function buildFacetFromSavedRoof(
-  roof: SimulationDetail["roofs"][number],
-  imagery: NonNullable<SimulationDetail["imagery"]>,
-  index: number
-): RoofFacet {
-  const metersPerPixel = imagery.meters_per_pixel ?? 0.3;
-  const [minLng, , , maxLat] = imagery.bbox;
-  const centerX = imagery.width / 2;
-  const centerY = imagery.height / 2;
-
-  // Poligon mentah relatif titik tengah tangkapan, lalu dipusatkan pada titik
-  // tengah poligon itu sendiri. Titik acuan tidak lagi selalu titik tengah
-  // tangkapan, sehingga bidang di pinggir kembali ke tempat aslinya.
-  const captured: Point2D[] = roof.roof_polygon_px.map(([x, y]) => ({
-    x: (x - centerX) * metersPerPixel,
-    y: (y - centerY) * metersPerPixel,
-  }));
-  const capturedBounds = polygonBounds(captured);
-  const localCenterX = capturedBounds.minX + capturedBounds.width / 2;
-  const localCenterY = capturedBounds.minY + capturedBounds.height / 2;
-  const anchorX = centerX + localCenterX / metersPerPixel;
-  const anchorY = centerY + localCenterY / metersPerPixel;
-
-  // Rotasi disimpan terpisah dan `vertices` dikembalikan tanpa rotasi: konverter
-  // menerapkan `rotation` lagi saat menyimpan, jadi poligon yang dikirim ulang
-  // sama persis dengan yang tersimpan.
-  const rotation = roof.facet_rotation_deg ?? 0;
-  const radians = (rotation * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const vertices: Point2D[] = captured.map((point) => {
-    const dx = point.x - localCenterX;
-    const dy = point.y - localCenterY;
-
-    return {
-      x: Math.round((dx * cos + dy * sin) * 1000) / 1000,
-      y: Math.round((-dx * sin + dy * cos) * 1000) / 1000,
-    };
-  });
-
-  const bounds = polygonBounds(vertices);
-  const modulePower = MODULE_POWERS_BY_KEY[roof.input.module_key] ?? 550;
-
-  return {
-    id: `saved-${roof.detection_id ?? index}-${index}`,
-    name: roof.label ?? `Bidang Atap ${index + 1}`,
-    shape: roof.shape ?? "custom_polygon",
-    ridge: Math.max(0.1, roundMeters(bounds.width)),
-    slope: Math.max(0.1, roundMeters(bounds.height)),
-    pitch: roof.input.tilt_deg,
-    azimuth: roof.input.azimuth_deg,
-    setback: roof.input.setback_m,
-    gutter: roof.input.gutter_m,
-    rotation,
-    lat: maxLat - (anchorY / imagery.height) * (imagery.bbox[3] - imagery.bbox[1]),
-    lng: minLng + (anchorX / imagery.width) * (imagery.bbox[2] - imagery.bbox[0]),
-    offsetX: 0,
-    offsetY: 0,
-    hasHvac: roof.has_hvac ?? false,
-    hasSkylight: roof.has_skylight ?? false,
-    modulePower,
-    orientation: roof.input.orientation,
-    panelGap: Math.round(roof.input.clearance_m * 100),
-    slotOverrides: roof.slot_overrides ?? {},
-    customModuleCount: roof.input.panel_count,
-    vertices,
-    alignToAzimuth: roof.align_to_azimuth ?? true,
-    isSolarPopulated: roof.is_solar_populated ?? true,
-  };
-}
-
-/**
- * Satu titik pada kerangka lokal facet (meter) menjadi piksel tangkapan.
- *
- * Rotasi facet diterapkan lebih dulu karena `vertices` disimpan tanpa rotasi,
- * sedangkan tampilan dan payload memakai poligon yang sudah diputar.
- */
-function facetPointToPx(point: Point2D, facet: RoofFacet, image: CapturedImage): PixelPoint {
-  const [minLng, minLat, maxLng, maxLat] = image.bbox;
-  const anchorX = ((facet.lng - minLng) / (maxLng - minLng)) * image.width;
-  const anchorY = ((maxLat - facet.lat) / (maxLat - minLat)) * image.height;
-  const radians = (facet.rotation * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const metersPerPixel = image.meters_per_pixel;
-
-  return [
-    Math.round((anchorX + (point.x * cos - point.y * sin) / metersPerPixel) * 1000) / 1000,
-    Math.round((anchorY + (point.x * sin + point.y * cos) / metersPerPixel) * 1000) / 1000,
-  ];
-}
-
-/**
- * Kebalikan `buildFacetFromDetectedRoof`: poligon piksel tangkapan untuk payload
- * simulasi.
- */
-function facetPolygonPx(facet: RoofFacet, image: CapturedImage): PixelPoint[] {
-  return getFacetVertices(facet).map((vertex) => facetPointToPx(vertex, facet, image));
-}
-
-/**
- * Poligon satu slot rintangan dalam piksel tangkapan.
- *
- * Slot disimpan di kerangka lokal facet tanpa rotasi kisi, sedangkan sudut
- * modulnya membawa rotasi itu. Keduanya diterapkan di sini supaya geometri yang
- * dikirim server benar-benar menutupi tempat modul digambar.
- */
-function slotPolygonPx(slot: PanelSlotItem, facet: RoofFacet, image: CapturedImage): PixelPoint[] {
-  const radians = ((slot.rotationDeg ?? 0) * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const halfWidth = slot.w / 2;
-  const halfLength = slot.l / 2;
-
-  return [
-    [-halfWidth, -halfLength],
-    [halfWidth, -halfLength],
-    [halfWidth, halfLength],
-    [-halfWidth, halfLength],
-  ].map(([dx, dy]) =>
-    facetPointToPx(
-      {
-        x: slot.x + dx * cos - dy * sin,
-        y: slot.y + dx * sin + dy * cos,
-      },
-      facet,
-      image
-    )
-  );
-}
-
-/** Kontrak menolak poligon yang keluar dari batas berkas tangkapan. */
-function polygonInsideImage(points: PixelPoint[], image: CapturedImage): boolean {
-  const tolerance = 1;
-
-  return points.every(
-    ([x, y]) =>
-      x >= -tolerance &&
-      y >= -tolerance &&
-      x <= image.width + tolerance &&
-      y <= image.height + tolerance
-  );
-}
-
-function computeFacetMetrics(
-  facet: RoofFacet,
-  sunHour: number,
-  obstacleFilterActive: boolean,
-  extraTilt: number,
-  inverterType: InverterType
-) {
-  const peakSunHours = sunHour === 9 ? 3.8 : sunHour === 15 ? 3.9 : 4.85;
-
-  // 1. Pitch & Incident Angle Physics
-  const pitchRad = (facet.pitch * Math.PI) / 180;
-  const pitchCosine = Math.cos(pitchRad).toFixed(2);
-  const pitchFactor = Math.cos(((facet.pitch - 22) * Math.PI) / 180);
-  const pitchEff = Math.max(0.85, Math.min(1.0, 0.92 + pitchFactor * 0.08));
-  const pitchEffPct = Math.round(pitchEff * 100);
-
-  // 2. Azimuth Compass Physics (188° is optimal SSW in tropical Indonesia)
-  const azDev = Math.abs(facet.azimuth - 188);
-  const azimuthEff = Math.max(0.82, Math.min(1.0, 1.0 - (azDev / 180) * 0.15));
-  const azimuthEffPct = (azimuthEff * 100).toFixed(1);
-
-  // 3. Racking Extra Tilt (Self-cleaning rain runoff bonus)
-  const rackingBonus = 1.0 + (extraTilt / 20) * 0.02;
-
-  // 4. Roof Geometry & Usable Area (true polygon geometry for every shape)
-  const vertices = getFacetVertices(facet);
-  const setback = Math.max(0, facet.setback ?? 0.3);
-  const gutter = facet.shape === "rectangle" ? Math.max(0, facet.gutter ?? 0.3) : 0;
-  const bounds = polygonBounds(vertices);
-  const usableRidge = Math.max(0, bounds.width - 2 * setback);
-  const usableSlope = Math.max(0, bounds.height - setback * 2 - gutter);
-  const grossArea = computePolygonArea(vertices);
-  const insetPoly = insetPolygon(vertices, setback);
-  const rawInsetArea = computePolygonArea(insetPoly);
-  const fallbackNetArea = grossArea * Math.max(0.45, 1 - (setback * 2) / Math.max(bounds.width, bounds.height, 1));
-  const netArea = facet.shape !== "rectangle"
-    ? Math.max(0.1, rawInsetArea > 0.05 * grossArea ? rawInsetArea : fallbackNetArea)
-    : Math.max(0.1, Math.min(grossArea, usableRidge * usableSlope));
-  const netAreaPct = grossArea > 0 ? Math.min(100, Math.round((netArea / grossArea) * 100)) : 0;
-
-  // 5. Module Layout Packing (intact modules fitted to the exact polygon outline)
-  const currentSpec = MODULE_SPECS[facet.modulePower] || MODULE_SPECS[550];
-  const gapM = facet.panelGap / 100;
-
-  // Azimuth orientation integration:
-  // When alignToAzimuth is active (default true), the array grid and individual modules rotate to face solar Azimuth
-  const alignToAzimuth = facet.alignToAzimuth ?? true;
-  const rawAngle = alignToAzimuth ? facet.azimuth - 180 - (facet.rotation || 0) : 0;
-  let panelAngleDeg = ((rawAngle + 180) % 360) - 180;
-  if (panelAngleDeg < -180) panelAngleDeg += 360;
-  const isAngleActive = Math.abs(panelAngleDeg) >= 0.5;
-  const rad = (panelAngleDeg * Math.PI) / 180;
-
-  const targetPoly = isAngleActive ? rotatePolygon(vertices, -rad) : vertices;
-
-  const packOptsPortrait = {
-    panelW: currentSpec.w,
-    panelL: currentSpec.l,
-    gap: gapM,
-    margin: setback,
-    marginBottom: setback + gutter,
-  };
-
-  const packOptsLandscape = {
-    panelW: currentSpec.l,
-    panelL: currentSpec.w,
-    gap: gapM,
-    margin: setback,
-    marginBottom: setback + gutter,
-  };
-
-  const rawPackedPortrait = packPanelsInPolygon(targetPoly, packOptsPortrait);
-  const rawPackedLandscape = packPanelsInPolygon(targetPoly, packOptsLandscape);
-
-  const applySlotRotation = (packedRes: { slots: PanelSlotItem[]; rows: number; cols: number }) => {
-    if (!isAngleActive) return packedRes;
-    const transformedSlots = packedRes.slots.map((slot) => {
-      const unrot = rotatePoint({ x: slot.x, y: slot.y }, rad);
-      return {
-        ...slot,
-        x: unrot.x,
-        y: unrot.y,
-        rotationDeg: Math.round(panelAngleDeg * 10) / 10,
-      };
-    });
-    return {
-      ...packedRes,
-      slots: transformedSlots,
-    };
-  };
-
-  const packedPortrait = applySlotRotation(rawPackedPortrait);
-  const packedLandscape = applySlotRotation(rawPackedLandscape);
-
-  const portraitSlotsCount = packedPortrait.slots.length;
-  const landscapeSlotsCount = packedLandscape.slots.length;
-  const bestOrientation: Orientation = landscapeSlotsCount > portraitSlotsCount ? "landscape" : "portrait";
-
-  const packed = facet.orientation === "landscape" ? packedLandscape : packedPortrait;
-  const rawSlots: PanelSlotItem[] = packed.slots;
-  const cols = packed.cols;
-  const rows = packed.rows;
-  const obstacleRow = Math.min(rows - 1, 1);
-  const obstacleCol = Math.max(1, Math.floor((cols - 2) / 2));
-
-  const totalValidSlots = rawSlots.length;
-
-  // Separate slots into obstacle/fixed overrides vs candidate panel slots
-  const candidateIndices: number[] = [];
-  const slotStates: SlotState[] = new Array(totalValidSlots);
-
-  rawSlots.forEach((slot, idx) => {
-    const override = facet.slotOverrides[slot.key];
-    if (override) {
-      slotStates[idx] = override;
-    } else if (
-      facet.hasHvac &&
-      obstacleFilterActive &&
-      slot.r === obstacleRow &&
-      (slot.c === obstacleCol || slot.c === obstacleCol + 1)
-    ) {
-      slotStates[idx] = "hvac";
-    } else if (facet.hasSkylight && slot.r === 0 && slot.c === Math.min(1, cols - 1)) {
-      slotStates[idx] = "skylight";
-    } else {
-      // Unassigned candidate slot
-      candidateIndices.push(idx);
-    }
-  });
-
-  // Count how many are forced active by explicit user slotOverrides
-  const forcedActiveCount = slotStates.filter((s) => s === "active").length;
-  const totalAvailable = forcedActiveCount + candidateIndices.length;
-
-  const targetTotal =
-    facet.customModuleCount !== null
-      ? Math.max(0, Math.min(totalAvailable, facet.customModuleCount))
-      : totalAvailable;
-
-  const remainingToActivate = Math.max(0, targetTotal - forcedActiveCount);
-
-  candidateIndices.forEach((slotIdx, i) => {
-    if (i < remainingToActivate) {
-      slotStates[slotIdx] = "active";
-    } else {
-      slotStates[slotIdx] = "empty";
-    }
-  });
-
-  const validSlots: PanelSlotItem[] = rawSlots.map((slot, idx) => ({
-    ...slot,
-    state: slotStates[idx],
-  }));
-
-  const isPopulated = facet.isSolarPopulated !== false;
-  const potentialModules = validSlots.filter((s) => s.state === "active").length;
-  const potentialKwp = (potentialModules * facet.modulePower) / 1000;
-  const modulesFitted = isPopulated ? potentialModules : 0;
-
-  const actualKwp = (modulesFitted * facet.modulePower) / 1000;
-  const totalPanelAreaM2 = modulesFitted * currentSpec.w * currentSpec.l;
-  const densityPct = netArea > 0 ? Math.min(100, Math.round((totalPanelAreaM2 / netArea) * 100)) : 0;
-
-  // 6. Inverter Performance
-  const inverterEff = inverterType === "string" ? 0.984 : 0.975;
-  const dcAcRatio = actualKwp > 0 ? (actualKwp / Math.max(1, Math.ceil(actualKwp / 5) * 4.5)).toFixed(2) : "1.22";
-  const inverterEffPct = inverterType === "string" ? "98.4%" : "97.5%";
-
-  // 7. Energy Production & Load Coverage
-  const combinedFactor = pitchEff * azimuthEff * rackingBonus * inverterEff;
-  const annualProductionKwh = actualKwp * peakSunHours * 365 * 0.82 * combinedFactor;
-  const monthlyGenKwh = annualProductionKwh / 12;
-
-  // 8. Cost Breakdown for this facet
-  const costModules = modulesFitted * currentSpec.price;
-  const costInverter = inverterType === "string" ? actualKwp * 1_200_000 : modulesFitted * 1_100_000;
-  const costRacking = modulesFitted * 350_000;
-  const facetCapex = costModules + costInverter + costRacking;
-
-  return {
-    grossArea,
-    usableRidge,
-    usableSlope,
-    netArea,
-    netAreaPct,
-    cols,
-    rows,
-    validSlots,
-    totalValidSlots,
-    modulesFitted,
-    potentialModules,
-    potentialKwp,
-    isPopulated,
-    actualKwp,
-    densityPct,
-    pitchCosine,
-    pitchEffPct,
-    azimuthEffPct,
-    dcAcRatio,
-    inverterEffPct,
-    annualProductionKwh,
-    monthlyGenKwh,
-    costModules,
-    costInverter,
-    costRacking,
-    facetCapex,
-    currentSpec,
-    portraitSlotsCount,
-    landscapeSlotsCount,
-    bestOrientation,
-    panelAngleDeg,
-    alignToAzimuth,
-  };
+type WindowWithLeaflet = Window & { L?: typeof LeafletNS };
+
+function getWindowLeaflet(): typeof LeafletNS | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as WindowWithLeaflet).L;
 }
 
 function StudioPageContent() {
@@ -1465,22 +322,47 @@ function StudioPageContent() {
 
   // Background Leaflet Map refs & status
   const [mapLoaded, setMapLoaded] = useState(false);
-  const mapInstanceRef = useRef<any>(null);
-  const esriSatelliteLayerRef = useRef<any>(null);
-  const osmStreetLayerRef = useRef<any>(null);
-  const labelsLayerRef = useRef<any>(null);
+  const [mapInstance, setMapInstance] = useState<LeafletNS.Map | null>(null);
+  const mapInstanceRef = useRef<LeafletNS.Map | null>(null);
+  const esriSatelliteLayerRef = useRef<LeafletNS.TileLayer | null>(null);
+  const osmStreetLayerRef = useRef<LeafletNS.TileLayer | null>(null);
+  const labelsLayerRef = useRef<LeafletNS.TileLayer | null>(null);
 
   // Layer bidang kandidat hasil deteksi, dikunci per id bidang.
-  const detectionLayersRef = useRef<Map<string, any>>(new Map());
+  const detectionLayersRef = useRef<Map<string, LeafletNS.Polygon>>(new Map());
+
+  // Other Studio System Parameters (dideklarasikan di atas efek pemulihan `?analysis=`)
+  const [extraTilt, setExtraTilt] = useState(10);
+  const [shadingLossPct, setShadingLossPct] = useState(0);
+  const [inverterType, setInverterType] = useState<InverterType>("string");
+  const [plnTariff, setPlnTariff] = useState(1700);
+  const [monthlyBill, setMonthlyBill] = useState(2_800_000);
+
+  /*
+   * Pembanding rancangan tersimpan (`null` = belum ditetapkan; ditetapkan sekali saat
+   * mount dari rancangan kosong, lalu diperbarui saat simpan atau pemulihan `?analysis=`).
+   */
+  const savedDesignSignatureRef = useRef<string | null>(null);
+
+  // Toast notification timer
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((msg: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setCadToast(msg);
+    toastTimeoutRef.current = setTimeout(() => {
+      setCadToast(null);
+    }, 3400);
+  }, []);
 
   // Exact Real-World Physical Scale (Pixels per meter based on Web Mercator & Latitude)
   const pixelsPerMeter = useMemo(() => {
-    if (mapInstanceRef.current) {
+    void mapTick;
+    void mapLoaded;
+    if (mapInstance) {
       try {
-        const map = mapInstanceRef.current;
-        const center = map.getCenter();
+        const center = mapInstance.getCenter();
         const lat = center.lat;
-        const z = map.getZoom();
+        const z = mapInstance.getZoom();
         const metersPerPixel =
           (40075016.686 * Math.abs(Math.cos((lat * Math.PI) / 180))) / Math.pow(2, z + 8);
         return Math.max(1, 1 / metersPerPixel);
@@ -1489,14 +371,16 @@ function StudioPageContent() {
       }
     }
     return 15 * zoomScale;
-  }, [mapTick, zoomScale, mapLoaded]);
+  }, [mapInstance, mapTick, zoomScale, mapLoaded]);
 
   // Screen Position Projection from Leaflet Geographic Coordinates
   const getFacetScreenPosition = useCallback(
     (facet: RoofFacet) => {
-      if (mapInstanceRef.current && facet.lat && facet.lng) {
+      void mapTick;
+      void mapLoaded;
+      if (mapInstance && facet.lat && facet.lng) {
         try {
-          const pt = mapInstanceRef.current.latLngToContainerPoint([facet.lat, facet.lng]);
+          const pt = mapInstance.latLngToContainerPoint([facet.lat, facet.lng]);
           return { x: pt.x, y: pt.y };
         } catch {
           // fallback
@@ -1504,8 +388,7 @@ function StudioPageContent() {
       }
       return null;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mapTick, mapLoaded]
+    [mapInstance, mapTick, mapLoaded]
   );
 
   // Active Facet accessor
@@ -1588,11 +471,11 @@ function StudioPageContent() {
 
       let lat = base.lat;
       let lng = base.lng;
-      if (mapInstanceRef.current && (window as any).L && base.lat && base.lng && (shiftX || shiftY)) {
+      const leaflet = getWindowLeaflet();
+      if (mapInstanceRef.current && leaflet && base.lat && base.lng && (shiftX || shiftY)) {
         try {
-          const L = (window as any).L;
           const pt = mapInstanceRef.current.latLngToContainerPoint([base.lat, base.lng]);
-          const ll = mapInstanceRef.current.containerPointToLatLng(L.point(pt.x + shiftX, pt.y + shiftY));
+          const ll = mapInstanceRef.current.containerPointToLatLng(leaflet.point(pt.x + shiftX, pt.y + shiftY));
           lat = ll.lat;
           lng = ll.lng;
         } catch {
@@ -1621,7 +504,6 @@ function StudioPageContent() {
   useEffect(() => {
     const paramsKey = searchParams.toString();
     if (lastAppliedParamsKeyRef.current === paramsKey) return;
-    lastAppliedParamsKeyRef.current = paramsKey;
 
     const pName = searchParams.get("name");
     const pLat = searchParams.get("lat");
@@ -1634,44 +516,49 @@ function StudioPageContent() {
     const pShape = searchParams.get("shape") as RoofShape | null;
     const pPower = searchParams.get("power");
 
-    if (pName || pLat || pRidge) {
-      if (pName) {
-        setAddressInput(pName);
-      }
-      const latNum = pLat ? Number(pLat) : null;
-      const lngNum = pLng ? Number(pLng) : null;
-      const zoomNum = pZoom ? Number(pZoom) : null;
+    const rafId = requestAnimationFrame(() => {
+      lastAppliedParamsKeyRef.current = paramsKey;
+      if (pName || pLat || pRidge) {
+        if (pName) {
+          setAddressInput(pName);
+        }
+        const latNum = pLat ? Number(pLat) : null;
+        const lngNum = pLng ? Number(pLng) : null;
+        const zoomNum = pZoom ? Number(pZoom) : null;
 
-      if (pRidge || pSlope || pTilt || pRot || pShape || pPower) {
-        setFacets((prev) => {
-          if (prev.length === 0) return prev;
-          const targetId = prev[0].id;
-          return prev.map((f) =>
-            f.id === targetId
-              ? {
-                  ...f,
-                  ...(pName ? { name: pName } : {}),
-                  ...(latNum !== null && !isNaN(latNum) ? { lat: latNum } : {}),
-                  ...(lngNum !== null && !isNaN(lngNum) ? { lng: lngNum } : {}),
-                  ...(pRidge && !isNaN(Number(pRidge)) ? { ridge: Number(pRidge) } : {}),
-                  ...(pSlope && !isNaN(Number(pSlope)) ? { slope: Number(pSlope) } : {}),
-                  ...(pTilt && !isNaN(Number(pTilt)) ? { pitch: Number(pTilt) } : {}),
-                  ...(pRot && !isNaN(Number(pRot)) ? { rotation: Number(pRot) } : {}),
-                  ...(pShape ? { shape: pShape } : {}),
-                  ...(pPower && !isNaN(Number(pPower)) ? { modulePower: Number(pPower) } : {}),
-                }
-              : f
-          );
-        });
-      }
+        if (pRidge || pSlope || pTilt || pRot || pShape || pPower) {
+          setFacets((prev) => {
+            if (prev.length === 0) return prev;
+            const targetId = prev[0].id;
+            return prev.map((f) =>
+              f.id === targetId
+                ? {
+                    ...f,
+                    ...(pName ? { name: pName } : {}),
+                    ...(latNum !== null && !isNaN(latNum) ? { lat: latNum } : {}),
+                    ...(lngNum !== null && !isNaN(lngNum) ? { lng: lngNum } : {}),
+                    ...(pRidge && !isNaN(Number(pRidge)) ? { ridge: Number(pRidge) } : {}),
+                    ...(pSlope && !isNaN(Number(pSlope)) ? { slope: Number(pSlope) } : {}),
+                    ...(pTilt && !isNaN(Number(pTilt)) ? { pitch: Number(pTilt) } : {}),
+                    ...(pRot && !isNaN(Number(pRot)) ? { rotation: Number(pRot) } : {}),
+                    ...(pShape ? { shape: pShape } : {}),
+                    ...(pPower && !isNaN(Number(pPower)) ? { modulePower: Number(pPower) } : {}),
+                  }
+                : f
+            );
+          });
+        }
 
-      if (latNum !== null && lngNum !== null && !isNaN(latNum) && !isNaN(lngNum) && mapInstanceRef.current) {
-        // `zoom` berasal dari `map_zoom` respons server, sehingga proyek tersimpan
-        // terbuka lagi pada tampilan yang sama.
-        const zoom = zoomNum !== null && !isNaN(zoomNum) ? zoomNum : 21;
-        mapInstanceRef.current.setView([latNum, lngNum], zoom);
+        if (latNum !== null && lngNum !== null && !isNaN(latNum) && !isNaN(lngNum) && mapInstanceRef.current) {
+          // `zoom` berasal dari `map_zoom` respons server, sehingga proyek tersimpan
+          // terbuka lagi pada tampilan yang sama.
+          const zoom = zoomNum !== null && !isNaN(zoomNum) ? zoomNum : 21;
+          mapInstanceRef.current.setView([latNum, lngNum], zoom);
+        }
       }
-    }
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [searchParams]);
 
   /**
@@ -1712,18 +599,26 @@ function StudioPageContent() {
         const restoredSunHour = detail.input.sun_hour ?? 12;
         const restoredExtraTilt = detail.input.extra_tilt ?? 10;
         const restoredRate = TARIFF_RATES_BY_KEY[detail.input.tariff_key] ?? 1700;
+        const basePr = 0.82 * (detail.input.inverter_type === "string" ? 0.984 : 0.975);
+        const inferredShadingRaw =
+          detail.assumptions?.performance_ratio && basePr > 0
+            ? Math.round((1 - detail.assumptions.performance_ratio / basePr) * 100)
+            : 0;
+        const restoredShading =
+          inferredShadingRaw >= 15 ? 20 : inferredShadingRaw >= 5 ? 10 : 0;
 
         setInverterType(detail.input.inverter_type);
         setMonthlyBill(detail.input.monthly_bill_idr);
         setPlnTariff(restoredRate);
         setSunHour(restoredSunHour);
         setExtraTilt(restoredExtraTilt);
+        setShadingLossPct(restoredShading);
 
         // Tandai nilai ini sudah dipulihkan supaya efek pengosong metrik tidak
         // menganggapnya perubahan pengguna.
         lastGlobalInputSignature.current =
           `${detail.input.monthly_bill_idr}|${restoredRate}|` +
-          `${detail.input.inverter_type}|${restoredSunHour}|${restoredExtraTilt}`;
+          `${detail.input.inverter_type}|${restoredSunHour}|${restoredExtraTilt}|${restoredShading}`;
 
         const restoredAddress = detail.address ?? "Proyek tersimpan";
         const savedLabel = detail.address?.trim() ?? "";
@@ -1763,6 +658,7 @@ function StudioPageContent() {
           inverterType: detail.input.inverter_type,
           sunHour: restoredSunHour,
           extraTilt: restoredExtraTilt,
+          shadingLossPct: restoredShading,
         });
 
         // Penanda agar simpan berikutnya tetap memakai acuan tangkapan yang sama.
@@ -1807,16 +703,6 @@ function StudioPageContent() {
     // `showToast` stabil; `searchParams` berubah saat URL berganti.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  // Toast notification timer
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const showToast = useCallback((msg: string) => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setCadToast(msg);
-    toastTimeoutRef.current = setTimeout(() => {
-      setCadToast(null);
-    }, 3400);
-  }, []);
 
   const toggleFacetSelection = useCallback(
     (facetId: string) => {
@@ -1978,9 +864,14 @@ function StudioPageContent() {
           setBaseMap("satellite");
         }
 
-        const capture = confirmedCapture ?? (await captureMapForDetection(map, {
-          layer: esriSatelliteLayerRef.current,
-        }));
+        const capture =
+          confirmedCapture ??
+          (map
+            ? await captureMapForDetection(map, {
+                layer: esriSatelliteLayerRef.current,
+              })
+            : null);
+        if (!capture) return;
 
         // Cakupan yang tampil diperiksa, bukan dipaksakan: zoom tidak diubah, jadi
         // pengguna yang memutuskan apakah area seluas ini masih layak dipindai.
@@ -2117,10 +1008,13 @@ function StudioPageContent() {
   );
 
   const startVertexDrag = useCallback(
-    (e: ReactMouseEvent, facetId: string, vertexIdx: number) => {
+    (e: ReactMouseEvent | ReactPointerEvent, facetId: string, vertexIdx: number) => {
       if (cadTool === "measure") return;
       e.stopPropagation();
       e.preventDefault();
+      try {
+        mapInstanceRef.current?.dragging?.disable();
+      } catch {}
       setActiveFacetId(facetId);
       const facet = facets.find((f) => f.id === facetId) || activeFacet;
       const currentVertices = getFacetVertices(facet);
@@ -2151,13 +1045,16 @@ function StudioPageContent() {
    */
   const startEdgeDrag = useCallback(
     (
-      e: ReactMouseEvent,
+      e: ReactMouseEvent | ReactPointerEvent,
       facetId: string,
       edgeIdx: number
     ) => {
       if (cadTool === "measure") return;
       e.stopPropagation();
       e.preventDefault();
+      try {
+        mapInstanceRef.current?.dragging?.disable();
+      } catch {}
       setActiveFacetId(facetId);
 
       const facet = facets.find((f) => f.id === facetId) ?? activeFacet;
@@ -2353,8 +1250,8 @@ function StudioPageContent() {
         shape: "custom_polygon",
         ridge,
         slope,
-        pitch: 20,
-        azimuth: 188,
+        pitch: 10,
+        azimuth: 0,
         setback: 0.3,
         gutter: 0.3,
         rotation: 0,
@@ -2484,8 +1381,8 @@ function StudioPageContent() {
       shape: "rectangle",
       ridge: 8.5,
       slope: 5.2,
-      pitch: 20,
-      azimuth: 188,
+      pitch: 10,
+      azimuth: 0,
       setback: 0.5,
       gutter: 0.5,
       rotation: activeFacet.rotation || -4,
@@ -2525,8 +1422,6 @@ function StudioPageContent() {
   const polygonRotation = activeFacet.rotation;
   const offsetX = activeFacet.offsetX;
   const offsetY = activeFacet.offsetY;
-  const hasHvac = activeFacet.hasHvac;
-  const hasSkylight = activeFacet.hasSkylight;
   const modulePower = activeFacet.modulePower;
   const orientation = activeFacet.orientation;
   const panelGap = activeFacet.panelGap;
@@ -2614,12 +1509,12 @@ function StudioPageContent() {
   const nudgeFacet = (dx: number, dy: number) => {
     let nextLat = activeFacet.lat;
     let nextLng = activeFacet.lng;
+    const leaflet = getWindowLeaflet();
 
-    if (mapInstanceRef.current && (window as any).L && activeFacet.lat && activeFacet.lng) {
+    if (mapInstanceRef.current && leaflet && activeFacet.lat && activeFacet.lng) {
       try {
-        const L = (window as any).L;
         const currentPt = mapInstanceRef.current.latLngToContainerPoint([activeFacet.lat, activeFacet.lng]);
-        const targetPt = L.point(currentPt.x + dx, currentPt.y + dy);
+        const targetPt = leaflet.point(currentPt.x + dx, currentPt.y + dy);
         const targetLatLng = mapInstanceRef.current.containerPointToLatLng(targetPt);
         nextLat = targetLatLng.lat;
         nextLng = targetLatLng.lng;
@@ -2667,14 +1562,6 @@ function StudioPageContent() {
     const nextVal = typeof oy === "function" ? oy(activeFacet.offsetY) : oy;
     updateActiveFacet({ offsetY: nextVal });
   };
-  const setHasHvac = (val: boolean | ((prev: boolean) => boolean)) => {
-    const nextVal = typeof val === "function" ? val(activeFacet.hasHvac) : val;
-    updateActiveFacet({ hasHvac: nextVal });
-  };
-  const setHasSkylight = (val: boolean | ((prev: boolean) => boolean)) => {
-    const nextVal = typeof val === "function" ? val(activeFacet.hasSkylight) : val;
-    updateActiveFacet({ hasSkylight: nextVal });
-  };
   const setModulePower = (p: number) => updateActiveFacet({ modulePower: p });
   const setOrientation = (o: Orientation) => updateActiveFacet({ orientation: o });
   const setPanelGap = (g: number) => updateActiveFacet({ panelGap: g });
@@ -2687,12 +1574,6 @@ function StudioPageContent() {
     updateActiveFacet({ customModuleCount: nextVal });
   };
 
-  // Other Studio System Parameters
-  const [extraTilt, setExtraTilt] = useState(10);
-  const [inverterType, setInverterType] = useState<InverterType>("string");
-  const [plnTariff, setPlnTariff] = useState(1700);
-  const [monthlyBill, setMonthlyBill] = useState(2_800_000);
-
   /**
    * Angka tersimpan tidak lagi mewakili rancangan begitu masukan global berubah.
    * Efek ini menyamakan perlakuan tagihan, tarif, inverter, posisi matahari, dan
@@ -2700,7 +1581,7 @@ function StudioPageContent() {
    * pratinjau lokal, bukan mencampur angka server lama dengan masukan baru.
    */
   useEffect(() => {
-    const signature = `${monthlyBill}|${plnTariff}|${inverterType}|${sunHour}|${extraTilt}`;
+    const signature = `${monthlyBill}|${plnTariff}|${inverterType}|${sunHour}|${extraTilt}|${shadingLossPct}`;
 
     if (lastGlobalInputSignature.current === null) {
       lastGlobalInputSignature.current = signature;
@@ -2714,7 +1595,7 @@ function StudioPageContent() {
     lastGlobalInputSignature.current = signature;
     setServerMetrics(null);
     setServerDetail(null);
-  }, [monthlyBill, plnTariff, inverterType, sunHour, extraTilt]);
+  }, [monthlyBill, plnTariff, inverterType, sunHour, extraTilt, shadingLossPct]);
 
   const [manualBillInput, setManualBillInput] = useState<string>("");
   const [isTypingBill, setIsTypingBill] = useState(false);
@@ -2752,17 +1633,20 @@ function StudioPageContent() {
   const [biodata, setBiodata] = useState<UserBiodata | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    const storedBio = getStoredBiodata();
-    setBiodata(storedBio);
-    const completed = hasCompletedStudioGuide(storedBio?.email ?? null);
-    setStudioGuideCompleted(completed);
-    const hasAnalysisParam =
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("analysis") !== null;
-    if (!completed && !hasAnalysisParam) {
-      setMascotGuideOpen(true);
-    }
+    const rafId = requestAnimationFrame(() => {
+      setMounted(true);
+      const storedBio = getStoredBiodata();
+      setBiodata(storedBio);
+      const completed = hasCompletedStudioGuide(storedBio?.email ?? null);
+      setStudioGuideCompleted(completed);
+      const hasAnalysisParam =
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("analysis") !== null;
+      if (!completed && !hasAnalysisParam) {
+        setMascotGuideOpen(true);
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   const closeStudioGuide = useCallback(() => {
@@ -2795,7 +1679,10 @@ function StudioPageContent() {
   }, []);
 
   useEffect(() => {
-    void refreshUserSimulations();
+    const rafId = requestAnimationFrame(() => {
+      void refreshUserSimulations();
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [refreshUserSimulations]);
 
   const filteredUserSimulations = useMemo(() => {
@@ -2866,50 +1753,53 @@ function StudioPageContent() {
   const lastAppliedWindowSearchRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const bio = getStoredBiodata();
-    setBiodata(bio);
-    if (typeof window !== "undefined") {
-      const rawSearch = window.location.search;
-      if (lastAppliedWindowSearchRef.current === rawSearch) return;
-      lastAppliedWindowSearchRef.current = rawSearch;
+    const rafId = requestAnimationFrame(() => {
+      const bio = getStoredBiodata();
+      setBiodata(bio);
+      if (typeof window !== "undefined") {
+        const rawSearch = window.location.search;
+        if (lastAppliedWindowSearchRef.current === rawSearch) return;
+        lastAppliedWindowSearchRef.current = rawSearch;
 
-      const sp = new URLSearchParams(rawSearch);
-      const mode = sp.get("mode");
-      const latParam = sp.get("lat");
-      const lngParam = sp.get("lng");
+        const sp = new URLSearchParams(rawSearch);
+        const mode = sp.get("mode");
+        const latParam = sp.get("lat");
+        const lngParam = sp.get("lng");
 
-      if (mode === "gps") {
-        const lat = latParam ? parseFloat(latParam) : -6.6110;
-        const lng = lngParam ? parseFloat(lngParam) : 106.8150;
-        triggerGpsDetectionFlow(lat, lng);
-        return;
-      }
+        if (mode === "gps") {
+          const lat = latParam ? parseFloat(latParam) : -6.6110;
+          const lng = lngParam ? parseFloat(lngParam) : 106.8150;
+          triggerGpsDetectionFlow(lat, lng);
+          return;
+        }
 
-      const addr = sp.get("address");
-      const shape = sp.get("shape") as RoofShape | null;
-      const ridgeParam = sp.get("ridge");
-      const slopeParam = sp.get("slope");
-      const degParam = sp.get("deg");
+        const addr = sp.get("address");
+        const shape = sp.get("shape") as RoofShape | null;
+        const ridgeParam = sp.get("ridge");
+        const slopeParam = sp.get("slope");
+        const degParam = sp.get("deg");
 
-      if (addr) setAddressInput(addr);
-      else if (bio?.location) setAddressInput(bio.location);
+        if (addr) setAddressInput(addr);
+        else if (bio?.location) setAddressInput(bio.location);
 
-      if (shape && ["rectangle", "hip", "trapezoid", "l-shape"].includes(shape)) {
-        setRoofShape(shape);
+        if (shape && ["rectangle", "hip", "trapezoid", "l-shape"].includes(shape)) {
+          setRoofShape(shape);
+        }
+        if (ridgeParam) {
+          const val = parseFloat(ridgeParam);
+          if (!isNaN(val)) setRidge(val);
+        }
+        if (slopeParam) {
+          const val = parseFloat(slopeParam);
+          if (!isNaN(val)) setSlope(val);
+        }
+        if (degParam) {
+          const val = parseFloat(degParam);
+          if (!isNaN(val)) setPolygonRotation(val);
+        }
       }
-      if (ridgeParam) {
-        const val = parseFloat(ridgeParam);
-        if (!isNaN(val)) setRidge(val);
-      }
-      if (slopeParam) {
-        const val = parseFloat(slopeParam);
-        if (!isNaN(val)) setSlope(val);
-      }
-      if (degParam) {
-        const val = parseFloat(degParam);
-        if (!isNaN(val)) setPolygonRotation(val);
-      }
-    }
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [triggerGpsDetectionFlow]);
 
   // Initialize Dynamic OpenStreetMap & Real Earth Satellite Map from local bundled Leaflet
@@ -2919,10 +1809,9 @@ function StudioPageContent() {
     let moveRafId: number | null = null;
 
     const initMap = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const L = ((window as any).L ?? (await import("leaflet")).default) as any;
+      const L: typeof LeafletNS = getWindowLeaflet() ?? (await import("leaflet")).default;
       if (!L || cancelled) return;
-      (window as any).L = L;
+      (window as WindowWithLeaflet).L = L;
 
       const container = document.getElementById("studio-leaflet-map");
       if (!container || mapInstanceRef.current) return;
@@ -3013,6 +1902,7 @@ function StudioPageContent() {
         esriSatelliteLayerRef.current = esriSatellite;
         osmStreetLayerRef.current = osmStreet;
         labelsLayerRef.current = labelsLayer;
+        setMapInstance(map);
         setMapLoaded(true);
         setViewportScale(measureMapViewportScale(map));
       } catch (err) {
@@ -3029,6 +1919,7 @@ function StudioPageContent() {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
+      setMapInstance(null);
     };
   }, []);
 
@@ -3038,7 +1929,7 @@ function StudioPageContent() {
     mapInstanceRef.current.invalidateSize();
     setMapTick((t) => (t + 1) % 1000000);
 
-    let start = performance.now();
+    const start = performance.now();
     const step = () => {
       if (!mapInstanceRef.current) return;
       mapInstanceRef.current.invalidateSize();
@@ -3099,7 +1990,7 @@ function StudioPageContent() {
    */
   useEffect(() => {
     const map = mapInstanceRef.current;
-    const L = (window as any).L;
+    const L = getWindowLeaflet();
 
     if (!map || !L || !mapLoaded || !showDetectedRoofs) return;
     if (capturePreviewUrl === null || detection === null) return;
@@ -3135,11 +2026,11 @@ function StudioPageContent() {
    */
   useEffect(() => {
     const map = mapInstanceRef.current;
-    const L = (window as any).L;
+    const L = getWindowLeaflet();
 
     if (!map || !L || !mapLoaded) return;
 
-    const layers: Map<string, any> = detectionLayersRef.current;
+    const layers: Map<string, LeafletNS.Polygon> = detectionLayersRef.current;
     const visible = showDetectedRoofs ? remainingDetectedRoofs : [];
     const wanted = new Set(visible.map((roof) => roof.id));
 
@@ -3150,14 +2041,20 @@ function StudioPageContent() {
       }
     }
 
-    for (const roof of visible) {
+    // Urutkan dari luas terbesar ke terkecil agar poligon kecil berada di atas
+    // dan tidak tertutup kliknya oleh poligon besar di sekitarnya.
+    const sortedVisible = [...visible].sort((a, b) => b.area_sqm - a.area_sqm);
+
+    for (const roof of sortedVisible) {
       const isSelected = selectedDetectedIds.includes(roof.id);
-      const style = {
+      const style: LeafletNS.PathOptions = {
         color: isSelected ? "#b45309" : "#f59e0b",
         weight: isSelected ? 4 : 2.5,
-        dashArray: isSelected ? null : "6 4",
+        dashArray: isSelected ? undefined : "6 4",
         fillColor: "#f59e0b",
         fillOpacity: isSelected ? 0.34 : 0.18,
+        interactive: true,
+        bubblingMouseEvents: false,
       };
 
       const existing = layers.get(roof.id);
@@ -3168,9 +2065,14 @@ function StudioPageContent() {
       }
 
       // Kontrak memakai urutan GeoJSON `[lng, lat]`, Leaflet memakai `[lat, lng]`.
-      const latLngs = roof.polygon_lnglat.map(([lng, lat]) => [lat, lng]);
+      const latLngs: LeafletNS.LatLngExpression[] = roof.polygon_lnglat.map(([lng, lat]) => [lat, lng]);
       const polygon = L.polygon(latLngs, style).addTo(map);
-      polygon.on("click", () => selectDetectedRoof(roof.id));
+      polygon.on("click", (ev: LeafletNS.LeafletMouseEvent) => {
+        if (ev?.originalEvent) {
+          L.DomEvent.stopPropagation(ev);
+        }
+        selectDetectedRoof(roof.id);
+      });
       polygon.bindTooltip(
         `${roof.area_sqm.toFixed(1)} m² · keyakinan ${Math.round(roof.confidence * 100)}%`,
         { sticky: true }
@@ -3188,7 +2090,7 @@ function StudioPageContent() {
   // Layer deteksi hanya milik peta yang sedang aktif; bersihkan daftarnya saat
   // komponen dilepas supaya tidak menunjuk layer dari peta yang sudah dihancurkan.
   useEffect(() => {
-    const layers: Map<string, any> = detectionLayersRef.current;
+    const layers: Map<string, LeafletNS.Polygon> = detectionLayersRef.current;
 
     return () => {
       layers.clear();
@@ -3275,6 +2177,11 @@ function StudioPageContent() {
       }
       setGeocodeResults([]);
       setSearchOpen(false);
+      setDetection(null);
+      setDetectedRoofs([]);
+      setSelectedDetectedIds([]);
+      setShowDetectedRoofs(false);
+      setCapturePreviewUrl(null);
 
       const firstPart = result.label.split(",")[0];
       showToast(`Peta digeser ke ${firstPart}. Tekan pindai untuk memilih bidang atap.`);
@@ -3318,6 +2225,12 @@ function StudioPageContent() {
         setProjectName(matchedPreset.label);
       }
       setGeocodeResults([]);
+      setSearchOpen(false);
+      setDetection(null);
+      setDetectedRoofs([]);
+      setSelectedDetectedIds([]);
+      setShowDetectedRoofs(false);
+      setCapturePreviewUrl(null);
       showToast(`Lokasi diterapkan: ${matchedPreset.label}`);
       return;
     }
@@ -3387,17 +2300,18 @@ function StudioPageContent() {
       sunHour,
       obstacleFilterActive,
       extraTilt,
-      inverterType
+      inverterType,
+      shadingLossPct
     );
 
     // Selected Facets Metrics (for selection inspection if needed)
     const selectedMetrics = selectedFacets.map((f) =>
-      computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType)
+      computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType, shadingLossPct)
     );
 
     // ALL Facets Metrics (Studio calculations reflect the ENTIRE PROJECT holistically!)
     const allFacetsMetrics = facets.map((f) =>
-      computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType)
+      computeFacetMetrics(f, sunHour, obstacleFilterActive, extraTilt, inverterType, shadingLossPct)
     );
 
     // Aggregate System Totals for ALL facets in project
@@ -3496,6 +2410,7 @@ function StudioPageContent() {
     sunHour,
     obstacleFilterActive,
     extraTilt,
+    shadingLossPct,
     inverterType,
     serverMetrics,
   ]);
@@ -3637,7 +2552,8 @@ function StudioPageContent() {
         sunHour,
         obstacleFilterActive,
         extraTilt,
-        inverterType
+        inverterType,
+        shadingLossPct
       );
       const obstacles: RoofObstacleInput[] = [];
 
@@ -3700,6 +2616,7 @@ function StudioPageContent() {
       tariff_key: tariffKeyForRate(plnTariff),
       sun_hour: sunHour,
       extra_tilt: extraTilt,
+      shading_loss_pct: shadingLossPct,
     };
 
     setIsSaving(true);
@@ -3748,6 +2665,7 @@ function StudioPageContent() {
         inverterType,
         sunHour,
         extraTilt,
+        shadingLossPct,
       });
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (caught) {
@@ -3783,17 +2701,9 @@ function StudioPageContent() {
       inverterType,
       sunHour,
       extraTilt,
+      shadingLossPct,
     });
 
-  /*
-   * Pembanding disimpan di `ref`, bukan state: nilainya hanya dibaca saat pengguna
-   * menekan tombol keluar atau menutup tab, dan menyimpannya sebagai state akan
-   * memicu render tambahan pada setiap penyimpanan tanpa mengubah tampilan.
-   *
-   * `null` berarti pembanding belum pernah ditetapkan; ditetapkan sekali saat mount
-   * dari rancangan kosong, lalu oleh simpan dan pemulihan.
-   */
-  const savedDesignSignatureRef = useRef<string | null>(null);
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
   const hasUnsavedChanges = () => {
@@ -3892,39 +2802,39 @@ function StudioPageContent() {
   };
 
   const azInfo = useMemo(() => {
-    let name = "Utara";
-    let desc = "Menghadap Utara - Radiasi cukup, terpengaruh deklinasi tahunan.";
+    let name = "Utara (U)";
+    let desc = "Optimal untuk Kota Bogor (6,6° LS) — menangkap radiasi matahari tahunan maksimal.";
     let isOptimal = false;
     if (azimuth >= 337.5 || azimuth < 22.5) {
       name = "Utara (U)";
-      desc = "Menghadap Utara Murni (0°). Efisiensi baik untuk bulan Mei-Agustus.";
-    } else if (azimuth >= 22.5 && azimuth < 67.5) {
-      name = "Timur Laut (TL)";
-      desc = "Orientasi pagi optimal, radiasi siang berkurang.";
-    } else if (azimuth >= 67.5 && azimuth < 112.5) {
-      name = "Timur (T)";
-      desc = "Menghadap Timur Murni (90°). Tangkapan sinar pagi maksimal.";
-    } else if (azimuth >= 112.5 && azimuth < 157.5) {
-      name = "Tenggara (TG)";
-      desc = "Peralihan Timur ke Selatan, profil radiasi seimbang.";
-    } else if (azimuth >= 157.5 && azimuth < 202.5) {
-      name = "Selatan (S)";
-      if (azimuth >= 180 && azimuth <= 195) {
-        name = "SSW (Selatan-Barat Daya)";
-        desc = "⭐ Sudut Emas Indonesia! Menghadap Selatan-Barat Daya (188°) menangkap radiasi puncak siang hingga sore.";
+      if (azimuth >= 345 || azimuth <= 15) {
+        desc = "Optimal Kota Bogor (6,6° LS)! Menghadap Utara (0°) memaksimalkan energi tahunan.";
         isOptimal = true;
       } else {
-        desc = "Menghadap Selatan. Sangat ideal untuk wilayah khatulistiwa Indonesia.";
+        desc = "Menghadap Utara, sangat ideal untuk lintang selatan Kota Bogor.";
+        isOptimal = true;
       }
+    } else if (azimuth >= 22.5 && azimuth < 67.5) {
+      name = "Timur Laut (TL)";
+      desc = "Tangkapan sinar pagi hingga siang tinggi sebelum awan konvektif sore.";
+    } else if (azimuth >= 67.5 && azimuth < 112.5) {
+      name = "Timur (T)";
+      desc = "Menghadap Timur (90°). Optimal untuk penyinaran pagi di Kota Bogor.";
+    } else if (azimuth >= 112.5 && azimuth < 157.5) {
+      name = "Tenggara (TG)";
+      desc = "Peralihan Timur ke Selatan, profil radiasi moderat.";
+    } else if (azimuth >= 157.5 && azimuth < 202.5) {
+      name = "Selatan (S)";
+      desc = "Menghadap Selatan (180°). Efisiensi sedikit lebih rendah di lintang 6,6° LS.";
     } else if (azimuth >= 202.5 && azimuth < 247.5) {
       name = "Barat Daya (BD)";
-      desc = "Menghadap Barat Daya. Tangkapan radiasi sore maksimal saat beban puncak.";
+      desc = "Menghadap Barat Daya, puncak radiasi sore lebih terpengaruh awan Bogor.";
     } else if (azimuth >= 247.5 && azimuth < 292.5) {
       name = "Barat (B)";
-      desc = "Menghadap Barat Murni (270°). Efektif mengurangi tagihan saat jam beban puncak PLN sore hari.";
+      desc = "Menghadap Barat (270°). Membantu pasokan listrik pada beban puncak sore.";
     } else {
       name = "Barat Laut (BL)";
-      desc = "Peralihan Barat ke Utara, radiasi bervariasi.";
+      desc = "Peralihan Barat ke Utara, profil radiasi seimbang sepanjang tahun.";
     }
     return { name, desc, isOptimal };
   }, [azimuth]);
@@ -3959,26 +2869,48 @@ function StudioPageContent() {
     });
   };
 
-  const toggleObstacle = (type: "hvac" | "skylight") => {
-    if (type === "hvac") {
-      setHasHvac((prev) => {
-        const next = !prev;
-        showToast(next ? "Rintangan HVAC Chiller ditambahkan" : "Rintangan HVAC Chiller dinonaktifkan");
-        return next;
-      });
-    } else {
-      setHasSkylight((prev) => {
-        const next = !prev;
-        showToast(next ? "Rintangan Skylight Kaca ditambahkan" : "Rintangan Skylight Kaca dinonaktifkan");
-        return next;
-      });
-    }
+  const [moduleRecommendation, setModuleRecommendation] = useState<ModuleRecommendation | null>(null);
+
+  const findOptimalModuleRecommendation = () => {
+    setModuleRecommendation(
+      optimizeFacetConfiguration(
+        activeFacet,
+        sunHour,
+        obstacleFilterActive,
+        extraTilt,
+        inverterType,
+        shadingLossPct
+      )
+    );
   };
 
-  const autoPackModules = () => {
-    setSlotOverrides({});
-    setCustomModuleCount(null);
-    showToast("Tata letak modul disusun otomatis secara optimal");
+  const applyModuleRecommendation = () => {
+    if (!moduleRecommendation || moduleRecommendation.facetId !== activeFacet.id) return;
+    const gridChanged =
+      moduleRecommendation.modulePower !== activeFacet.modulePower ||
+      moduleRecommendation.orientation !== activeFacet.orientation ||
+      moduleRecommendation.panelGap !== activeFacet.panelGap ||
+      moduleRecommendation.alignToAzimuth !== (activeFacet.alignToAzimuth ?? true) ||
+      (moduleRecommendation.alignToAzimuth && moduleRecommendation.azimuth !== activeFacet.azimuth);
+
+    updateActiveFacet({
+      modulePower: moduleRecommendation.modulePower,
+      orientation: moduleRecommendation.orientation,
+      panelGap: moduleRecommendation.panelGap,
+      pitch: moduleRecommendation.pitch,
+      azimuth: moduleRecommendation.azimuth,
+      alignToAzimuth: moduleRecommendation.alignToAzimuth,
+      customModuleCount: null,
+      isSolarPopulated: true,
+      ...(gridChanged ? { slotOverrides: {} } : {}),
+    });
+
+    showToast(
+      `Rekomendasi diterapkan: ${moduleRecommendation.modulePower}W ${
+        moduleRecommendation.orientation === "landscape" ? "Landscape" : "Portrait"
+      } · ${Math.round(moduleRecommendation.annualProductionKwh).toLocaleString("id-ID")} kWh/thn`
+    );
+    setModuleRecommendation(null);
   };
 
   const pitchRadVal = (pitch * Math.PI) / 180;
@@ -3987,13 +2919,41 @@ function StudioPageContent() {
   const wedgePathD = `M 20 70 L 52 70 A 32 32 0 0 0 ${wedgeEndX.toFixed(1)} ${wedgeEndY.toFixed(1)} Z`;
   const arcPathD = `M 52 70 A 32 32 0 0 0 ${wedgeEndX.toFixed(1)} ${wedgeEndY.toFixed(1)}`;
 
-  const currentInspectYear = roiHoverYear !== null ? roiHoverYear : (calc.bepYear || 4.8);
+  const hasValidBep =
+    calc.paybackYears !== null &&
+    Number.isFinite(calc.paybackYears) &&
+    calc.paybackYears > 0 &&
+    calc.annualSaving > 0 &&
+    calc.totalCapex > 0;
 
+  // Skala tahun grafik dinamis: default 25 tahun (umur garansi modul),
+  // otomatis meluas rapi bila BEP > 25 tahun agar titik balik modal tetap terlihat.
+  const chartMaxYear = useMemo(() => {
+    if (!hasValidBep || calc.paybackYears === null || calc.paybackYears <= 25) {
+      return 25;
+    }
+    const target = calc.paybackYears * 1.2;
+    const step = target > 60 ? 10 : 5;
+    return Math.min(300, Math.ceil(target / step) * step);
+  }, [hasValidBep, calc.paybackYears]);
+
+  const chartQuickYears = useMemo(() => {
+    const step = chartMaxYear / 5;
+    return [1, 2, 3, 4, 5].map((i) => Math.round(step * i));
+  }, [chartMaxYear]);
+
+  const currentInspectYear =
+    roiHoverYear !== null
+      ? Math.min(chartMaxYear, Math.max(0, roiHoverYear))
+      : hasValidBep && calc.paybackYears !== null
+        ? Math.min(chartMaxYear, Math.round(calc.paybackYears * 10) / 10)
+        : 0;
+
+  // Arus kas kumulatif diselaraskan penuh dengan FinanceModel.php (Simple Payback):
+  // -CAPEX + (tahun × penghematan tahunan), sehingga perpotongan Rp 0 tepat di titik BEP.
   const getCashFlowAtYear = (t: number) => {
     if (t <= 0) return -calc.totalCapex;
-    const savings = t * calc.annualSaving;
-    const inverterReplacement = t >= 12 ? calc.costInverter * 0.7 : 0;
-    return -calc.totalCapex + savings - inverterReplacement;
+    return -calc.totalCapex + t * calc.annualSaving;
   };
 
   const currentInspectCashFlow = getCashFlowAtYear(currentInspectYear);
@@ -4005,9 +2965,9 @@ function StudioPageContent() {
       return 0;
     }
 
-    // 1. If user is actively hovering on ROI financial projection chart: preview 25-year growth
+    // 1. If user is actively hovering on ROI financial projection chart: preview growth across chart timeline
     if (roiHoverYear !== null) {
-      const yearRatio = Math.max(0, Math.min(1, roiHoverYear / 25));
+      const yearRatio = Math.max(0, Math.min(1, roiHoverYear / chartMaxYear));
       return Math.max(2, Math.min(24, Math.round(2 + yearRatio * 22)));
     }
 
@@ -4015,7 +2975,7 @@ function StudioPageContent() {
     const totalSlots = Math.max(1, calc.totalValidSlotsAggregate || calc.totalValidSlots || 1);
     const modRatio = Math.max(0, Math.min(1, calc.totalModulesFitted / totalSlots));
     return Math.max(1, Math.min(24, Math.round(modRatio * 24)));
-  }, [calc.totalModulesFitted, calc.totalValidSlotsAggregate, calc.totalValidSlots, roiHoverYear]);
+  }, [calc.totalModulesFitted, calc.totalValidSlotsAggregate, calc.totalValidSlots, roiHoverYear, chartMaxYear]);
 
   const displayTreesCount = useMemo(() => {
     if (calc.totalModulesFitted === 0) {
@@ -4033,25 +2993,32 @@ function StudioPageContent() {
   const chartPadLeft = 28;
   const chartPadRight = 20;
   const plotW = chartW - chartPadLeft - chartPadRight;
-  const minVal = Math.min(-1_000_000, -calc.totalCapex * 1.05);
-  const maxVal = Math.max(1_000_000, (calc.cumulative25 - calc.totalCapex) * 1.05);
+  const endCashFlow = getCashFlowAtYear(chartMaxYear);
+  const minVal = Math.min(-1_000_000, -calc.totalCapex * 1.08);
+  const maxVal = Math.max(1_000_000, endCashFlow * 1.08);
   const valRange = Math.max(1_000_000, maxVal - minVal);
 
-  const mapChartX = (t: number) => chartPadLeft + (Math.max(0, Math.min(25, t)) / 25) * plotW;
+  const mapChartX = (t: number) =>
+    chartPadLeft + (Math.max(0, Math.min(chartMaxYear, t)) / chartMaxYear) * plotW;
   const mapChartY = (v: number) => chartH - 20 - ((v - minVal) / valRange) * (chartH - 35);
   const zeroY = mapChartY(0);
 
-  const effectiveBep = Math.min(25, Math.max(0, calc.bepYear));
-  const bepRatio = Math.max(0.04, Math.min(0.96, effectiveBep / 25));
+  const effectiveBep =
+    hasValidBep && calc.paybackYears !== null
+      ? Math.min(chartMaxYear, Math.max(0, calc.paybackYears))
+      : chartMaxYear;
+  const bepRatio = Math.max(0.04, Math.min(0.96, effectiveBep / chartMaxYear));
 
   const curvePoints = useMemo(() => {
     const pts: { x: number; y: number; t: number; v: number }[] = [];
-    for (let t = 0; t <= 25; t += 0.5) {
+    const steps = 50;
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * chartMaxYear;
       const v = getCashFlowAtYear(t);
       pts.push({ x: mapChartX(t), y: mapChartY(v), t, v });
     }
     return pts;
-  }, [calc.totalCapex, calc.annualSaving, calc.costInverter, minVal, valRange]);
+  }, [calc.totalCapex, calc.annualSaving, chartMaxYear, minVal, valRange]);
 
   const curvePathD = useMemo(() => {
     return curvePoints.reduce(
@@ -4061,9 +3028,9 @@ function StudioPageContent() {
   }, [curvePoints]);
 
   const profitFillD = useMemo(() => {
-    if (calc.bepYear >= 25 || calc.annualSaving <= 0) return "";
+    if (!hasValidBep || effectiveBep >= chartMaxYear) return "";
     const bepX = mapChartX(effectiveBep);
-    const endX = mapChartX(25);
+    const endX = mapChartX(chartMaxYear);
     const profitPts = curvePoints.filter((pt) => pt.t >= effectiveBep);
     if (!profitPts.length) return "";
     let d = `M ${bepX.toFixed(1)} ${zeroY.toFixed(1)}`;
@@ -4072,7 +3039,7 @@ function StudioPageContent() {
     });
     d += ` L ${endX.toFixed(1)} ${zeroY.toFixed(1)} Z`;
     return d;
-  }, [calc.bepYear, effectiveBep, curvePoints, zeroY]);
+  }, [hasValidBep, effectiveBep, chartMaxYear, curvePoints, zeroY]);
 
   const deficitFillD = useMemo(() => {
     const startX = mapChartX(0);
@@ -4084,20 +3051,20 @@ function StudioPageContent() {
     });
     d += ` L ${bepX.toFixed(1)} ${zeroY.toFixed(1)} Z`;
     return d;
-  }, [calc.bepYear, effectiveBep, curvePoints, zeroY]);
+  }, [effectiveBep, curvePoints, zeroY]);
 
-  const handleChartMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+  const handleChartMouseMove = (e: ReactMouseEvent<HTMLDivElement> | ReactPointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = e.clientX - rect.left;
     const clampedX = Math.max(chartPadLeft, Math.min(chartW - chartPadRight, (relX / rect.width) * chartW));
-    const t = Math.max(0, Math.min(25, ((clampedX - chartPadLeft) / plotW) * 25));
+    const t = Math.max(0, Math.min(chartMaxYear, ((clampedX - chartPadLeft) / plotW) * chartMaxYear));
     setRoiHoverYear(Math.round(t * 10) / 10);
   };
 
   const dragMovedRef = useRef(false);
 
   const startDrag = (
-    e: ReactMouseEvent,
+    e: ReactMouseEvent | ReactPointerEvent,
     facetId: string,
     mode: DragMode,
     initRidge: number,
@@ -4110,6 +3077,9 @@ function StudioPageContent() {
   ) => {
     e.stopPropagation();
     e.preventDefault();
+    try {
+      mapInstanceRef.current?.dragging?.disable();
+    } catch {}
     dragMovedRef.current = false;
 
     const isMultiMove =
@@ -4151,7 +3121,7 @@ function StudioPageContent() {
 
   const rafRef = useRef<number | null>(null);
 
-  const onViewportMouseMove = (e: ReactMouseEvent) => {
+  const onViewportMouseMove = (e: ReactMouseEvent | ReactPointerEvent) => {
     const clientX = e.clientX;
     const clientY = e.clientY;
     const currentTarget = e.currentTarget;
@@ -4162,8 +3132,9 @@ function StudioPageContent() {
       const py = clientY - rect.top;
 
       // Real solar irradiance computed from Bogor NASA POWER baseline & sunHour curve
-      const baseGhi = sunHour === 9 ? 3.8 : sunHour === 15 ? 3.9 : 4.85;
+      const baseGhi = sunHour === 9 ? 3.82 : sunHour === 15 ? 3.95 : 4.42;
       const rackingBonus = 1.0 + (extraTilt / 20) * 0.02;
+      const shadingFactor = Math.max(0.5, Math.min(1.0, 1.0 - shadingLossPct / 100));
 
       // Hit-test cursor against existing roof polygons (world meters -> screen pixels)
       const hitFacet = facets.find((facet) => {
@@ -4181,11 +3152,12 @@ function StudioPageContent() {
       });
 
       if (hitFacet) {
-        const pitchFactor = Math.cos(((hitFacet.pitch - 22) * Math.PI) / 180);
+        const pitchFactor = Math.cos(((hitFacet.pitch - 10) * Math.PI) / 180);
         const pitchEff = Math.max(0.85, Math.min(1.0, 0.92 + pitchFactor * 0.08));
-        const azDev = Math.abs(hitFacet.azimuth - 188);
+        const rawAzDiff = Math.abs(((hitFacet.azimuth % 360) + 360) % 360);
+        const azDev = Math.min(rawAzDiff, 360 - rawAzDiff);
         const azEff = Math.max(0.82, Math.min(1.0, 1.0 - (azDev / 180) * 0.15));
-        const factor = pitchEff * azEff * rackingBonus;
+        const factor = pitchEff * azEff * rackingBonus * shadingFactor;
         setProbePos({
           x: px,
           y: py,
@@ -4198,7 +3170,7 @@ function StudioPageContent() {
           x: px,
           y: py,
           ghi: baseGhi,
-          pct: Math.round((baseGhi / 4.85) * 100),
+          pct: Math.round((baseGhi / 4.42) * 100),
           label: `Permukaan Datar (${sunHour}:00)`,
         });
       }
@@ -4302,7 +3274,7 @@ function StudioPageContent() {
         // Jika beberapa bidang terpilih sekaligus, geser semua bidang terpilih bersama-sama.
         if (dragState.groupTargets && dragState.groupTargets.length > 1) {
           const map = mapInstanceRef.current;
-          const L = (window as any).L;
+          const L = getWindowLeaflet();
           const updates = new Map<string, Partial<RoofFacet>>();
           for (const item of dragState.groupTargets) {
             let nextLat = item.initLat;
@@ -4333,11 +3305,11 @@ function StudioPageContent() {
           return;
         }
 
-        if (mapInstanceRef.current && (window as any).L && dragState.initLat && dragState.initLng) {
+        const leaflet = getWindowLeaflet();
+        if (mapInstanceRef.current && leaflet && dragState.initLat && dragState.initLng) {
           try {
-            const L = (window as any).L;
             const startPt = mapInstanceRef.current.latLngToContainerPoint([dragState.initLat, dragState.initLng]);
-            const targetPt = L.point(startPt.x + dx, startPt.y + dy);
+            const targetPt = leaflet.point(startPt.x + dx, startPt.y + dy);
             const targetLatLng = mapInstanceRef.current.containerPointToLatLng(targetPt);
             updateFacetById(dragState.facetId, {
               lat: targetLatLng.lat,
@@ -4388,6 +3360,11 @@ function StudioPageContent() {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
+    }
+    if (edgeDragState || vertexDragState || dragState) {
+      try {
+        mapInstanceRef.current?.dragging?.enable();
+      } catch {}
     }
     if (edgeDragState) {
       if (edgeDragMovedRef.current) {
@@ -4444,14 +3421,15 @@ function StudioPageContent() {
   };
 
   const simulationAssumptionsForModal: SimulationAssumptions = {
-    daily_irradiance_kwh_per_sqm: sunHour === 9 ? 3.8 : sunHour === 15 ? 3.9 : 4.85,
-    irradiance_source: "Jam matahari puncak studio",
-    irradiance_period: "asumsi pengguna",
+    daily_irradiance_kwh_per_sqm: sunHour === 9 ? 3.82 : sunHour === 15 ? 3.95 : 4.42,
+    irradiance_source: "NASA POWER & Global Solar Atlas (Kota Bogor)",
+    irradiance_period: "Klimatologi 2001–2024",
     incidence_factor:
       (calc.pitchEffPct / 100) *
       (Number(calc.azimuthEffPct) / 100) *
       (1 + (extraTilt / 20) * 0.02),
-    performance_ratio: 0.82 * (inverterType === "string" ? 0.984 : 0.975),
+    performance_ratio:
+      0.82 * (inverterType === "string" ? 0.984 : 0.975) * (1 - shadingLossPct / 100),
     tariff_key: tariffKeyForRate(plnTariff),
     tariff_label: selectedTariffLabel,
     tariff_idr_per_kwh: plnTariff,
@@ -4466,8 +3444,8 @@ function StudioPageContent() {
   const simulationParamsForModal: SimulationParameters = {
     setback_m: activeFacet.setback ?? 0.5,
     gutter_m: activeFacet.gutter ?? 0.5,
-    tilt_deg: activeFacet.pitch ?? 20,
-    azimuth_deg: activeFacet.azimuth ?? 188,
+    tilt_deg: activeFacet.pitch ?? 10,
+    azimuth_deg: activeFacet.azimuth ?? 0,
     module_key: moduleKeyForPower(modulePower),
     orientation: activeFacet.orientation ?? "portrait",
     clearance_m: (activeFacet.panelGap ?? 3) / 100,
@@ -4493,22 +3471,30 @@ function StudioPageContent() {
       : simulationParamsForModal;
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden bg-[#FAF9F5] font-body-md text-slate-800 antialiased select-none flex flex-col print:h-auto print:w-auto print:overflow-visible print:bg-[#FAF9F5] print:p-0">
+    <div className="h-[100dvh] w-full relative overflow-hidden bg-[#FAF9F5] font-body-md text-slate-800 antialiased select-none flex flex-col print:h-auto print:w-auto print:overflow-visible print:bg-[#FAF9F5] print:p-0">
       {/* =======================================================
           EXPANDABLE FLOATING PILL NAVBAR (Horisontal Individual Bubbles)
           ======================================================= */}
       <div
         id="studio-nav-header"
-        className="fixed top-4 left-4 z-40 select-none flex items-center gap-2 max-w-[calc(100vw-2rem)] print:hidden group"
-        onMouseEnter={handleNavMouseEnter}
-        onMouseLeave={handleNavMouseLeave}
+        className="fixed top-3 left-3 sm:top-4 sm:left-4 z-40 select-none flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)] print:hidden group"
+        onPointerEnter={(e) => {
+          if (e.pointerType === "mouse") handleNavMouseEnter();
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") handleNavMouseLeave();
+        }}
       >
         {/* Tombol Navigasi:
-            - Pas Ketutup: Cukup Logo SunSight + Tanda '>'
+            - Pas Ketutup: Cukup Logo SunSight + Tanda '>' (tap di layar sentuh membuka menu)
             - Pas Kebuka: Logo berubah jadi Tanda Balik ke Beranda (← Beranda) */}
         <button
           type="button"
           onClick={() => {
+            if (!studioNavOpen) {
+              setStudioNavOpen(true);
+              return;
+            }
             // Rancangan yang belum tersimpan tidak boleh hilang karena satu klik.
             if (hasUnsavedChanges()) {
               setExitConfirmOpen(true);
@@ -4517,37 +3503,37 @@ function StudioPageContent() {
 
             leaveStudio();
           }}
-          className={`h-11 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-800 flex items-center px-3.5 transition-all duration-300 ease-out shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80 hover:border-amber-300/70 shrink-0 select-none cursor-pointer group/back ${
+          className={`h-10 sm:h-11 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-800 flex items-center px-2.5 sm:px-3.5 transition-all duration-300 ease-out shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80 hover:border-amber-300/70 shrink-0 select-none cursor-pointer group/back ${
             studioNavOpen ? "shadow-[0_8px_32px_rgba(245,158,11,0.12)] border-amber-300/80 bg-white/90" : ""
           }`}
           title={studioNavOpen ? "Kembali ke Beranda" : "Buka Menu Studio"}
-          aria-label="Kembali ke Beranda"
+          aria-label={studioNavOpen ? "Kembali ke Beranda" : "Buka Menu Studio"}
         >
           {!studioNavOpen ? (
             /* Pas Ketutup: Cukup logo sama tanda > aja */
-            <div className="flex items-center gap-1.5 animate-fadeIn">
+            <div className="flex items-center gap-1 sm:gap-1.5 animate-fadeIn">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="SunSight" className="h-6 w-auto object-contain shrink-0" />
+              <img src="/logo.svg" alt="SunSight" className="h-5 sm:h-6 w-auto object-contain shrink-0" />
               <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover/back:text-amber-600 group-hover/back:translate-x-0.5 transition-all">
                 chevron_right
               </span>
             </div>
           ) : (
             /* Pas Kebuka: Logo berubah jadi tanda balik ke beranda */
-            <div className="flex items-center gap-1.5 animate-fadeIn">
-              <span className="material-symbols-outlined text-[19px] text-slate-600 group-hover/back:text-amber-600 group-hover/back:-translate-x-0.5 transition-all">
+            <div className="flex items-center gap-1 sm:gap-1.5 animate-fadeIn">
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px] text-slate-600 group-hover/back:text-amber-600 group-hover/back:-translate-x-0.5 transition-all">
                 arrow_back
               </span>
-              <span className="text-xs font-bold text-slate-800 group-hover/back:text-amber-950 transition-colors whitespace-nowrap">
+              <span className="hidden sm:inline text-xs font-bold text-slate-800 group-hover/back:text-amber-950 transition-colors whitespace-nowrap">
                 Beranda
               </span>
             </div>
           )}
         </button>
 
-        {/* Action Pills Container (Mengembang mulus saat di-hover, menciut saat mouse menjauh) */}
+        {/* Action Pills Container (Mengembang mulus saat di-hover / di-tap di layar sentuh) */}
         <div
-          className={`flex items-center gap-2 transition-all duration-300 ease-out ${
+          className={`flex items-center gap-1.5 sm:gap-2 transition-all duration-300 ease-out ${
             studioNavOpen
               ? "max-w-[750px] opacity-100 translate-x-0 pointer-events-auto"
               : "max-w-0 opacity-0 -translate-x-3 pointer-events-none"
@@ -4562,7 +3548,7 @@ function StudioPageContent() {
                 setSearchOpen((v) => !v);
                 setFilterOpen(false);
               }}
-              className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border ${
+              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border ${
                 searchOpen
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
                   : "bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-900 border-white/80 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] hover:border-amber-300/70"
@@ -4571,10 +3557,10 @@ function StudioPageContent() {
               aria-label="Cari proyek atau lokasi"
               aria-expanded={searchOpen}
             >
-              <span className="material-symbols-outlined text-[20px]">{searchOpen ? "close" : "search"}</span>
+              <span className="material-symbols-outlined text-[19px] sm:text-[20px]">{searchOpen ? "close" : "search"}</span>
             </button>
 
-            {/* Search Popover (Identik dengan Beranda) */}
+            {/* Search Popover (Identik dengan Beranda — viewport-anchored pada mobile) */}
             {searchOpen && (
               <>
                 <button
@@ -4583,7 +3569,7 @@ function StudioPageContent() {
                   className="fixed inset-0 z-30 cursor-default"
                   onClick={() => setSearchOpen(false)}
                 />
-                <div className="absolute left-0 top-14 z-40 w-[min(400px,calc(100vw-2rem))] bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_4px_24px_rgba(245,158,11,0.10)] border border-white/90 p-2.5 animate-fadeIn">
+                <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-14 z-40 w-auto sm:w-[400px] max-h-[calc(100dvh-5.5rem)] overflow-y-auto bg-white/90 backdrop-blur-2xl rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_4px_24px_rgba(245,158,11,0.10)] border border-white/90 p-2.5 animate-fadeIn">
                   {/* Search Bar Input */}
                   <div className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100">
                     <span className="material-symbols-outlined text-[18px] text-slate-400 shrink-0">search</span>
@@ -4822,7 +3808,7 @@ function StudioPageContent() {
                 setFilterOpen((v) => !v);
                 setSearchOpen(false);
               }}
-              className={`h-11 px-3.5 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-semibold transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] cursor-pointer border ${
+              className={`h-10 sm:h-11 px-2.5 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-semibold transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] cursor-pointer border ${
                 filterOpen
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border-amber-300/80"
                   : "bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-900 border-white/80 hover:border-amber-300/70"
@@ -4832,7 +3818,7 @@ function StudioPageContent() {
             >
               <span className="material-symbols-outlined text-[18px]">layers</span>
               <span className="hidden sm:inline">Filter</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+              <span className={`hidden sm:inline text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
                 filterOpen
                   ? "bg-white/90 text-amber-950 border-amber-300/80"
                   : "bg-amber-100 text-amber-900 border-amber-200"
@@ -4856,7 +3842,7 @@ function StudioPageContent() {
                   className="fixed inset-0 z-30 cursor-default"
                   onClick={() => setFilterOpen(false)}
                 />
-                <div className="absolute left-0 top-14 z-40 w-68 bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_8px_28px_rgba(253,224,71,0.14),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/90 p-3 animate-fadeIn space-y-3">
+                <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-0 sm:right-auto sm:top-14 z-40 w-auto sm:w-68 max-h-[calc(100dvh-5.5rem)] overflow-y-auto bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,23,42,0.18),0_8px_28px_rgba(253,224,71,0.14),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/90 p-3 animate-fadeIn space-y-3">
                   {/* 1. Peta Dasar */}
                   <div className="space-y-1.5">
                     <span className="px-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -5033,7 +4019,7 @@ function StudioPageContent() {
           <button
             type="button"
             onClick={() => setProposalOpen(true)}
-            className="h-11 px-4 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-950 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] shrink-0 cursor-pointer border border-white/80 hover:border-amber-300/70"
+            className="h-10 sm:h-11 px-2.5 sm:px-4 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-950 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all duration-300 shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] shrink-0 cursor-pointer border border-white/80 hover:border-amber-300/70"
             title="Unduh Proposal PDF Resmi"
           >
             <span className="material-symbols-outlined text-[18px] text-amber-700">picture_as_pdf</span>
@@ -5045,7 +4031,7 @@ function StudioPageContent() {
             type="button"
             onClick={openSaveModal}
             disabled={isSaving}
-            className={`h-11 px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer border ${
+            className={`h-10 sm:h-11 px-3 sm:px-4 rounded-full flex items-center gap-1.5 text-xs sm:text-sm font-bold transition-all duration-300 shrink-0 cursor-pointer border ${
               saveSuccess
                 ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-[0_2px_12px_rgba(16,185,129,0.2),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                 : "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 hover:from-amber-300 hover:via-amber-400 hover:to-amber-300 text-amber-950 active:scale-[0.98] border-amber-300/80 shadow-[0_2px_14px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.9)] hover:shadow-[0_4px_18px_rgba(245,158,11,0.3)]"
@@ -5068,6 +4054,21 @@ function StudioPageContent() {
               {isSaving ? "..." : saveSuccess ? "OK" : "Simpan"}
             </span>
           </button>
+
+          {/* Mobile/Tablet Touch Collapse Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false);
+              setFilterOpen(false);
+              setStudioNavOpen(false);
+            }}
+            className="lg:hidden w-9 h-9 rounded-full bg-white/80 hover:bg-white backdrop-blur-xl text-slate-500 hover:text-slate-800 flex items-center justify-center border border-white/80 shadow-xs shrink-0 cursor-pointer"
+            title="Tutup Menu"
+            aria-label="Tutup Menu"
+          >
+            <span className="material-symbols-outlined text-[17px]">chevron_left</span>
+          </button>
         </div>
       </div>
 
@@ -5080,11 +4081,12 @@ function StudioPageContent() {
             ======================================================= */}
         <div
           id="canvas-viewport-container"
-          className={`relative flex-1 h-[55vh] lg:h-full bg-slate-100 overflow-hidden select-none ${
+          className={`relative flex-1 min-h-0 lg:h-full bg-slate-100 overflow-hidden select-none ${
             cadTool === "pen" ? "cursor-crosshair" : "cursor-default"
           }`}
-          onMouseMove={onViewportMouseMove}
-          onMouseUp={onViewportMouseUp}
+          onPointerMove={onViewportMouseMove}
+          onPointerUp={onViewportMouseUp}
+          onPointerCancel={onViewportMouseUp}
           onMouseLeave={() => {
             if (probePos !== null) setProbePos(null);
           }}
@@ -5097,7 +4099,9 @@ function StudioPageContent() {
           }}
         >
           {/* Top Right: Compass Rose (N) + Zoom Controls (+ / -) */}
-          <div className="absolute top-4 right-4 z-30 flex flex-col items-center gap-1 p-1 rounded-2xl bg-white/90 backdrop-blur-xl border border-white/80 shadow-[0_8px_24px_rgba(0,0,0,0.08)] pointer-events-auto">
+          <div className={`absolute right-3 sm:right-4 z-30 flex flex-col items-center gap-1 p-1 rounded-2xl bg-white/90 backdrop-blur-xl border border-white/80 shadow-[0_8px_24px_rgba(0,0,0,0.08)] pointer-events-auto transition-all duration-300 ${
+            studioNavOpen ? "top-15 sm:top-4" : "top-3 sm:top-4"
+          }`}>
             {/* Compass Rose N */}
             <button
               type="button"
@@ -5152,7 +4156,7 @@ function StudioPageContent() {
                 penPoints.length > 0 ? "z-[28]" : "z-20"
               }`}
               onClick={handleCanvasPenClick}
-              onMouseMove={(e) => {
+              onPointerMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 setPenMousePos({
                   x: Math.round(e.clientX - rect.left),
@@ -5300,9 +4304,15 @@ function StudioPageContent() {
                 <div
                   className="absolute z-35 flex items-center gap-1.5 p-1 rounded-full bg-white/95 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.15)] border border-slate-200/90 pointer-events-auto animate-fadeIn"
                   style={{
-                    left: `${penPoints[penPoints.length - 1].x}px`,
-                    top: `${Math.max(24, penPoints[penPoints.length - 1].y - 36)}px`,
-                    transform: "translate(-50%, -100%)",
+                    left: `clamp(48px, ${penPoints[penPoints.length - 1].x}px, calc(100% - 48px))`,
+                    top:
+                      penPoints[penPoints.length - 1].y < 76
+                        ? `${penPoints[penPoints.length - 1].y + 18}px`
+                        : `${Math.max(44, penPoints[penPoints.length - 1].y - 36)}px`,
+                    transform:
+                      penPoints[penPoints.length - 1].y < 76
+                        ? "translate(-50%, 0)"
+                        : "translate(-50%, -100%)",
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -5354,7 +4364,7 @@ function StudioPageContent() {
                 measurePoints.length > 0 ? "z-30" : "z-20"
               }`}
               onClick={handleCanvasMeasureClick}
-              onMouseMove={(e) => {
+              onPointerMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 setMeasureMousePos({
                   x: Math.round(e.clientX - rect.left),
@@ -5552,13 +4562,16 @@ function StudioPageContent() {
               </svg>
 
               {/* Floating Action Bar (sembunyikan setelah poligon ditutup agar tidak ganda dengan pil bawah) */}
-              {measurePoints.length > 0 && !isMeasureClosed && (
+              {measurePoints.length > 0 && !isMeasureClosed && (() => {
+                const lastMeasurePt = measurePoints[measurePoints.length - 1];
+                const flipBelow = lastMeasurePt.y < 82;
+                return (
                 <div
-                  className="absolute z-35 flex items-center gap-1.5 p-1.5 rounded-full bg-white/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(245,158,11,0.18)] border border-amber-200/90 pointer-events-auto animate-fadeIn select-none"
+                  className="absolute z-35 flex items-center gap-1.5 p-1.5 rounded-full bg-white/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(245,158,11,0.18)] border border-amber-200/90 pointer-events-auto animate-fadeIn select-none max-w-[calc(100%-1.5rem)]"
                   style={{
-                    left: `${measurePoints[measurePoints.length - 1].x}px`,
-                    top: `${Math.max(24, measurePoints[measurePoints.length - 1].y - 36)}px`,
-                    transform: "translate(-50%, -100%)",
+                    left: `clamp(115px, ${lastMeasurePt.x}px, calc(100% - 115px))`,
+                    top: flipBelow ? `${lastMeasurePt.y + 18}px` : `${Math.max(46, lastMeasurePt.y - 36)}px`,
+                    transform: flipBelow ? "translate(-50%, 0)" : "translate(-50%, -100%)",
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -5633,7 +4646,8 @@ function StudioPageContent() {
                     <span className="material-symbols-outlined text-[16px] font-bold">check</span>
                   </button>
                 </div>
-              )}
+                );
+              })()}
             </div>
           )}
 
@@ -5645,7 +4659,7 @@ function StudioPageContent() {
            * tidak menutupi tombol studio, jadi kewajibannya dipenuhi elemen ini.
            * `pointer-events-none` menjaga area peta tetap dapat dipindai/diklik.
            */}
-          <div className="absolute bottom-1 right-1 z-20 px-1.5 py-0.5 rounded bg-slate-900/45 text-[9px] leading-tight text-white/85 pointer-events-none select-none">
+          <div className="absolute bottom-1 right-1 z-20 px-1.5 py-0.5 rounded bg-slate-900/45 text-[8px] sm:text-[9px] leading-tight text-white/85 pointer-events-none select-none max-w-[calc(100%-10.5rem)] sm:max-w-none truncate">
             © Esri, Maxar, Earthstar Geographics · © OpenStreetMap contributors
           </div>
 
@@ -5714,26 +4728,26 @@ function StudioPageContent() {
 
           {/* Floating Toast Notification */}
           {cadToast && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 text-slate-800 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-xs font-medium flex items-center gap-2 animate-fadeIn">
-              <span className="material-symbols-outlined text-amber-600 text-[15px]">info</span>
-              <span>{cadToast}</span>
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100vw-2rem)] sm:max-w-md px-3.5 py-1.5 rounded-2xl sm:rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 text-slate-800 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-xs font-medium flex items-center gap-2 animate-fadeIn">
+              <span className="material-symbols-outlined text-amber-600 text-[15px] shrink-0">info</span>
+              <span className="truncate">{cadToast}</span>
             </div>
           )}
 
           {/* Floating Tool Banner: Delete Vertex Mode */}
           {cadTool === "delete_vertex" && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-rose-50/35 to-amber-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(244,63,94,0.12),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-2xl sm:rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-rose-50/35 to-amber-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(244,63,94,0.12),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)]">
               <span className="w-5 h-5 rounded-full bg-rose-100/90 text-rose-700 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">remove_circle</span>
               </span>
-              <span className="font-medium text-slate-700">
+              <span className="font-medium text-slate-700 whitespace-nowrap">
                 Hapus Simpul · <strong className="text-slate-900 font-semibold">{getFacetVertices(activeFacet).length} titik</strong>
               </span>
               <button
                 type="button"
                 disabled={getFacetVertices(activeFacet).length <= 3}
                 onClick={() => deleteLastVertex()}
-                className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold transition flex items-center gap-1 ${
+                className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold transition flex items-center gap-1 shrink-0 whitespace-nowrap ${
                   getFacetVertices(activeFacet).length > 3
                     ? "bg-rose-50/90 text-rose-700 border border-rose-200/80 hover:bg-rose-100 cursor-pointer"
                     : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
@@ -5746,7 +4760,7 @@ function StudioPageContent() {
               <button
                 type="button"
                 onClick={() => setCadTool("select")}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
               >
                 Selesai
               </button>
@@ -5755,17 +4769,17 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Multi-Select Move Hint */}
           {cadTool === "select" && selectedFacetIds.length > 1 && !showDetectedRoofs && !scanConfirm && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)]">
               <span className="w-5 h-5 rounded-full bg-amber-100/90 text-amber-800 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">select_all</span>
               </span>
-              <span className="font-medium text-slate-700">
+              <span className="font-medium text-slate-700 truncate">
                 <strong className="text-slate-900 font-semibold">{selectedFacetIds.length} bidang dipilih</strong> · Seret untuk geser
               </span>
               <button
                 type="button"
                 onClick={unselectAllFacets}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 text-[10.5px] font-semibold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 text-[10.5px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
               >
                 Batal
               </button>
@@ -5774,17 +4788,17 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Edit Polygon Hint */}
           {cadTool === "edit_polygon" && !showDetectedRoofs && !scanConfirm && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)]">
               <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 text-amber-900 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">polyline</span>
               </span>
-              <span className="font-medium text-slate-700">
+              <span className="font-medium text-slate-700 truncate">
                 Edit Poligon · Seret sudut atau garis
               </span>
               <button
                 type="button"
                 onClick={() => setCadTool("select")}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
               >
                 Selesai
               </button>
@@ -5793,11 +4807,11 @@ function StudioPageContent() {
 
           {/* Floating Tool Banner: Measure / CAD Overview Mode */}
           {cadTool === "measure" && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-2xl sm:rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(251,191,36,0.16),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)]">
               <span className="w-5 h-5 rounded-full bg-amber-100/90 text-amber-800 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">straighten</span>
               </span>
-              <span className="font-medium text-slate-700 truncate">
+              <span className="font-medium text-slate-700 truncate min-w-0">
                 {isMeasureClosed ? (
                   <>
                     Luas Terukur <strong className="font-code-metric text-emerald-700 font-semibold">{measureArea.toFixed(1)} m²</strong> · Keliling <strong className="font-code-metric text-slate-900 font-semibold">{measureTotalDistance.toFixed(1)} m</strong> · <strong className="font-code-metric text-slate-900 font-semibold">{measurePoints.length}</strong> sisi
@@ -5821,7 +4835,7 @@ function StudioPageContent() {
                 <button
                   type="button"
                   onClick={handleConvertMeasureToFacet}
-                  className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 text-[10.5px] font-semibold transition cursor-pointer border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]"
+                  className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 text-amber-950 text-[10.5px] font-semibold transition cursor-pointer border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)] shrink-0 whitespace-nowrap"
                 >
                   + Jadikan Atap
                 </button>
@@ -5833,7 +4847,7 @@ function StudioPageContent() {
                     setMeasurePoints([]);
                     setIsMeasureClosed(false);
                   }}
-                  className="px-2 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-600 text-[10.5px] font-semibold transition cursor-pointer"
+                  className="px-2 py-0.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-600 text-[10.5px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   Reset
                 </button>
@@ -5845,7 +4859,7 @@ function StudioPageContent() {
                   setIsMeasureClosed(false);
                   setCadTool("select");
                 }}
-                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full bg-slate-900/90 hover:bg-slate-900 text-white text-[10.5px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap"
               >
                 Selesai
               </button>
@@ -5855,7 +4869,7 @@ function StudioPageContent() {
           {/* Minimalist Apple Glass Scale Pill (Soft Radiant Glow) */}
           {viewportScale && (
             <div
-              className="absolute bottom-3 left-3 z-25 pointer-events-auto select-none flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/75 bg-gradient-to-r from-white/88 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_6px_22px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 cursor-default"
+              className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 z-25 pointer-events-auto select-none flex items-center gap-2 sm:gap-2.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full bg-white/75 bg-gradient-to-r from-white/88 via-amber-50/35 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_6px_22px_rgba(251,191,36,0.14),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 cursor-default"
               title={
                 viewportScale.status === "optimal"
                   ? `Cakupan ~${viewportScale.footprintM} m • Skala optimal untuk pindai atap`
@@ -5909,7 +4923,7 @@ function StudioPageContent() {
 
           {/* Non-blocking Floating Pill: Konfirmasi Cakupan di Luar Rentang Ideal (Apple Glass + Soft Radiant Glow) */}
           {scanConfirm !== null && !isAiScanning && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex flex-wrap sm:flex-nowrap items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_36px_rgba(251,191,36,0.18),0_4px_16px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-35 flex flex-wrap sm:flex-nowrap items-center justify-center gap-2 px-3.5 py-1.5 rounded-2xl sm:rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_36px_rgba(251,191,36,0.18),0_4px_16px_rgba(56,189,248,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 via-yellow-100 to-amber-200/80 text-amber-900 border border-white/90 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">straighten</span>
               </span>
@@ -5984,7 +4998,7 @@ function StudioPageContent() {
 
           {/* Panduan seleksi bidang hasil deteksi model */}
           {showDetectedRoofs && remainingDetectedRoofs.length > 0 && !isAiScanning && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_10px_32px_rgba(251,191,36,0.18),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/40 to-sky-50/35 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_10px_32px_rgba(251,191,36,0.18),0_2px_10px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200/90 text-amber-900 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">psychology</span>
               </span>
@@ -6012,7 +5026,7 @@ function StudioPageContent() {
 
           {/* Deteksi selesai tanpa bidang */}
           {detection !== null && detectedRoofs.length === 0 && !isAiScanning && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/30 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(15,23,42,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-2rem)] pointer-events-auto">
+            <div className="absolute bottom-12 sm:bottom-5 left-1/2 -translate-x-1/2 z-35 flex items-center gap-2 sm:gap-2.5 px-3 sm:px-3.5 py-1.5 rounded-full bg-white/82 bg-gradient-to-r from-white/90 via-amber-50/30 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_8px_28px_rgba(15,23,42,0.10),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 text-xs animate-fadeIn max-w-[calc(100vw-1.5rem)] sm:max-w-[calc(100vw-2rem)] pointer-events-auto">
               <span className="w-5 h-5 rounded-full bg-slate-900/5 text-slate-600 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[13px]">search_off</span>
               </span>
@@ -6043,7 +5057,8 @@ function StudioPageContent() {
                 sunHour,
                 obstacleFilterActive,
                 extraTilt,
-                inverterType
+                inverterType,
+                shadingLossPct
               );
 
               // Real physical scale & geo-anchored pixel positions (never shifts when panel closes!)
@@ -6104,8 +5119,9 @@ function StudioPageContent() {
                           ? "crosshair"
                           : "default",
                     zIndex: isSelected ? 25 : 15,
+                    touchAction: cadTool === "select" || cadTool === "edit_polygon" ? "none" : undefined,
                   }}
-                  onMouseDown={(e) => {
+                  onPointerDown={(e) => {
                     if ((cadTool === "select" || cadTool === "edit_polygon") && !e.shiftKey) {
                       startDrag(
                         e,
@@ -6284,11 +5300,11 @@ function StudioPageContent() {
                                     x2={to.x}
                                     y2={to.y}
                                     stroke="transparent"
-                                    strokeWidth={14}
+                                    strokeWidth={22}
                                     strokeLinecap="round"
-                                    style={{ cursor: "pointer" }}
+                                    style={{ cursor: "pointer", touchAction: "none" }}
                                     className="pointer-events-auto"
-                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       deleteEdge(facet.id, edgeIdx);
@@ -6305,7 +5321,7 @@ function StudioPageContent() {
                                       x2={to.x}
                                       y2={to.y}
                                       stroke="transparent"
-                                      strokeWidth={14}
+                                      strokeWidth={22}
                                       strokeLinecap="round"
                                       style={{ cursor: "crosshair" }}
                                       className="pointer-events-auto"
@@ -6361,7 +5377,7 @@ function StudioPageContent() {
                                             : prev
                                         )
                                       }
-                                      onMouseDown={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         const insertPt = hoveredEdge?.localPoint ?? {
@@ -6420,9 +5436,9 @@ function StudioPageContent() {
                                       x2={to.x}
                                       y2={to.y}
                                       stroke="transparent"
-                                      strokeWidth={14}
+                                      strokeWidth={22}
                                       strokeLinecap="round"
-                                      style={{ cursor: "grab" }}
+                                      style={{ cursor: "grab", touchAction: "none" }}
                                       className="pointer-events-auto"
                                       onMouseEnter={() =>
                                         setEdgeHover({ facetId: facet.id, edgeIdx })
@@ -6437,7 +5453,7 @@ function StudioPageContent() {
                                         )
                                       }
                                       onClick={(e) => e.stopPropagation()}
-                                      onMouseDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
+                                      onPointerDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
                                     />
 
                                     {/* Kotak tarik di tengah garis saat di-hover atau sedang diseret */}
@@ -6445,7 +5461,7 @@ function StudioPageContent() {
                                       <g
                                         transform={`translate(${midX}, ${midY}) rotate(${edgeAngleDeg})`}
                                         className="pointer-events-auto"
-                                        style={{ cursor: "ns-resize" }}
+                                        style={{ cursor: "ns-resize", touchAction: "none" }}
                                         onMouseEnter={() =>
                                           setEdgeHover({ facetId: facet.id, edgeIdx })
                                         }
@@ -6459,7 +5475,7 @@ function StudioPageContent() {
                                           )
                                         }
                                         onClick={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
+                                        onPointerDown={(e) => startEdgeDrag(e, facet.id, edgeIdx)}
                                       >
                                         <rect
                                           x="-6"
@@ -6509,12 +5525,12 @@ function StudioPageContent() {
                                   <circle
                                     cx={point.x}
                                     cy={point.y}
-                                    r={isDeleteMode ? 10 : 9}
+                                    r={isDeleteMode ? 16 : 15}
                                     fill="transparent"
-                                    style={{ cursor: isDeleteMode ? "pointer" : "grab" }}
-                                    onMouseDown={
+                                    style={{ cursor: isDeleteMode ? "pointer" : "grab", touchAction: "none" }}
+                                    onPointerDown={
                                       isDeleteMode
-                                        ? undefined
+                                        ? (e) => e.stopPropagation()
                                         : (e) => startVertexDrag(e, facet.id, vertexIdx)
                                     }
                                     onClick={
@@ -6611,8 +5627,9 @@ function StudioPageContent() {
 
                           const state: SlotState = slot.state ?? facet.slotOverrides[key] ?? "active";
 
-                          const showCellWattage = pixelsPerMeter >= 26;
-                          const isMicroCell = pixelsPerMeter < 16;
+                          const isLargeArray = fMetrics.validSlots.length > 400;
+                          const showCellWattage = !isLargeArray && pixelsPerMeter >= 26;
+                          const isMicroCell = isLargeArray || pixelsPerMeter < 16;
 
                           return (
                             <button
@@ -6626,13 +5643,15 @@ function StudioPageContent() {
                                   setActiveFacetId(facet.id);
                                 }
                               }}
-                              className={`absolute rounded-[1.5px] transition-all flex items-center justify-center border overflow-hidden ${
+                              className={`absolute rounded-[1.5px] ${isLargeArray ? "" : "transition-all"} flex items-center justify-center border overflow-hidden ${
                                 cadTool === "pen" ? "pointer-events-none" : "pointer-events-auto"
                               } ${
                                 obstacleBrush ? "cursor-crosshair ring-1 ring-amber-300" : "cursor-pointer"
                               } ${
                                 state === "active"
-                                  ? "bg-gradient-to-b from-[#0B1528] via-[#0F1C36] to-[#0A1325] border-sky-400/50 hover:border-amber-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] hover:scale-[1.02]"
+                                  ? isLargeArray
+                                    ? "bg-[#0F1C36] border-sky-400/50 hover:border-amber-400"
+                                    : "bg-gradient-to-b from-[#0B1528] via-[#0F1C36] to-[#0A1325] border-sky-400/50 hover:border-amber-400 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] hover:scale-[1.02]"
                                   : state === "skylight"
                                     ? "bg-amber-500/50 border-amber-400"
                                     : state === "hvac"
@@ -6655,16 +5674,18 @@ function StudioPageContent() {
                               }
                             >
                               {state === "active" ? (
-                                <div className="w-full h-full flex flex-col justify-center items-center relative pointer-events-none">
-                                  {/* Silicon Wafer Busbar Lines */}
-                                  <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
-                                  {showCellWattage && (
-                                    <span className="text-[6.5px] font-bold text-sky-200/95 tracking-tighter truncate px-0.5 leading-none">
-                                      {facet.modulePower}W
-                                    </span>
-                                  )}
-                                  <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
-                                </div>
+                                isLargeArray ? null : (
+                                  <div className="w-full h-full flex flex-col justify-center items-center relative pointer-events-none">
+                                    {/* Silicon Wafer Busbar Lines */}
+                                    <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                                    {showCellWattage && (
+                                      <span className="text-[6.5px] font-bold text-sky-200/95 tracking-tighter truncate px-0.5 leading-none">
+                                        {facet.modulePower}W
+                                      </span>
+                                    )}
+                                    <div className="w-full h-[0.5px] bg-sky-300/20 my-auto" />
+                                  </div>
+                                )
                               ) : state === "skylight" ? (
                                 <span className={`${isMicroCell ? "w-1 h-1 rounded-full bg-amber-300" : "text-[6.5px] font-bold text-amber-200"}`}>
                                   {!isMicroCell && "SKY"}
@@ -6801,7 +5822,7 @@ function StudioPageContent() {
 
                       return (
                         <div
-                          className="absolute top-[calc(100%+18px)] left-1/2 -translate-x-1/2 z-40 w-64 p-3.5 rounded-2xl bg-white/82 bg-gradient-to-br from-white/92 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(245,158,11,0.16),0_4px_14px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 pointer-events-auto animate-fadeIn select-none"
+                          className="absolute top-[calc(100%+18px)] left-1/2 -translate-x-1/2 z-40 w-56 sm:w-64 max-w-[calc(100vw-2rem)] p-3 sm:p-3.5 rounded-2xl bg-white/82 bg-gradient-to-br from-white/92 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_14px_38px_rgba(245,158,11,0.16),0_4px_14px_rgba(15,23,42,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] text-slate-800 pointer-events-auto animate-fadeIn select-none"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Header: Nama Bidang & Jumlah Titik */}
@@ -6875,9 +5896,9 @@ function StudioPageContent() {
                     <>
                       {/* Top Rotation Handle */}
                       <div
-                        className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center group cursor-grab active:cursor-grabbing z-20"
+                        className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center group cursor-grab active:cursor-grabbing z-20 touch-none"
                         title="Putar sudut atap"
-                        onMouseDown={(e) =>
+                        onPointerDown={(e) =>
                           startDrag(
                             e,
                             facet.id,
@@ -6895,7 +5916,7 @@ function StudioPageContent() {
                         <span className="px-2 py-0.5 rounded-full bg-white/95 text-amber-800 font-code-metric text-[10px] font-bold shadow-xs whitespace-nowrap mb-1 border border-amber-300">
                           {facet.rotation}°
                         </span>
-                        <div className="w-7 h-7 rounded-full bg-white shadow-lg border border-slate-300 flex items-center justify-center text-slate-600 group-hover:text-amber-600 group-hover:border-amber-400 group-hover:scale-110 transition-all">
+                        <div className="w-8 h-8 sm:w-7 sm:h-7 rounded-full bg-white shadow-lg border border-slate-300 flex items-center justify-center text-slate-600 group-hover:text-amber-600 group-hover:border-amber-400 group-hover:scale-110 transition-all">
                           <span className="material-symbols-outlined text-[15px]">rotate_right</span>
                         </div>
                         <div className="w-px h-3 bg-slate-400/80" />
@@ -6910,7 +5931,7 @@ function StudioPageContent() {
           {/* Floating Minimalist CAD Toolbar (Modern Frosted Glass) */}
           <div
             id="studio-left-toolbar"
-            className="absolute top-1/2 -translate-y-1/2 left-4 z-30 flex flex-col items-center gap-1.5 p-1.5 rounded-2xl bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80"
+            className="absolute top-15 sm:top-1/2 sm:-translate-y-1/2 left-2.5 sm:left-4 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-2xl bg-white/80 backdrop-blur-xl shadow-[0_8px_32px_rgba(245,158,11,0.06),0_2px_8px_rgba(0,0,0,0.04)] border border-white/80"
           >
             {/* 1. Select / Move */}
             <button
@@ -6919,14 +5940,14 @@ function StudioPageContent() {
                 setCadTool("select");
                 showToast("Mode Pilih & Geser aktif");
               }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "select"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
               title="Pilih & Geser Poligon"
             >
-              <span className="material-symbols-outlined text-[19px]">near_me</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px]">near_me</span>
             </button>
 
             {/* 2. Edit Polygon / Vertices & Edges */}
@@ -6937,14 +5958,14 @@ function StudioPageContent() {
                 setActiveTab("geometry");
                 showToast("Mode Edit Poligon aktif — seret titik sudut atau kotak di tengah sisi untuk ubah ukuran");
               }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "edit_polygon"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
               title="Edit Poligon: Seret Titik Sudut atau Tengah Garis"
             >
-              <span className="material-symbols-outlined text-[19px]">polyline</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px]">polyline</span>
             </button>
 
             {/* 3. Pen Tool (Custom Polygon Point-by-Point) */}
@@ -6955,14 +5976,14 @@ function StudioPageContent() {
                 setPenPoints([]);
                 showToast("Mode Pen Tool aktif — klik peta untuk membuat titik & panjang sisi poligon");
               }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "pen"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
               title="Pen Tool: Gambar Poligon Baru & Panjang Garis"
             >
-              <span className="material-symbols-outlined text-[19px]">edit</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px]">edit</span>
             </button>
 
             {/* 5. Delete Vertex Tool (Hapus Titik Poligon) */}
@@ -6977,14 +5998,14 @@ function StudioPageContent() {
                     : "Mode Hapus Simpul dinonaktifkan"
                 );
               }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "delete_vertex"
                   ? "bg-gradient-to-r from-rose-200 via-amber-200 to-rose-200 text-rose-950 font-bold shadow-[0_2px_8px_rgba(244,63,94,0.25),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-rose-300/80"
                   : "text-slate-600 hover:text-rose-600 hover:bg-rose-50/70"
               }`}
               title="Hapus Titik Simpul Poligon"
             >
-              <span className="material-symbols-outlined text-[19px]">remove_circle_outline</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px]">remove_circle_outline</span>
             </button>
 
             {/* 6. Measure & CAD Overview Tool */}
@@ -7003,14 +6024,14 @@ function StudioPageContent() {
                     : "Mode pengukuran dinonaktifkan"
                 );
               }}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 cadTool === "measure"
                   ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_8px_rgba(245,158,11,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
                   : "text-slate-600 hover:text-slate-900 hover:bg-amber-50/70"
               }`}
               title="Penggaris & Dimensi CAD"
             >
-              <span className="material-symbols-outlined text-[19px]">straighten</span>
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px]">straighten</span>
             </button>
 
             {/* 7. AI Rooftop Detection Tool (Under Ruler) */}
@@ -7019,7 +6040,7 @@ function StudioPageContent() {
               type="button"
               onClick={handleRunAiDetection}
               disabled={isAiScanning}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition ${
                 isAiScanning ? "cursor-progress opacity-70" : "cursor-pointer"
               } ${
                 detection !== null || isAiScanning
@@ -7028,7 +6049,7 @@ function StudioPageContent() {
               }`}
               title="Pindai Bidang Atap dengan Model AI (Computer Vision)"
             >
-              <span className={`material-symbols-outlined text-[19px] ${isAiScanning ? "animate-spin text-amber-900" : "text-amber-800"}`}>
+              <span className={`material-symbols-outlined text-[18px] sm:text-[19px] ${isAiScanning ? "animate-spin text-amber-900" : "text-amber-800"}`}>
                 {isAiScanning ? "sync" : "psychology"}
               </span>
             </button>
@@ -7046,7 +6067,7 @@ function StudioPageContent() {
                   setMascotGuideOpen(true);
                 }
               }}
-              className={`relative w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
+              className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
                 mascotGuideOpen
                   ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] font-bold"
                   : "bg-white/90 text-slate-700 hover:bg-amber-50/70 hover:text-amber-900"
@@ -7054,7 +6075,7 @@ function StudioPageContent() {
               title="Panduan Studio bersama Sunny"
               aria-label="Panduan Studio"
             >
-              <span className="material-symbols-outlined text-[19px] text-amber-700 font-bold">
+              <span className="material-symbols-outlined text-[18px] sm:text-[19px] text-amber-700 font-bold">
                 help
               </span>
               {!studioGuideCompleted && (
@@ -7100,8 +6121,10 @@ function StudioPageContent() {
             ======================================================= */}
         <div
           id="studio-sidebar-inspector"
-          className={`relative h-[45vh] lg:h-full shrink-0 bg-white/82 bg-gradient-to-b from-white/92 via-amber-50/20 to-sky-50/25 backdrop-blur-2xl saturate-150 border-l border-white/85 shadow-[-8px_0_32px_rgba(15,23,42,0.06)] z-30 transition-all duration-300 overflow-visible flex flex-col ${
-            rightPanelOpen ? "w-full lg:w-[380px]" : "w-full lg:w-0"
+          className={`relative shrink-0 bg-white/82 bg-gradient-to-b from-white/92 via-amber-50/20 to-sky-50/25 backdrop-blur-2xl saturate-150 border-t lg:border-t-0 lg:border-l border-white/85 shadow-[0_-8px_28px_rgba(15,23,42,0.08)] lg:shadow-[-8px_0_32px_rgba(15,23,42,0.06)] z-30 transition-all duration-300 overflow-visible flex flex-col ${
+            rightPanelOpen
+              ? "h-[52dvh] sm:h-[46dvh] lg:h-full w-full lg:w-[340px] xl:w-[380px]"
+              : "h-12 lg:h-full w-full lg:w-0"
           }`}
         >
           {/* Desktop Panel Toggle */}
@@ -7116,10 +6139,40 @@ function StudioPageContent() {
             </span>
           </button>
 
-          <div className="w-full lg:w-[380px] shrink-0 h-full flex flex-col overflow-hidden bg-transparent">
+          {/* Mobile & Tablet Collapsible Sheet Toggle Bar */}
+          <button
+            type="button"
+            onClick={() => setRightPanelOpen((prev) => !prev)}
+            className="flex lg:hidden items-center justify-between gap-2 w-full h-12 px-3.5 bg-white/85 backdrop-blur-xl border-b border-slate-200/70 shrink-0 cursor-pointer text-left"
+            aria-label={rightPanelOpen ? "Ciutkan Panel Parameter" : "Buka Panel Parameter"}
+            aria-expanded={rightPanelOpen}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[16px]">tune</span>
+              </span>
+              <span className="text-xs font-bold text-slate-900 truncate">
+                Parameter &amp; Simulasi
+              </span>
+              <span className="text-[11px] font-semibold text-amber-900 bg-amber-50 border border-amber-200/70 px-2 py-0.5 rounded-full font-code-metric shrink-0">
+                {calc.actualKwp.toFixed(1)} kWp · {calc.totalModulesFitted} panel
+              </span>
+            </div>
+            <span className="w-7 h-7 rounded-full bg-slate-900/[0.05] text-slate-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[18px]">
+                {rightPanelOpen ? "expand_more" : "expand_less"}
+              </span>
+            </span>
+          </button>
+
+          <div
+            className={`w-full lg:w-[340px] xl:w-[380px] shrink-0 flex-1 min-h-0 lg:h-full flex flex-col overflow-hidden bg-transparent ${
+              rightPanelOpen ? "flex" : "hidden lg:flex"
+            }`}
+          >
             {/* Eco-Forest Diorama & Compact Glass Metrics */}
-            <div className="p-3 pb-2.5 bg-white/55 border-b border-slate-200/60 shrink-0">
-              <div className="relative w-full h-26 rounded-2xl bg-gradient-to-b from-sky-200/85 via-sky-100/55 to-emerald-100/80 border border-white/90 overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.85),0_4px_14px_rgba(15,23,42,0.04)] flex flex-col justify-between p-2.5">
+            <div className="p-2.5 sm:p-3 pb-2 sm:pb-2.5 bg-white/55 border-b border-slate-200/60 shrink-0">
+              <div className="hidden sm:flex relative w-full h-22 lg:h-26 rounded-2xl bg-gradient-to-b from-sky-200/85 via-sky-100/55 to-emerald-100/80 border border-white/90 overflow-hidden shadow-[inset_0_1px_1px_rgba(255,255,255,0.85),0_4px_14px_rgba(15,23,42,0.04)] flex-col justify-between p-2.5">
                 <div className="relative z-10 w-full">
                   {roiHoverYear !== null ? (
                     <div>
@@ -7282,40 +6335,40 @@ function StudioPageContent() {
               </div>
 
               {/* Minimal Metrics Ribbon (Frosted Glass) */}
-              <div className="grid grid-cols-4 divide-x divide-slate-200/70 bg-white/80 backdrop-blur-md rounded-2xl border border-white/95 shadow-[0_2px_10px_rgba(15,23,42,0.04),inset_0_1px_1px_rgba(255,255,255,0.9)] py-2 px-0.5 mt-2">
-                <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Kapasitas</span>
+              <div className="grid grid-cols-4 divide-x divide-slate-200/70 bg-white/80 backdrop-blur-md rounded-2xl border border-white/95 shadow-[0_2px_10px_rgba(15,23,42,0.04),inset_0_1px_1px_rgba(255,255,255,0.9)] py-1.5 sm:py-2 px-0.5 sm:mt-2">
+                <div className="flex flex-col items-center text-center px-0.5 sm:px-1 min-w-0">
+                  <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5 truncate max-w-full">Kapasitas</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
+                    <span className="text-xs sm:text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
                       {calc.actualKwp.toFixed(1)}
                     </span>
-                    <span className="text-[9.5px] font-semibold text-amber-700">kWp</span>
+                    <span className="text-[9px] sm:text-[9.5px] font-semibold text-amber-700">kWp</span>
                   </div>
                 </div>
-                <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Produksi</span>
+                <div className="flex flex-col items-center text-center px-0.5 sm:px-1 min-w-0">
+                  <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5 truncate max-w-full">Produksi</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
+                    <span className="text-xs sm:text-[13px] font-bold text-slate-900 tracking-tight font-code-metric">
                       {(calc.annualProductionKwh / 1000).toFixed(1)}
                     </span>
-                    <span className="text-[9.5px] font-semibold text-slate-500">MWh</span>
+                    <span className="text-[9px] sm:text-[9.5px] font-semibold text-slate-500">MWh</span>
                   </div>
                 </div>
-                <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Hemat/Bln</span>
+                <div className="flex flex-col items-center text-center px-0.5 sm:px-1 min-w-0">
+                  <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5 truncate max-w-full">Hemat/Bln</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-bold text-emerald-700 tracking-tight font-code-metric">
+                    <span className="text-xs sm:text-[13px] font-bold text-emerald-700 tracking-tight font-code-metric">
                       {(calc.cappedSaving / 1_000_000).toFixed(2)}M
                     </span>
                   </div>
                 </div>
-                <div className="flex flex-col items-center text-center px-1">
-                  <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Payback</span>
+                <div className="flex flex-col items-center text-center px-0.5 sm:px-1 min-w-0">
+                  <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5 truncate max-w-full">Payback</span>
                   <div className="flex items-baseline justify-center gap-0.5">
-                    <span className="text-[13px] font-bold text-amber-800 tracking-tight font-code-metric">
+                    <span className="text-xs sm:text-[13px] font-bold text-amber-800 tracking-tight font-code-metric">
                       {calc.paybackYears ? calc.paybackYears.toFixed(1) : "—"}
                     </span>
-                    <span className="text-[9.5px] font-semibold text-slate-500">Thn</span>
+                    <span className="text-[9px] sm:text-[9.5px] font-semibold text-slate-500">Thn</span>
                   </div>
                 </div>
               </div>
@@ -7363,1350 +6416,136 @@ function StudioPageContent() {
             {/* TAB PANES */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === "geometry" && (
-                <div id="studio-pane-geometry" className="p-3.5 space-y-3">
-                  {/* 1. Multi-Polygon Facet Switcher */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-title text-xs font-semibold text-slate-900">
-                        Bidang Atap <span className="font-code-metric text-slate-400 font-medium">({selectedFacetIds.length}/{facets.length})</span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          disabled={facets.length === 0}
-                          onClick={selectedFacetIds.length === facets.length ? unselectAllFacets : selectAllFacets}
-                          className="px-2.5 py-1 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 text-[10.5px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {selectedFacetIds.length === facets.length && facets.length > 0 ? "Batal Pilih" : "Pilih Semua"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={addNewFacet}
-                          className="px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-95 text-amber-950 text-[10.5px] font-semibold flex items-center gap-1 transition border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)] cursor-pointer"
-                          title="Tambah Bidang Atap Baru"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">add</span>
-                          <span>Bidang</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {facets.length > 0 && (
-                      <div
-                        ref={bindFacetStripScroll}
-                        tabIndex={0}
-                        className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5 focus:outline-none"
-                      >
-                        {facets.map((facet, idx) => {
-                          const isSelected = selectedFacetIds.includes(facet.id);
-                          const isActive = facet.id === activeFacetId;
-                          return (
-                            <div
-                              key={facet.id}
-                              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] shrink-0 transition-all border ${
-                                isSelected
-                                  ? isActive
-                                    ? "bg-gradient-to-r from-amber-100/95 via-yellow-100/95 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
-                                    : "bg-amber-50/70 text-amber-900 border-amber-200/70 font-medium"
-                                  : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-500 border-transparent"
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleFacetSelection(facet.id);
-                                }}
-                                className={`w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                                  isSelected
-                                    ? "bg-amber-500 text-white"
-                                    : "border border-slate-300 bg-white"
-                                }`}
-                                title={isSelected ? "Lepas pilihan" : "Pilih bidang"}
-                              >
-                                {isSelected && (
-                                  <span className="material-symbols-outlined text-[10px] font-bold">check</span>
-                                )}
-                              </button>
-
-                              <button
-                                type="button"
-                                className="flex items-center gap-1 cursor-pointer select-none"
-                                onClick={() => {
-                                  setSelectedFacetIds((prev) => (prev.includes(facet.id) ? prev : [...prev, facet.id]));
-                                  setActiveFacetId(facet.id);
-                                }}
-                              >
-                                <span className="truncate max-w-[110px]">{facet.name || `Bidang #${idx + 1}`}</span>
-                                <span className="text-[10px] text-slate-400 font-code-metric">
-                                  {facet.ridge.toFixed(1)}×{facet.slope.toFixed(1)}m
-                                </span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteFacet(facet.id);
-                                }}
-                                className="w-4 h-4 rounded-full hover:bg-rose-500/15 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
-                                title="Hapus bidang"
-                              >
-                                <span className="material-symbols-outlined text-[12px]">close</span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* AI Scan Prompt when empty */}
-                    {facets.length === 0 ? (
-                      <div className="pt-1 space-y-2.5">
-                        <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Pindai citra satelit dengan AI atau gambar langsung menggunakan Pen Tool.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleRunAiDetection}
-                          disabled={isAiScanning}
-                          className="w-full py-2 px-3 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-semibold text-xs flex items-center justify-center gap-1.5 border border-amber-200/90 shadow-[0_2px_10px_rgba(251,191,36,0.20),inset_0_1px_1px_rgba(255,255,255,0.9)] transition cursor-pointer disabled:opacity-60"
-                        >
-                          <span className={`material-symbols-outlined text-[16px] ${isAiScanning ? "animate-spin" : ""}`}>
-                            {isAiScanning ? "sync" : "radar"}
-                          </span>
-                          <span>{isAiScanning ? "Memindai Atap..." : "Pindai Atap AI"}</span>
-                        </button>
-                        {remainingDetectedRoofs.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
-                            {remainingDetectedRoofs.map((detected) => {
-                              const isPicked = selectedDetectedIds.includes(detected.id);
-                              return (
-                                <button
-                                  key={detected.id}
-                                  type="button"
-                                  onClick={() => selectDetectedRoof(detected.id)}
-                                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition cursor-pointer border ${
-                                    isPicked
-                                      ? "bg-amber-200/90 text-amber-950 border-amber-300 font-semibold"
-                                      : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-700 border-transparent"
-                                  }`}
-                                >
-                                  <span className="material-symbols-outlined text-[13px] text-amber-700">
-                                    {isPicked ? "check_circle" : "roofing"}
-                                  </span>
-                                  <span>{detected.area_sqm.toFixed(1)} m²</span>
-                                  <span className="text-slate-400 font-code-metric text-[10px]">
-                                    {Math.round(detected.confidence * 100)}%
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      selectedFacetIds.length === 0 && (
-                        <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-slate-500">
-                          <span>Pilih bidang untuk kalkulasi sistem.</span>
-                          <button
-                            type="button"
-                            onClick={selectAllFacets}
-                            className="text-amber-800 font-semibold hover:underline shrink-0 cursor-pointer"
-                          >
-                            Pilih Semua
-                          </button>
-                        </div>
-                      )
-                    )}
-
-                    {/* Pending detected candidates */}
-                    {showDetectedRoofs && facets.length > 0 && remainingDetectedRoofs.length > 0 && (
-                      <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                        <div className="flex items-center justify-between text-[10.5px]">
-                          <span className="font-medium text-slate-500">Kandidat terdeteksi</span>
-                          <button
-                            type="button"
-                            onClick={commitDetectedSelection}
-                            disabled={selectedDetectedIds.length === 0}
-                            className={`font-semibold ${
-                              selectedDetectedIds.length > 0
-                                ? "text-amber-800 hover:underline cursor-pointer"
-                                : "text-slate-300 cursor-not-allowed"
-                            }`}
-                          >
-                            Terapkan
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {remainingDetectedRoofs.map((detected) => {
-                            const isPicked = selectedDetectedIds.includes(detected.id);
-                            return (
-                              <button
-                                key={detected.id}
-                                type="button"
-                                onClick={() => selectDetectedRoof(detected.id)}
-                                className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 transition cursor-pointer border ${
-                                  isPicked
-                                    ? "bg-amber-200/90 text-amber-950 border-amber-300 font-semibold"
-                                    : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-700 border-transparent"
-                                }`}
-                              >
-                                <span className="material-symbols-outlined text-[13px] text-amber-700">
-                                  {isPicked ? "check_circle" : "roofing"}
-                                </span>
-                                <span>{detected.area_sqm.toFixed(1)} m²</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. Bentuk, Posisi & Rintangan */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Bentuk &amp; Posisi</span>
-                      <span className="text-[11px] font-medium text-slate-400">
-                        {roofShape === "rectangle"
-                          ? "Persegi"
-                          : roofShape === "l-shape"
-                            ? "Bentuk L"
-                            : roofShape === "trapezoid"
-                              ? "Limasan"
-                              : "Bebas"}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-slate-900/[0.04]">
-                      {[
-                        { id: "rectangle" as const, icon: "crop_landscape", label: "Persegi" },
-                        { id: "l-shape" as const, icon: "rounded_corner", label: "Bentuk L" },
-                        { id: "trapezoid" as const, icon: "change_history", label: "Limasan" },
-                        { id: "custom_polygon" as const, icon: "polyline", label: "Bebas" },
-                      ].map((shapeOpt) => (
-                        <button
-                          key={shapeOpt.id}
-                          type="button"
-                          onClick={() => setRoofShape(shapeOpt.id)}
-                          className={`py-1.5 px-1 rounded-xl text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
-                            roofShape === shapeOpt.id
-                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-[0_2px_8px_rgba(251,191,36,0.18),inset_0_1px_1px_rgba(255,255,255,0.9)]"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[15px]">{shapeOpt.icon}</span>
-                          <span className="text-[10px]">{shapeOpt.label}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Rotation */}
-                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Rotasi Poligon</span>
-                        <span className="font-code-metric font-semibold text-slate-900">{polygonRotation}°</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="-180"
-                        max="180"
-                        step="1"
-                        value={polygonRotation}
-                        onChange={(e) => setPolygonRotation(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                      <div className="grid grid-cols-4 gap-1 font-code-metric text-[10px]">
-                        {[
-                          { label: "+8°", val: 8 },
-                          { label: "0°", val: 0 },
-                          { label: "45°", val: 45 },
-                          { label: "90°", val: 90 },
-                        ].map((rot) => (
-                          <button
-                            key={rot.val}
-                            type="button"
-                            onClick={() => setPolygonRotation(rot.val)}
-                            className={`py-1 rounded-full text-center transition cursor-pointer font-medium ${
-                              polygonRotation === rot.val
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
-                            }`}
-                          >
-                            {rot.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Nudge Position */}
-                    <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center gap-0.5 bg-slate-900/[0.035] p-1 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => nudgeFacet(-10, 0)}
-                          className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
-                          title="Geser Kiri"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">arrow_left</span>
-                        </button>
-                        <div className="flex flex-col">
-                          <button
-                            type="button"
-                            onClick={() => nudgeFacet(0, -10)}
-                            className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
-                            title="Geser Atas"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">arrow_drop_up</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => nudgeFacet(0, 10)}
-                            className="w-6 h-3 rounded flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
-                            title="Geser Bawah"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">arrow_drop_down</span>
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => nudgeFacet(10, 0)}
-                          className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-600 hover:bg-white hover:text-amber-800 transition cursor-pointer"
-                          title="Geser Kanan"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">arrow_right</span>
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={centerFacetOnRoof}
-                        className="flex-1 h-8 px-3 rounded-xl bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-700 text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">filter_center_focus</span>
-                        <span>Pusatkan</span>
-                      </button>
-                    </div>
-
-                    {/* Rintangan Atap */}
-                    <div className="space-y-2 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Rintangan Atap</span>
-                        {Object.keys(activeFacet.slotOverrides || {}).length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSlotOverrides({});
-                              showToast("Rintangan manual direset");
-                            }}
-                            className="text-[10.5px] text-rose-600 hover:underline font-medium cursor-pointer"
-                          >
-                            Reset manual
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleObstacle("hvac")}
-                          className={`py-1.5 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer border ${
-                            hasHvac
-                              ? "bg-amber-50/90 text-amber-900 border-amber-200 font-semibold"
-                              : "bg-slate-900/[0.03] text-slate-600 border-transparent hover:bg-slate-900/[0.06]"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[14px]">{hasHvac ? "check" : "ac_unit"}</span>
-                          <span>AC / HVAC</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleObstacle("skylight")}
-                          className={`py-1.5 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer border ${
-                            hasSkylight
-                              ? "bg-sky-50/90 text-sky-900 border-sky-200 font-semibold"
-                              : "bg-slate-900/[0.03] text-slate-600 border-transparent hover:bg-slate-900/[0.06]"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[14px]">{hasSkylight ? "check" : "grid_4x4"}</span>
-                          <span>Skylight</span>
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-1">
-                        {[
-                          { id: "hvac" as const, icon: "ac_unit", label: "Kuas AC" },
-                          { id: "skylight" as const, icon: "grid_4x4", label: "Kuas Kaca" },
-                          { id: "empty" as const, icon: "block", label: "Kosongkan" },
-                        ].map((brush) => (
-                          <button
-                            key={brush.id}
-                            type="button"
-                            onClick={() => {
-                              const next = obstacleBrush === brush.id ? null : brush.id;
-                              setObstacleBrush(next);
-                              if (next) showToast(`Kuas ${brush.label}: klik slot panel di peta`);
-                            }}
-                            className={`py-1.5 px-1 rounded-xl text-[10px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                              obstacleBrush === brush.id
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] text-slate-600 hover:bg-slate-900/[0.06]"
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[13px]">{brush.icon}</span>
-                            <span>{brush.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. Dimensi & Batas Keamanan */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Dimensi &amp; Setback</span>
-                      <span className="font-code-metric text-[11px] font-semibold text-sky-700">
-                        {calc.netArea.toFixed(1)} m² efektif
-                      </span>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={activeFacet.name}
-                      onChange={(e) => updateActiveFacet({ name: e.target.value })}
-                      placeholder="Nama bidang atap"
-                      className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 transition"
-                    />
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <span className="text-[10.5px] font-medium text-slate-500">Panjang (m)</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={ridge}
-                          onChange={(e) => setRidge(Number(e.target.value))}
-                          className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 font-code-metric text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10.5px] font-medium text-slate-500">Lebar (m)</span>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={slope}
-                          onChange={(e) => setSlope(Number(e.target.value))}
-                          className="w-full rounded-xl bg-slate-900/[0.035] px-3 py-1.5 font-code-metric text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Setback Keliling</span>
-                        <span className="font-code-metric font-semibold text-slate-900">{setback.toFixed(2)} m</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.2"
-                        max="0.8"
-                        step="0.05"
-                        value={setback}
-                        onChange={(e) => setSetback(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-sky-600"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Jalur Talang</span>
-                        <span className="font-code-metric font-semibold text-slate-900">{gutter.toFixed(2)} m</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.3"
-                        max="0.9"
-                        step="0.05"
-                        value={gutter}
-                        onChange={(e) => setGutter(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 4. Kemiringan Bidang Atap */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Kemiringan Atap</span>
-                      <span className="font-code-metric text-xs font-semibold text-amber-800">{pitch}°</span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <input
-                        type="range"
-                        min="0"
-                        max="45"
-                        step="1"
-                        value={pitch}
-                        onChange={(e) => setPitch(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                      <div className="grid grid-cols-4 gap-1">
-                        {[
-                          { label: "5°", val: 5 },
-                          { label: "15°", val: 15 },
-                          { label: "22°", val: 22 },
-                          { label: "40°", val: 40 },
-                        ].map((p) => (
-                          <button
-                            key={p.val}
-                            type="button"
-                            onClick={() => setPitch(p.val)}
-                            className={`py-1 rounded-full text-[10.5px] font-medium text-center transition cursor-pointer ${
-                              pitch === p.val
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Interactive Profile Vector Diagram (Flattened Apple Architectural Inset) */}
-                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]" />
-                          <span>Sudut Datang Sinar Surya</span>
-                        </span>
-                        <span className="font-code-metric text-[10.5px] font-medium text-slate-400">
-                          Ideal 15°–22°
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3.5 rounded-xl bg-slate-50/80 p-2.5">
-                        {/* SVG Technical Vector */}
-                        <div className="relative w-36 h-[84px] shrink-0 bg-white/95 rounded-lg p-1 overflow-hidden">
-                          <svg className="w-full h-full" viewBox="0 0 145 85">
-                            <defs>
-                              <pattern id="cad-grid-pitch" width="10" height="10" patternUnits="userSpaceOnUse">
-                                <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#f1f5f9" strokeWidth="0.8" />
-                              </pattern>
-                              <linearGradient id="solarGlassGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#0284c7" />
-                                <stop offset="50%" stopColor="#0369a1" />
-                                <stop offset="100%" stopColor="#0284c7" />
-                              </linearGradient>
-                              <linearGradient id="amberWedgeGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
-                                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.05" />
-                              </linearGradient>
-                            </defs>
-
-                            <rect width="145" height="85" fill="url(#cad-grid-pitch)" />
-                            <polygon points="12,70 24,70 24,82 12,82" fill="#e2e8f0" stroke="#cbd5e1" strokeWidth="1" />
-                            <line x1="8" y1="70" x2="138" y2="70" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 3" />
-                            <text x="135" y="73" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600">0°</text>
-                            <path d={wedgePathD} fill="url(#amberWedgeGrad)" />
-
-                            <g transform={`rotate(-${pitch}, 20, 70)`} style={{ transition: "transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)" }}>
-                              <line x1="18" y1="70" x2="118" y2="70" stroke="#475569" strokeWidth="4.5" strokeLinecap="round" />
-                              <line x1="36" y1="70" x2="36" y2="63" stroke="#64748b" strokeWidth="2" />
-                              <line x1="74" y1="70" x2="74" y2="63" stroke="#64748b" strokeWidth="2" />
-                              <line x1="106" y1="70" x2="106" y2="63" stroke="#64748b" strokeWidth="2" />
-                              <rect x="26" y="58" width="88" height="5.5" rx="1.5" fill="url(#solarGlassGrad)" stroke="#0284c7" strokeWidth="1" />
-                              <line x1="70" y1="58" x2="70" y2="34" stroke="#d97706" strokeWidth="1.5" strokeDasharray="2 2" />
-                              <polygon points="70,30 67.5,35 72.5,35" fill="#d97706" />
-                            </g>
-
-                            <path d={arcPathD} fill="none" stroke="#d97706" strokeWidth="2" />
-                            <circle cx="20" cy="70" r="3.5" fill="#d97706" stroke="#ffffff" strokeWidth="1" />
-
-                            <g transform="translate(108, 16)">
-                              <circle cx="0" cy="0" r="10" fill="#f59e0b" opacity="0.15" />
-                              <circle cx="0" cy="0" r="7" fill="#f59e0b" opacity="0.3" />
-                              <circle cx="0" cy="0" r="4.5" fill="#f59e0b" />
-                              <line x1="-7" y1="7" x2="-26" y2="28" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" />
-                              <polygon points="-29,32 -22,27 -25,24" fill="#f59e0b" />
-                            </g>
-                          </svg>
-                        </div>
-
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                            Faktor Cosinus
-                          </span>
-                          <div className="font-title text-[15px] font-bold text-slate-900 leading-tight">
-                            Cos {pitch}° = {calc.pitchCosine}
-                          </div>
-                          <div
-                            className={`inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap ${
-                              pitch >= 15 && pitch <= 25
-                                ? "text-emerald-700"
-                                : pitch < 15
-                                ? "text-amber-700"
-                                : "text-slate-600"
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                            <span>
-                              {pitch >= 15 && pitch <= 25
-                                ? `Optimal · ${calc.pitchEffPct}%`
-                                : pitch < 15
-                                ? `Landai · ${calc.pitchEffPct}%`
-                                : `Curam · ${calc.pitchEffPct}%`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <p className="text-[10.5px] text-slate-500 leading-relaxed">
-                        Kemiringan 15°–22° membantu pembilasan debu alami saat hujan.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 5. Orientasi & Azimuth Kompas */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-title text-xs font-semibold text-slate-900">Orientasi &amp; Azimuth</span>
-                      <span className="font-code-metric text-xs font-semibold text-amber-800">{azimuth}° {azInfo.name}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3.5 rounded-xl bg-slate-50/80 p-2.5">
-                      <div className="relative w-20 h-20 shrink-0 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-1 shadow-sm flex items-center justify-center select-none overflow-hidden">
-                        <svg className="w-full h-full" viewBox="0 0 100 100">
-                          <circle cx="50" cy="50" r="46" fill="none" stroke="#334155" strokeWidth="1.5" />
-                          <text x="50" y="20" fill="#f43f5e" fontSize="9" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">N</text>
-                          <text x="50" y="80" fill="#f59e0b" fontSize="9" fontWeight="900" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">S</text>
-                          <text x="80" y="50" fill="#94a3b8" fontSize="8" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">E</text>
-                          <text x="20" y="50" fill="#94a3b8" fontSize="8" fontWeight="bold" fontFamily="monospace" textAnchor="middle" dominantBaseline="central">W</text>
-                        </svg>
-                        <div
-                          className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                          style={{
-                            transform: `rotate(${azimuth}deg)`,
-                            transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                          }}
-                        >
-                          <svg className="w-16 h-16" viewBox="0 0 80 80">
-                            <polygon points="40,11 36.5,40 40,37" fill="#f43f5e" />
-                            <polygon points="40,11 43.5,40 40,37" fill="#be123c" />
-                            <polygon points="40,69 36.5,40 40,43" fill="#fbbf24" />
-                            <polygon points="40,69 43.5,40 40,43" fill="#d97706" />
-                            <circle cx="40" cy="40" r="4" fill="#f8fafc" stroke="#64748b" strokeWidth="1" />
-                          </svg>
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="font-title text-base font-bold text-slate-900 leading-none">
-                          {azimuth}° · {azInfo.name}
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
-                          {azInfo.desc}
-                        </p>
-                        <div className="flex items-center gap-1 text-emerald-700 text-[11px] font-semibold">
-                          <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                          <span>Efisiensi {calc.azimuthEffPct}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <input
-                      type="range"
-                      min="0"
-                      max="360"
-                      step="1"
-                      value={azimuth}
-                      onChange={(e) => setAzimuth(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => nudgeAzimuth(-10)}
-                        className="w-7 h-7 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 flex items-center justify-center shrink-0 cursor-pointer"
-                        title="Putar -10°"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">rotate_left</span>
-                      </button>
-                      <div className="grid grid-cols-5 gap-1 flex-1 font-code-metric text-[10px]">
-                        {[
-                          { label: "0°", val: 0 },
-                          { label: "90°", val: 90 },
-                          { label: "180°", val: 180 },
-                          { label: "188°", val: 188 },
-                          { label: "270°", val: 270 },
-                        ].map((p) => (
-                          <button
-                            key={p.val}
-                            type="button"
-                            onClick={() => setAzimuth(p.val)}
-                            className={`py-1 rounded-full text-center transition cursor-pointer font-medium ${
-                              azimuth === p.val
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => nudgeAzimuth(10)}
-                        className="w-7 h-7 rounded-full bg-slate-900/[0.04] hover:bg-slate-900/[0.08] text-slate-600 flex items-center justify-center shrink-0 cursor-pointer"
-                        title="Putar +10°"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">rotate_right</span>
-                      </button>
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-medium text-slate-700">Selaraskan grid ke azimuth</span>
-                      <button
-                        type="button"
-                        onClick={() => setAlignToAzimuth(!alignToAzimuth)}
-                        className={`px-3 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
-                          alignToAzimuth
-                            ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 border border-amber-200/90"
-                            : "bg-slate-900/[0.05] text-slate-600"
-                        }`}
-                      >
-                        {alignToAzimuth ? "Aktif" : "Mati"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Primary Action */}
-                  <button
-                    type="button"
-                    onClick={autoPackModules}
-                    className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[17px]">auto_awesome</span>
-                    <span>Susun Tata Letak Panel</span>
-                  </button>
-                </div>
+                <GeometryTab
+                  facets={facets}
+                  selectedFacetIds={selectedFacetIds}
+                  activeFacetId={activeFacetId}
+                  activeFacet={activeFacet}
+                  bindFacetStripScroll={bindFacetStripScroll}
+                  onSelectAllFacets={selectAllFacets}
+                  onUnselectAllFacets={unselectAllFacets}
+                  onAddNewFacet={addNewFacet}
+                  onToggleFacetSelection={toggleFacetSelection}
+                  onFocusFacet={(id) => {
+                    setSelectedFacetIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+                    setActiveFacetId(id);
+                  }}
+                  onDeleteFacet={deleteFacet}
+                  isAiScanning={isAiScanning}
+                  onRunAiDetection={handleRunAiDetection}
+                  showDetectedRoofs={showDetectedRoofs}
+                  remainingDetectedRoofs={remainingDetectedRoofs}
+                  selectedDetectedIds={selectedDetectedIds}
+                  onSelectDetectedRoof={selectDetectedRoof}
+                  onCommitDetectedSelection={commitDetectedSelection}
+                  roofShape={roofShape}
+                  setRoofShape={setRoofShape}
+                  polygonRotation={polygonRotation}
+                  setPolygonRotation={setPolygonRotation}
+                  onNudgeFacet={nudgeFacet}
+                  onCenterFacetOnRoof={centerFacetOnRoof}
+                  obstacleBrush={obstacleBrush}
+                  setObstacleBrush={setObstacleBrush}
+                  onResetManualObstacles={() => {
+                    setSlotOverrides({});
+                    showToast("Rintangan manual direset");
+                  }}
+                  onSelectBrushToast={(label) => showToast(`Kuas ${label}: klik slot panel di peta`)}
+                  netArea={calc.netArea}
+                  onUpdateFacetName={(name) => updateActiveFacet({ name })}
+                  ridge={ridge}
+                  setRidge={setRidge}
+                  slope={slope}
+                  setSlope={setSlope}
+                  setback={setback}
+                  setSetback={setSetback}
+                  gutter={gutter}
+                  setGutter={setGutter}
+                  pitch={pitch}
+                  setPitch={setPitch}
+                  wedgePathD={wedgePathD}
+                  arcPathD={arcPathD}
+                  pitchCosine={calc.pitchCosine}
+                  pitchEffPct={calc.pitchEffPct}
+                  azimuth={azimuth}
+                  setAzimuth={setAzimuth}
+                  onNudgeAzimuth={nudgeAzimuth}
+                  azInfo={azInfo}
+                  azimuthEffPct={calc.azimuthEffPct}
+                  alignToAzimuth={alignToAzimuth}
+                  setAlignToAzimuth={setAlignToAzimuth}
+                  onNextTab={() => setActiveTab("pvarray")}
+                />
               )}
 
               {activeTab === "pvarray" && (
-                <div id="studio-pane-pvarray" className="p-3.5 space-y-3">
-                  {/* 1. Pilihan Modul */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Modul Surya</span>
-                      <span className="font-code-metric text-[11px] font-semibold text-emerald-700">
-                        {calc.currentSpec.eff} efis.
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={modulePower}
-                        onChange={(e) => setModulePower(Number(e.target.value))}
-                        className="w-full pl-3 pr-8 py-2 rounded-xl bg-slate-900/[0.035] text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 appearance-none cursor-pointer transition"
-                      >
-                        <option value="550">Tier-1 550W Mono PERC — 2.27 × 1.13 m</option>
-                        <option value="450">Tier-1 450W All-Black — 1.76 × 1.04 m</option>
-                        <option value="580">Bifacial 580W Dual-Glass — 2.38 × 1.13 m</option>
-                      </select>
-                      <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[18px]">expand_more</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      {calc.currentSpec.l} × {calc.currentSpec.w} m · {calc.currentSpec.tech}
-                    </p>
-                  </div>
-
-                  {/* 2. Jumlah Modul */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Jumlah Panel</span>
-                      <span className="font-code-metric text-[11px] text-slate-400 font-medium">
-                        maks {calc.totalValidSlots} slot
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-900/[0.035] p-1.5">
-                      <button
-                        type="button"
-                        onClick={() => adjustModuleCount(-1)}
-                        className="w-8 h-8 rounded-lg bg-white/90 hover:bg-white text-slate-700 flex items-center justify-center transition shadow-2xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">remove</span>
-                      </button>
-                      <span className="font-title text-base font-bold text-slate-900">
-                        {calc.modulesFitted} Modul
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => adjustModuleCount(1)}
-                        className="w-8 h-8 rounded-lg bg-white/90 hover:bg-white text-slate-700 flex items-center justify-center transition shadow-2xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">add</span>
-                      </button>
-                    </div>
-
-                    <input
-                      type="range"
-                      min="1"
-                      max={Math.max(1, calc.totalValidSlots)}
-                      value={calc.modulesFitted}
-                      onChange={(e) => setCustomModuleCount(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                    />
-
-                    <div className="grid grid-cols-3 gap-1 font-code-metric text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setCountPreset("max")}
-                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
-                      >
-                        Penuh
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCountPreset("opt")}
-                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
-                      >
-                        Ideal
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCountPreset("min")}
-                        className="py-1 rounded-full bg-slate-900/[0.035] hover:bg-amber-100/80 text-slate-700 hover:text-amber-950 font-medium transition cursor-pointer"
-                      >
-                        Hemat
-                      </button>
-                    </div>
-
-                    <p className="text-[10.5px] text-slate-500">
-                      Klik langsung panel di peta untuk menyalakan atau mematikan slot satuan.
-                    </p>
-                  </div>
-
-                  {/* 3. Tata Letak & Inverter */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
-                    <span className="font-title text-xs font-semibold text-slate-900 block">Tata Letak &amp; Inverter</span>
-
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-medium text-slate-500 block">Orientasi</span>
-                      <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-slate-900/[0.04]">
-                        <button
-                          type="button"
-                          onClick={() => setOrientation("portrait")}
-                          className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            orientation === "portrait"
-                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-2xs"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[15px]">stay_current_portrait</span>
-                          <span>Potret ({calc.portraitSlotsCount})</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setOrientation("landscape")}
-                          className={`py-1.5 px-2 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            orientation === "landscape"
-                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 text-amber-950 font-semibold border border-amber-200/90 shadow-2xs"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[15px]">stay_current_landscape</span>
-                          <span>Lanskap ({calc.landscapeSlotsCount})</span>
-                        </button>
-                      </div>
-                      {calc.portraitSlotsCount !== calc.landscapeSlotsCount && orientation !== calc.bestOrientation && (
-                        <div className="flex items-center justify-between text-[11px] text-amber-900 pt-0.5">
-                          <span>
-                            {calc.bestOrientation === "portrait" ? "Potret" : "Lanskap"} muat +{Math.abs(calc.portraitSlotsCount - calc.landscapeSlotsCount)} panel
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setOrientation(calc.bestOrientation)}
-                            className="font-semibold text-amber-800 hover:underline cursor-pointer"
-                          >
-                            Terapkan
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Jarak Antar Modul</span>
-                        <span className="font-code-metric font-semibold text-slate-900">{panelGap} cm</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="2"
-                        max="10"
-                        step="1"
-                        value={panelGap}
-                        onChange={(e) => setPanelGap(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Sudut Ekstra Racking</span>
-                        <span className="font-code-metric font-semibold text-amber-800">+{extraTilt}°</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="20"
-                        step="1"
-                        value={extraTilt}
-                        onChange={(e) => setExtraTilt(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 pt-2.5 border-t border-slate-100">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-medium text-slate-600">Inverter</span>
-                        <span className="font-code-metric text-[10.5px] text-slate-500">
-                          DC/AC {calc.dcAcRatio}× · {calc.inverterEffPct}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setInverterType("string")}
-                          className={`p-2 rounded-xl text-left transition cursor-pointer border ${
-                            inverterType === "string"
-                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/90 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
-                              : "bg-slate-900/[0.03] text-slate-700 border-transparent hover:bg-slate-900/[0.06]"
-                          }`}
-                        >
-                          <span className="text-xs font-semibold block">Central String</span>
-                          <span className="text-[10px] text-slate-500 block">3-Phase Sentral</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setInverterType("micro")}
-                          className={`p-2 rounded-xl text-left transition cursor-pointer border ${
-                            inverterType === "micro"
-                              ? "bg-gradient-to-r from-amber-100/95 via-yellow-200/90 to-amber-100/95 text-amber-950 border-amber-200/90 font-semibold shadow-2xs"
-                              : "bg-slate-900/[0.03] text-slate-700 border-transparent hover:bg-slate-900/[0.06]"
-                          }`}
-                        >
-                          <span className="text-xs font-semibold block">Microinverter</span>
-                          <span className="text-[10px] text-slate-500 block">Per Panel</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 4. Ringkasan Array */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Ringkasan Array</span>
-                      <span className="text-[11px] font-semibold text-emerald-700 font-code-metric">
-                        {calc.densityPct}% terpakai
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <span className="text-[10.5px] text-slate-400 block">Total Modul</span>
-                        <span className="font-semibold text-slate-900 text-sm font-code-metric">{calc.totalModulesFitted} unit</span>
-                      </div>
-                      <div>
-                        <span className="text-[10.5px] text-slate-400 block">Formasi Grid</span>
-                        <span className="font-semibold text-slate-900 text-sm">{calc.cols} × {calc.rows}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10.5px] text-slate-400 block">Kapasitas Puncak</span>
-                        <span className="font-semibold text-sky-700 text-sm font-code-metric">{calc.actualKwp.toFixed(2)} kWp</span>
-                      </div>
-                      <div>
-                        <span className="text-[10.5px] text-slate-400 block">Luas Array</span>
-                        <span className="font-semibold text-slate-900 text-sm font-code-metric">{(calc.totalModulesFitted * calc.currentSpec.w * calc.currentSpec.l).toFixed(1)} m²</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="pt-0.5 space-y-2">
-                    <button
-                      type="button"
-                      onClick={autoPackModules}
-                      className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[17px]">auto_awesome</span>
-                      <span>Tata Otomatis Modul</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => showToast("Konfigurasi modul diterapkan")}
-                      className="w-full py-2 px-4 rounded-full bg-white/80 hover:bg-white border border-white/90 text-slate-700 font-title text-xs font-semibold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-amber-700">check_circle</span>
-                      <span>Terapkan Konfigurasi</span>
-                    </button>
-                  </div>
-                </div>
+                <ModuleTab
+                  activeFacetId={activeFacet.id}
+                  modulePower={modulePower}
+                  setModulePower={setModulePower}
+                  adjustModuleCount={adjustModuleCount}
+                  setCustomModuleCount={setCustomModuleCount}
+                  setCountPreset={setCountPreset}
+                  orientation={orientation}
+                  setOrientation={setOrientation}
+                  panelGap={panelGap}
+                  setPanelGap={setPanelGap}
+                  extraTilt={extraTilt}
+                  setExtraTilt={setExtraTilt}
+                  shadingLossPct={shadingLossPct}
+                  setShadingLossPct={setShadingLossPct}
+                  inverterType={inverterType}
+                  setInverterType={setInverterType}
+                  calc={calc}
+                  moduleRecommendation={moduleRecommendation}
+                  onDismissRecommendation={() => setModuleRecommendation(null)}
+                  onFindOptimalRecommendation={findOptimalModuleRecommendation}
+                  onApplyRecommendation={applyModuleRecommendation}
+                  onNextTab={() => setActiveTab("financials")}
+                />
               )}
 
               {activeTab === "financials" && (
-                <div id="studio-pane-financials" className="p-3.5 space-y-3">
-                  {/* 1. Tarif & Tagihan PLN */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Tarif &amp; Tagihan PLN</span>
-                      <span className="text-[11px] font-semibold text-amber-800 font-code-metric">
-                        {plnTariff ? `Rp ${Number(plnTariff).toLocaleString("id-ID")}/kWh` : ""}
-                      </span>
-                    </div>
-
-                    <select
-                      value={plnTariff}
-                      onChange={(e) => setPlnTariff(Number(e.target.value))}
-                      className="w-full p-2.5 rounded-xl bg-slate-900/[0.035] text-xs font-medium text-slate-900 cursor-pointer focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 transition"
-                    >
-                      <option value="1700">R-2 / TR (3.500–5.500 VA) — Rp 1.700/kWh</option>
-                      <option value="1444.7">R-1 / TR (1.300–2.200 VA) — Rp 1.444,70/kWh</option>
-                      <option value="1699.53">R-3 / TR (&gt; 6.600 VA) — Rp 1.699,53/kWh</option>
-                      <option value="1444.7">B-2 / TR (Bisnis Menengah) — Rp 1.444,70/kWh</option>
-                      <option value="1114.74">B-3 / TM (Bisnis Besar) — Rp 1.114,74/kWh</option>
-                      <option value="1114.74">I-3 / TM (Industri) — Rp 1.114,74/kWh</option>
-                      <option value="996.74">I-4 / TT (Industri Besar) — Rp 996,74/kWh</option>
-                    </select>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-medium text-slate-600">Tagihan Bulanan</label>
-                        <span className="text-[10px] text-slate-400">
-                          ~{Math.round(monthlyBill / plnTariff).toLocaleString("id-ID")} kWh/bln
-                        </span>
-                      </div>
-
-                      <div className="relative flex items-center">
-                        <span className="absolute left-3 text-xs font-semibold text-amber-800 select-none">Rp</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={isTypingBill ? manualBillInput : monthlyBill.toLocaleString("id-ID")}
-                          onFocus={() => {
-                            setIsTypingBill(true);
-                            setManualBillInput(monthlyBill.toString());
-                          }}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, "");
-                            setManualBillInput(raw);
-                            const num = Number(raw);
-                            if (!isNaN(num) && num > 0) {
-                              setMonthlyBill(Math.min(100_000_000, num));
-                            }
-                          }}
-                          onBlur={() => {
-                            setIsTypingBill(false);
-                            const num = Number(manualBillInput.replace(/\D/g, ""));
-                            if (!isNaN(num) && num >= 100_000) {
-                              setMonthlyBill(Math.min(100_000_000, Math.max(100_000, num)));
-                            } else if (!num) {
-                              setMonthlyBill(500_000);
-                            }
-                          }}
-                          className="w-full pl-9 pr-14 py-2 rounded-xl bg-slate-900/[0.035] focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/60 text-right font-code-metric text-sm font-bold text-slate-900 transition"
-                          placeholder="2.800.000"
-                        />
-                        <span className="absolute right-3 text-[10px] text-slate-400 font-medium select-none">/ bln</span>
-                      </div>
-
-                      <input
-                        type="range"
-                        min="500000"
-                        max="100000000"
-                        step="250000"
-                        value={monthlyBill}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setMonthlyBill(val);
-                          setManualBillInput(val.toString());
-                        }}
-                        className="w-full h-1.5 bg-slate-200/80 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-
-                      <div className="grid grid-cols-4 gap-1 font-code-metric text-[10px]">
-                        {[
-                          { label: "2 Jt", val: 2_000_000 },
-                          { label: "5 Jt", val: 5_000_000 },
-                          { label: "15 Jt", val: 15_000_000 },
-                          { label: "50 Jt", val: 50_000_000 },
-                        ].map((preset) => (
-                          <button
-                            key={preset.val}
-                            type="button"
-                            onClick={() => {
-                              setMonthlyBill(preset.val);
-                              setManualBillInput(preset.val.toString());
-                            }}
-                            className={`py-1 rounded-full font-medium transition cursor-pointer ${
-                              monthlyBill === preset.val
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] text-slate-600 hover:bg-slate-900/[0.06]"
-                            }`}
-                          >
-                            {preset.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 2. Penghematan & Proyeksi Arus Kas 25 Tahun */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl p-3.5 border border-white/90 shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)] space-y-3.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-title text-xs font-semibold text-slate-900">Penghematan &amp; Arus Kas</span>
-                      <span className={`text-[11px] font-semibold font-code-metric ${
-                        calc.coveragePct > 0 ? "text-emerald-700" : "text-slate-400"
-                      }`}>
-                        {calc.coveragePct > 0 ? `Hemat ${calc.coveragePct}%` : "0% PLTS"}
-                      </span>
-                    </div>
-
-                    {/* Hero Comparison (No Nested Borders) */}
-                    <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-900/[0.03] p-3">
-                      <div>
-                        <span className="text-[10.5px] text-slate-500 block">Sebelum PLTS</span>
-                        <span className="font-title text-sm font-bold text-slate-900 font-code-metric block mt-0.5">
-                          {formatRp(monthlyBill)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10.5px] text-emerald-800 block">Tagihan Baru PLN</span>
-                        <span className="font-title text-sm font-bold text-emerald-700 font-code-metric block mt-0.5">
-                          {formatRp(calc.newMonthlyBill)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="space-y-1.5">
-                      <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden flex">
-                        {calc.coveragePct > 0 && (
-                          <div
-                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500 rounded-full"
-                            style={{ width: `${calc.coveragePct}%` }}
-                          />
-                        )}
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-                        <div>
-                          <span className="text-[9.5px] text-slate-400 block">Per Bulan</span>
-                          <span className="font-title text-xs font-bold text-emerald-700 font-code-metric">
-                            {formatRp(calc.cappedSaving)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[9.5px] text-slate-400 block">1 Tahun</span>
-                          <span className="font-title text-xs font-bold text-slate-900 font-code-metric">
-                            {formatRp(calc.annualSaving)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[9.5px] text-slate-400 block">25 Tahun</span>
-                          <span className="font-title text-xs font-bold text-emerald-800 font-code-metric">
-                            {formatRp(calc.cumulative25)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* BEP & Cashflow Chart */}
-                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-semibold text-slate-700">
-                          Tahun {currentInspectYear.toFixed(1)} ·{" "}
-                          <span className={`font-code-metric ${currentInspectCashFlow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                            {formatRp(currentInspectCashFlow)}
-                          </span>
-                        </span>
-                        <span className="text-[10.5px] font-semibold text-emerald-700 font-code-metric">
-                          {calc.bepYear > 0 && calc.bepYear <= 25
-                            ? `BEP ${calc.bepYear.toFixed(1)} thn`
-                            : calc.totalCapex === 0
-                            ? "Tanpa Modal"
-                            : "BEP > 25 thn"}
-                        </span>
-                      </div>
-
-                      <div
-                        className="relative w-full h-40 bg-slate-50/75 rounded-xl p-2 overflow-hidden select-none cursor-crosshair"
-                        onMouseMove={handleChartMouseMove}
-                        onMouseLeave={() => setRoiHoverYear(null)}
-                      >
-                        <svg className="w-full h-full overflow-visible" viewBox={`0 0 ${chartW} ${chartH}`}>
-                          <defs>
-                            <linearGradient id="roiProfitGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                              <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
-                            </linearGradient>
-                            <linearGradient id="roiDeficitGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.05" />
-                              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.2" />
-                            </linearGradient>
-                            <linearGradient id="roiCurveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                              <stop offset="0%" stopColor="#ef4444" />
-                              <stop offset={`${Math.max(0, (bepRatio - 0.04) * 100).toFixed(1)}%`} stopColor="#f59e0b" />
-                              <stop offset={`${(bepRatio * 100).toFixed(1)}%`} stopColor="#10b981" />
-                              <stop offset="100%" stopColor="#059669" />
-                            </linearGradient>
-                          </defs>
-
-                          <line x1="28" y1="20" x2="320" y2="20" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                          <line x1="28" y1="46" x2="320" y2="46" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                          <line x1="28" y1="72" x2="320" y2="72" stroke="#f1f5f9" strokeWidth="1" strokeDasharray="2 2" />
-                          <line x1="28" y1={zeroY} x2="320" y2={zeroY} stroke="#cbd5e1" strokeWidth="1.2" strokeDasharray="3 3" />
-
-                          {deficitFillD && <path d={deficitFillD} fill="url(#roiDeficitGrad)" />}
-                          {profitFillD && <path d={profitFillD} fill="url(#roiProfitGrad)" />}
-                          <path d={curvePathD} fill="none" stroke="url(#roiCurveGrad)" strokeWidth="2.5" strokeLinecap="round" />
-
-                          {calc.bepYear > 0 && calc.bepYear <= 25 && calc.annualSaving > 0 && (
-                            <g transform={`translate(${mapChartX(effectiveBep)}, ${zeroY})`}>
-                              <circle cx="0" cy="0" r="4" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
-                              <text x="0" y="-8" textAnchor="middle" fontSize="7" fill="#b45309" fontFamily="Inter" fontWeight="700">
-                                BEP {calc.bepYear.toFixed(1)}t
-                              </text>
-                            </g>
-                          )}
-
-                          <line
-                            x1={mapChartX(currentInspectYear)}
-                            y1="12"
-                            x2={mapChartX(currentInspectYear)}
-                            y2="108"
-                            stroke="#0284c7"
-                            strokeWidth="1.2"
-                            strokeDasharray="2 2"
-                          />
-                          <circle
-                            cx={mapChartX(currentInspectYear)}
-                            cy={mapChartY(currentInspectCashFlow)}
-                            r="4"
-                            fill="#0284c7"
-                            stroke="#ffffff"
-                            strokeWidth="1.5"
-                          />
-
-                          <text x="28" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600">Thn 0</text>
-                          <text x="144.8" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="middle">Thn 10</text>
-                          <text x="320" y="119" fontSize="7.5" fill="#94a3b8" fontFamily="Inter" fontWeight="600" textAnchor="end">Thn 25</text>
-                        </svg>
-                      </div>
-
-                      <div className="grid grid-cols-5 gap-1 font-code-metric text-[10px]">
-                        {[5, 10, 15, 20, 25].map((yr) => (
-                          <button
-                            key={yr}
-                            type="button"
-                            onClick={() => setRoiHoverYear(yr)}
-                            className={`py-1 rounded-full transition cursor-pointer font-medium ${
-                              currentInspectYear === yr
-                                ? "bg-amber-100 text-amber-950 font-semibold"
-                                : "bg-slate-900/[0.03] hover:bg-slate-900/[0.06] text-slate-600"
-                            }`}
-                          >
-                            Thn {yr}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. Rincian Modal CAPEX (Collapsible) */}
-                  <div className="rounded-2xl bg-white/80 backdrop-blur-xl border border-white/90 overflow-hidden shadow-[0_4px_20px_rgba(15,23,42,0.04),0_2px_10px_rgba(253,224,71,0.08),inset_0_1px_1px_rgba(255,255,255,0.92)]">
-                    <button
-                      type="button"
-                      onClick={() => setCapexCollapsed((c) => !c)}
-                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-white/50 transition-colors cursor-pointer"
-                    >
-                      <div>
-                        <span className="font-title text-xs font-semibold text-slate-900 block">Estimasi Investasi (CAPEX)</span>
-                        <span className="font-code-metric text-[11px] text-slate-500 font-medium">{formatRp(calc.totalCapex)}</span>
-                      </div>
-                      <span
-                        className={`material-symbols-outlined text-slate-400 transition-transform duration-200 text-[20px] ${
-                          capexCollapsed ? "" : "rotate-180"
-                        }`}
-                      >
-                        expand_more
-                      </span>
-                    </button>
-
-                    {!capexCollapsed && (
-                      <div className="px-3.5 pb-3.5 border-t border-slate-100 divide-y divide-slate-100 text-xs animate-fadeIn">
-                        <div className="py-2 flex justify-between items-center">
-                          <span className="text-slate-500">Modul ({calc.totalModulesFitted}× {modulePower}W)</span>
-                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costModules)}</span>
-                        </div>
-                        <div className="py-2 flex justify-between items-center">
-                          <span className="text-slate-500">Inverter ({inverterType === "string" ? "String" : "Micro"})</span>
-                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInverter)}</span>
-                        </div>
-                        <div className="py-2 flex justify-between items-center">
-                          <span className="text-slate-500">Racking Aluminium</span>
-                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costRacking)}</span>
-                        </div>
-                        <div className="py-2 flex justify-between items-center">
-                          <span className="text-slate-500">Instalasi &amp; SLO</span>
-                          <span className="font-code-metric font-semibold text-slate-900">{formatRp(calc.costInstall)}</span>
-                        </div>
-                        <div className="pt-2.5 flex justify-between items-center font-semibold">
-                          <span className="text-slate-900">Total · IRR {calc.irr}%</span>
-                          <span className="font-code-metric text-sky-700">{formatRp(calc.totalCapex)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="pt-0.5 space-y-2">
-                    <button
-                      type="button"
-                      onClick={openSaveModal}
-                      disabled={isSaving}
-                      className="w-full py-2.5 px-4 rounded-full bg-gradient-to-r from-amber-100/95 via-yellow-200/95 to-amber-100/95 hover:from-amber-200 hover:to-amber-200 active:scale-[0.98] text-amber-950 font-title text-xs font-semibold shadow-[0_4px_16px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)] border border-amber-200/90 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
-                    >
-                      <span className={`material-symbols-outlined text-[16px] ${isSaving ? "animate-spin" : ""}`}>
-                        {isSaving ? "sync" : saveSuccess ? "check_circle" : "cloud_upload"}
-                      </span>
-                      <span>
-                        {isSaving
-                          ? "Menyimpan..."
-                          : saveSuccess
-                            ? "Tersimpan"
-                            : openedSimulationId !== null
-                              ? "Perbarui Proyek"
-                              : "Simpan Proyek"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setProposalOpen(true)}
-                      className="w-full py-2 px-4 rounded-full bg-white/80 hover:bg-white border border-white/90 text-slate-700 font-title text-xs font-semibold shadow-2xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-amber-700">file_download</span>
-                      <span>Unduh Proposal PDF</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => showToast("Permintaan penawaran EPC terkirim!")}
-                      className="w-full py-1.5 px-4 rounded-full text-slate-500 hover:text-amber-900 hover:bg-white/60 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[15px] text-amber-600">verified</span>
-                      <span>Ajukan Penawaran Mitra EPC</span>
-                    </button>
-                  </div>
-                </div>
+                <FinancialTab
+                  plnTariff={plnTariff}
+                  setPlnTariff={setPlnTariff}
+                  monthlyBill={monthlyBill}
+                  setMonthlyBill={setMonthlyBill}
+                  isTypingBill={isTypingBill}
+                  setIsTypingBill={setIsTypingBill}
+                  manualBillInput={manualBillInput}
+                  setManualBillInput={setManualBillInput}
+                  modulePower={modulePower}
+                  inverterType={inverterType}
+                  calc={calc}
+                  hasValidBep={hasValidBep}
+                  chartW={chartW}
+                  chartH={chartH}
+                  chartPadLeft={chartPadLeft}
+                  plotW={plotW}
+                  chartMaxYear={chartMaxYear}
+                  chartQuickYears={chartQuickYears}
+                  currentInspectYear={currentInspectYear}
+                  currentInspectCashFlow={currentInspectCashFlow}
+                  effectiveBep={effectiveBep}
+                  bepRatio={bepRatio}
+                  zeroY={zeroY}
+                  deficitFillD={deficitFillD}
+                  profitFillD={profitFillD}
+                  curvePathD={curvePathD}
+                  mapChartX={mapChartX}
+                  mapChartY={mapChartY}
+                  onChartPointer={handleChartMouseMove}
+                  onSelectInspectYear={setRoiHoverYear}
+                  capexCollapsed={capexCollapsed}
+                  onToggleCapexCollapsed={() => setCapexCollapsed((c) => !c)}
+                  isSaving={isSaving}
+                  saveSuccess={saveSuccess}
+                  openedSimulationId={openedSimulationId}
+                  onSave={openSaveModal}
+                  onOpenProposal={() => setProposalOpen(true)}
+                  onRequestEpcQuote={() => showToast("Permintaan penawaran EPC terkirim!")}
+                />
               )}
             </div>
           </div>
@@ -8761,7 +6600,7 @@ function StudioPageContent() {
                 void performSaveSimulation(saveModalName);
               }
             }}
-            className="relative w-full max-w-md rounded-[28px] bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_24px_64px_rgba(15,23,42,0.16),0_8px_28px_rgba(253,224,71,0.18),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 sm:p-6 space-y-4 animate-scaleIn"
+            className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-[24px] sm:rounded-[28px] bg-white/88 bg-gradient-to-br from-white/95 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_24px_64px_rgba(15,23,42,0.16),0_8px_28px_rgba(253,224,71,0.18),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 sm:p-6 space-y-4 animate-scaleIn"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -8829,7 +6668,7 @@ function StudioPageContent() {
               />
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] text-slate-600">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
               <span className="px-2.5 py-1 rounded-full bg-white/80 border border-slate-200/80 font-medium">
                 {selectedFacets.length > 0 ? selectedFacets.length : 1} bidang atap
               </span>
@@ -8888,7 +6727,7 @@ function StudioPageContent() {
 
 export default function StudioPage() {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-[#f8fafc]" />}>
+    <Suspense fallback={<div className="h-[100dvh] w-full bg-[#f8fafc]" />}>
       <StudioPageContent />
     </Suspense>
   );

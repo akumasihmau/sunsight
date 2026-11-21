@@ -39,11 +39,11 @@ export function SiteHeader() {
 
   return (
     <header className="w-full border-b border-white/80 bg-white/75 backdrop-blur-2xl saturate-150 sticky top-0 z-40 print:hidden">
-      <div className="page-frame h-16 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-6">
+      <div className="page-frame h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-6 min-w-0">
           <Link href="/" className="flex items-center gap-2 shrink-0" title="SunSight Beranda">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="SunSight Logo" className="h-7 w-auto" />
+            <img src="/logo.svg" alt="SunSight Logo" className="h-6 sm:h-7 w-auto" />
           </Link>
 
           <nav className="hidden sm:flex items-center p-1 rounded-full bg-slate-900/[0.045] border border-white/80" aria-label="Navigasi utama">
@@ -70,65 +70,44 @@ export function SiteHeader() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-2.5">
-          {/* Mobile quick nav */}
-          <div className="flex sm:hidden items-center gap-1">
-            <Link
-              href="/studio"
-              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold ${
-                pathname.startsWith("/studio")
-                  ? "bg-amber-100 text-amber-950"
-                  : "text-slate-600 hover:bg-slate-900/[0.05]"
-              }`}
-            >
-              Studio
-            </Link>
-            <Link
-              href="/history"
-              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold ${
-                pathname.startsWith("/history")
-                  ? "bg-amber-100 text-amber-950"
-                  : "text-slate-600 hover:bg-slate-900/[0.05]"
-              }`}
-            >
-              Riwayat
-            </Link>
-          </div>
-
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {hasToken ? (
             <>
-              {biodata?.name && (
-                <Link
-                  href="/profile"
-                  className="hidden md:inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/80 hover:bg-white border border-white/90 text-xs text-slate-700 shadow-2xs transition"
-                  title={`${biodata.name} (${biodata.email})`}
-                >
-                  <span className="w-5 h-5 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 font-bold text-[10px] flex items-center justify-center">
-                    {initials}
-                  </span>
-                  <span className="font-semibold max-w-[130px] truncate">{biodata.name}</span>
-                </Link>
-              )}
+              <Link
+                href="/profile"
+                className="inline-flex items-center gap-2 p-1 md:px-2.5 md:py-1 rounded-full bg-white/80 hover:bg-white border border-white/90 text-xs text-slate-700 shadow-2xs transition"
+                title={biodata?.name ? `${biodata.name} (${biodata.email})` : "Profil & Akun"}
+                aria-label="Profil & Akun"
+              >
+                <span className="w-6 h-6 md:w-5 md:h-5 rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 font-bold text-[10px] flex items-center justify-center shrink-0">
+                  {initials}
+                </span>
+                <span className="hidden md:inline font-semibold max-w-[130px] truncate">
+                  {biodata?.name || "Profil"}
+                </span>
+              </Link>
               <button
                 type="button"
                 onClick={() => void handleSignOut()}
-                className="px-3 py-1.5 rounded-full bg-slate-900/[0.045] hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1.5"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full bg-slate-900/[0.045] hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-700 transition cursor-pointer inline-flex items-center gap-1.5"
+                title="Keluar"
+                aria-label="Keluar"
               >
                 <span className="material-symbols-outlined text-[15px]">logout</span>
-                <span>Keluar</span>
+                <span className="hidden sm:inline">Keluar</span>
               </button>
             </>
           ) : (
             <>
               <Link
                 href="/login"
-                className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-900/[0.05] transition"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-900/[0.05] transition whitespace-nowrap"
               >
                 Masuk
               </Link>
               <Link
                 href="/register"
-                className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 transition shadow-[0_2px_8px_rgba(245,158,11,0.18)] border border-amber-300/80"
+                className="px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 transition whitespace-nowrap shadow-[0_2px_8px_rgba(245,158,11,0.18)] border border-amber-300/80"
               >
                 Daftar
               </Link>
@@ -136,6 +115,32 @@ export function SiteHeader() {
           )}
         </div>
       </div>
+
+      {/* Dedicated mobile navigation row (Beranda · Studio · Riwayat) */}
+      <nav
+        className="sm:hidden border-t border-slate-900/[0.05] px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+        aria-label="Navigasi seluler"
+      >
+        {NAV_LINKS.map((link) => {
+          const active = link.exact
+            ? pathname === link.href
+            : pathname === link.href || pathname.startsWith(`${link.href}/`);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={active ? "page" : undefined}
+              className={`px-3 py-1 rounded-full text-xs whitespace-nowrap transition shrink-0 ${
+                active
+                  ? "bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 text-amber-950 font-semibold shadow-2xs"
+                  : "text-slate-600 hover:bg-slate-900/[0.05] font-medium"
+              }`}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </nav>
     </header>
   );
 }

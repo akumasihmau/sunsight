@@ -11,7 +11,7 @@ export default function Cta() {
       <SolarMeadowScene variant="cta" />
 
       <div className="relative z-10 max-w-2xl mx-auto">
-        <div className="rounded-[32px] bg-white/80 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_24px_64px_rgba(15,23,42,0.07),0_6px_28px_rgba(245,158,11,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] p-7 sm:p-11 text-center space-y-5">
+        <div className="rounded-[32px] bg-white/80 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_24px_64px_rgba(15,23,42,0.07),0_6px_28px_rgba(245,158,11,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] p-5 sm:p-11 text-center space-y-5">
           <div className="flex justify-center">
             <SunnyMascot size={68} expression="celebrating" animated={true} />
           </div>

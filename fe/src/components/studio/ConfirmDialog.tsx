@@ -73,7 +73,7 @@ export function ConfirmDialog({
         onClick={onCancel}
       />
 
-      <div className="relative w-full max-w-md rounded-3xl bg-white/95 backdrop-blur-2xl border border-amber-200/80 shadow-[0_24px_70px_rgba(245,158,11,0.16),0_4px_24px_rgba(0,0,0,0.06)] p-5 space-y-4 animate-scaleIn">
+      <div className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl sm:rounded-3xl bg-white/95 backdrop-blur-2xl border border-amber-200/80 shadow-[0_24px_70px_rgba(245,158,11,0.16),0_4px_24px_rgba(0,0,0,0.06)] p-4 sm:p-5 space-y-4 animate-scaleIn">
         <div className="flex items-start gap-3">
           <div
             className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
@@ -101,11 +101,11 @@ export function ConfirmDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-1">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-1">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition cursor-pointer"
           >
             {cancelLabel}
           </button>
@@ -113,7 +113,7 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${confirmTone}`}
+            className={`w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${confirmTone}`}
           >
             {confirmLabel}
           </button>

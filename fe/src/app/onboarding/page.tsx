@@ -29,12 +29,15 @@ export default function OnboardingPage() {
       return;
     }
 
-    setIsMounted(true);
-    setIsReady(true);
+    const frame = window.requestAnimationFrame(() => {
+      setIsMounted(true);
+      setIsReady(true);
 
-    if (biodata?.name && biodata.name.trim()) {
-      setUserName(biodata.name.trim().split(" ")[0]);
-    }
+      if (biodata?.name && biodata.name.trim()) {
+        setUserName(biodata.name.trim().split(" ")[0]);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [router]);
 
   // Belum pernah: Simpan status & arahkan ke Beranda dengan tur panduan aktif
@@ -68,12 +71,12 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF9F5] relative flex flex-col justify-between overflow-hidden text-slate-800">
+    <div className="min-h-screen bg-[#FAF9F5] relative flex flex-col justify-between overflow-x-clip text-slate-800">
       {/* Radiant Soft Glow Ambient Backdrops */}
       <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[550px] h-[320px] bg-gradient-to-b from-amber-200/30 to-amber-100/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header */}
-      <header className="relative z-10 px-6 sm:px-10 py-5 flex items-center justify-between max-w-4xl mx-auto w-full">
+      <header className="relative z-10 px-4 sm:px-10 py-5 flex items-center justify-between max-w-4xl mx-auto w-full">
         <Link href="/" className="flex items-center gap-2 group">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="SunSight" className="h-7 w-auto object-contain" />
@@ -160,7 +163,7 @@ export default function OnboardingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 py-4 text-center text-[11px] text-slate-400">
+      <footer className="relative z-10 px-4 py-4 text-center text-[11px] text-slate-400">
         © {new Date().getFullYear()} SunSight • WebGIS & Estimasi PLTS Atap Kota Bogor
       </footer>
     </div>

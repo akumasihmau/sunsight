@@ -47,7 +47,7 @@ export default function QuickCalculator() {
       </div>
 
       {/* Frosted Glass Calculator Card */}
-      <div className="max-w-4xl mx-auto rounded-[30px] bg-white/80 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_20px_56px_rgba(245,158,11,0.10),0_4px_18px_rgba(15,23,42,0.05),inset_0_1px_1px_rgba(255,255,255,0.92)] p-6 sm:p-9 space-y-7">
+      <div className="max-w-4xl mx-auto rounded-[30px] bg-white/80 backdrop-blur-2xl saturate-150 border border-white/90 shadow-[0_20px_56px_rgba(245,158,11,0.10),0_4px_18px_rgba(15,23,42,0.05),inset_0_1px_1px_rgba(255,255,255,0.92)] p-4 sm:p-9 space-y-7">
         {/* Slider Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-900/[0.06]">
           <div>
@@ -98,34 +98,34 @@ export default function QuickCalculator() {
         </div>
 
         {/* Unified 4-Cell Metric Strip (Zero Nested Boxes) */}
-        <div className="rounded-2xl bg-slate-900/[0.035] grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-slate-900/[0.07]">
-          <div className="p-4 sm:p-5 bg-gradient-to-br from-amber-50/70 to-transparent rounded-t-2xl md:rounded-l-2xl md:rounded-tr-none">
+        <div className="rounded-2xl overflow-hidden bg-slate-900/[0.035] grid grid-cols-2 md:grid-cols-4 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(even)]:border-l md:[&>*:nth-child(n+3)]:border-t-0 md:[&>*:nth-child(even)]:border-l-0 md:divide-x divide-slate-900/[0.07] [&>*]:border-slate-900/[0.07]">
+          <div className="p-3.5 sm:p-5 bg-gradient-to-br from-amber-50/70 to-transparent rounded-tl-2xl md:rounded-l-2xl md:rounded-tr-none">
             <span className="text-[11px] font-medium text-amber-900 block">Estimasi Hemat</span>
-            <div className="text-xl sm:text-2xl font-semibold text-amber-950 font-title mt-1 font-code-metric tabular-nums">
+            <div className="text-base sm:text-2xl font-semibold text-amber-950 font-title mt-1 font-code-metric tabular-nums">
               Rp {formatRp(monthlySaving)}
             </div>
             <span className="text-[11px] text-amber-800 block mt-0.5">~85% / bulan</span>
           </div>
 
-          <div className="p-4 sm:p-5">
+          <div className="p-3.5 sm:p-5">
             <span className="text-[11px] font-medium text-slate-500 block">Kapasitas</span>
-            <div className="text-xl sm:text-2xl font-semibold text-slate-900 font-title mt-1 font-code-metric tabular-nums">
+            <div className="text-base sm:text-2xl font-semibold text-slate-900 font-title mt-1 font-code-metric tabular-nums">
               {kwpNeeded} <span className="text-xs font-normal text-slate-500">kWp</span>
             </div>
             <span className="text-[11px] text-slate-500 block mt-0.5">~{estimatedModules} panel 550 Wp</span>
           </div>
 
-          <div className="p-4 sm:p-5">
+          <div className="p-3.5 sm:p-5">
             <span className="text-[11px] font-medium text-slate-500 block">Balik Modal</span>
-            <div className="text-xl sm:text-2xl font-semibold text-emerald-700 font-title mt-1 font-code-metric tabular-nums">
+            <div className="text-base sm:text-2xl font-semibold text-emerald-700 font-title mt-1 font-code-metric tabular-nums">
               {paybackYears} <span className="text-xs font-normal text-slate-500">tahun</span>
             </div>
             <span className="text-[11px] text-emerald-700 block mt-0.5">Titik impas (BEP)</span>
           </div>
 
-          <div className="p-4 sm:p-5">
+          <div className="p-3.5 sm:p-5">
             <span className="text-[11px] font-medium text-slate-500 block">Nilai 25 Tahun</span>
-            <div className="text-xl sm:text-2xl font-semibold text-slate-900 font-title mt-1 font-code-metric tabular-nums">
+            <div className="text-base sm:text-2xl font-semibold text-slate-900 font-title mt-1 font-code-metric tabular-nums">
               Rp {Math.round(cumulative25 / 1_000_000)} jt
             </div>
             <span className="text-[11px] text-slate-500 block mt-0.5">Proyeksi kumulatif</span>

@@ -268,9 +268,8 @@ export function ProjectPolygonMapPreview({
 
       {/* CAD Polygons & Solar Panel Grid SVG Overlay */}
       <svg
-        width={boxSize.w}
-        height={boxSize.h}
         viewBox={`0 0 ${boxSize.w} ${boxSize.h}`}
+        preserveAspectRatio="xMidYMid slice"
         className="absolute inset-0 w-full h-full pointer-events-none"
       >
         {scene.screenRoofs.map((roof) => (
@@ -313,7 +312,7 @@ export function ProjectPolygonMapPreview({
       </svg>
 
       {/* Quiet Apple Frosted Glass Status Badge */}
-      <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-full bg-white/82 backdrop-blur-xl saturate-150 border border-white/85 shadow-[0_4px_12px_rgba(15,23,42,0.14)] text-[10.5px] font-medium text-slate-800 font-code-metric tabular-nums">
+      <div className="absolute bottom-2.5 left-2.5 max-w-[calc(100%-1.25rem)] truncate px-2.5 py-1 rounded-full bg-white/82 backdrop-blur-xl saturate-150 border border-white/85 shadow-[0_4px_12px_rgba(15,23,42,0.14)] text-[10.5px] font-medium text-slate-800 font-code-metric tabular-nums">
         <span className={loading ? "opacity-75" : ""}>
           {totalRoofs !== undefined ? `${totalRoofs} bidang` : roofCountLabel || "1 bidang"}
           {typeof totalPanels === "number" && totalPanels > 0 ? ` · ${totalPanels} panel` : ""}

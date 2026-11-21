@@ -192,8 +192,19 @@ export function BogorProjectsMap({
 
     void initMap();
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize({ animate: false });
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
       isCancelled = true;
+      resizeObserver?.disconnect();
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -295,7 +306,7 @@ export function BogorProjectsMap({
   }
 
   return (
-    <div className="relative w-full h-full min-h-[320px] rounded-[18px] bg-slate-900 overflow-hidden shadow-2xs select-none">
+    <div className="relative w-full h-full min-h-[260px] sm:min-h-[320px] rounded-[18px] bg-slate-900 overflow-hidden shadow-2xs select-none">
       {/* Real Leaflet Map Container */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
@@ -344,8 +355,12 @@ export function BogorProjectsMap({
       {activeProject && (
         <div
           className="absolute right-3 bottom-3 z-20 pointer-events-auto flex flex-col items-end"
-          onMouseEnter={openPotentialOnHover}
-          onMouseLeave={closePotentialOnLeave}
+          onPointerEnter={(e) => {
+            if (e.pointerType === "mouse") openPotentialOnHover();
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType === "mouse") closePotentialOnLeave();
+          }}
         >
           {/* Expanded State Card (Apple Frosted Glass + Soft Radiant Glow) */}
           <div
@@ -355,7 +370,7 @@ export function BogorProjectsMap({
                 : "opacity-0 scale-90 translate-y-3 pointer-events-none absolute bottom-0 right-0"
             }`}
           >
-            <div className="w-[260px] sm:w-[290px] bg-white/84 bg-gradient-to-br from-white/94 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 rounded-2xl p-3.5 sm:p-4 shadow-[0_14px_36px_rgba(15,23,42,0.16),0_4px_14px_rgba(251,191,36,0.16),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/85 flex flex-col gap-2 relative">
+            <div className="w-[min(260px,calc(100vw-4.5rem))] sm:w-[290px] bg-white/84 bg-gradient-to-br from-white/94 via-amber-50/35 to-sky-50/30 backdrop-blur-2xl saturate-150 rounded-2xl p-3.5 sm:p-4 shadow-[0_14px_36px_rgba(15,23,42,0.16),0_4px_14px_rgba(251,191,36,0.16),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/85 flex flex-col gap-2 relative">
               {/* Header with Title and Close Button */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">

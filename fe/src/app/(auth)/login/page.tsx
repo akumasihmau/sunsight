@@ -26,7 +26,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(true);
 
   const [alert, setAlert] = useState<AuthAlertData | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "success"; text: string } | null>(null);
@@ -117,7 +117,7 @@ export default function LoginPage() {
 
     try {
       const result = await api.login({ email: email.trim(), password });
-      setToken(result.token);
+      setToken(result.token, { remember });
 
       const existingBio = getStoredBiodata();
       const propType =
@@ -135,9 +135,17 @@ export default function LoginPage() {
         location: result.user.location ?? existingBio?.location ?? "Kota Bogor, Jawa Barat",
       });
 
-      const redirectTarget =
+      const rawRedirect =
         typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("redirect") || "/"
+          ? new URLSearchParams(window.location.search).get("redirect")
+          : null;
+      // Hanya izinkan path internal relatif (mencegah open redirect ke domain luar).
+      const redirectTarget =
+        rawRedirect &&
+        rawRedirect.startsWith("/") &&
+        !rawRedirect.startsWith("//") &&
+        !rawRedirect.startsWith("/\\")
+          ? rawRedirect
           : "/";
 
       // Status onboarding milik akun, bukan milik peramban: server menyimpan
@@ -183,10 +191,10 @@ export default function LoginPage() {
       }
     >
       {hasToken && (
-        <div className="mb-4 p-3 rounded-2xl bg-amber-50/80 backdrop-blur-md border border-amber-200/80 text-xs text-amber-950 flex items-center justify-between gap-2 shadow-2xs">
-          <div>
+        <div className="mb-4 p-3 rounded-2xl bg-amber-50/80 backdrop-blur-md border border-amber-200/80 text-xs text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2 shadow-2xs">
+          <div className="min-w-0">
             <span className="font-bold block text-slate-900">Sesi Masuk Aktif</span>
-            <span className="text-[11px] text-amber-900/80">{currentBio?.name || "Pengguna"} ({currentBio?.email || "Akun SunSight"})</span>
+            <span className="block truncate text-[11px] text-amber-900/80">{currentBio?.name || "Pengguna"} ({currentBio?.email || "Akun SunSight"})</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <Link
@@ -252,7 +260,7 @@ export default function LoginPage() {
             disabled={busy}
             value={email}
             onChange={(e) => handleEmailChange(e.target.value)}
-            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+            className={`w-full px-3.5 py-2.5 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
               fieldErrors.email
                 ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                 : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -283,7 +291,7 @@ export default function LoginPage() {
               disabled={busy}
               value={password}
               onChange={(e) => handlePasswordChange(e.target.value)}
-              className={`w-full px-3.5 py-2.5 pr-10 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+              className={`w-full px-3.5 py-2.5 pr-11 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
                 fieldErrors.password
                   ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                   : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"
@@ -293,7 +301,7 @@ export default function LoginPage() {
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition cursor-pointer p-1"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition cursor-pointer p-2"
               title="Tampilkan / Sembunyikan Kata Sandi"
             >
               <span className="material-symbols-outlined text-[18px] leading-none">
@@ -310,7 +318,7 @@ export default function LoginPage() {
         </div>
 
         {/* Remember & Forgot Password */}
-        <div className="flex items-center justify-between text-xs pt-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-0.5">
           <label className="inline-flex items-center gap-2 text-slate-600 font-medium cursor-pointer">
             <input
               type="checkbox"

@@ -114,7 +114,7 @@ export default function ForgotPasswordPage() {
                 setFieldErrors({});
               }
             }}
-            className={`w-full px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-400 focus:outline-none transition ${
+            className={`w-full px-3.5 py-2.5 rounded-xl border text-sm sm:text-xs placeholder:text-slate-400 focus:outline-none transition ${
               fieldErrors.email
                 ? "border-rose-400 bg-rose-50/20 text-slate-900 focus:bg-white focus:border-rose-500 focus:ring-3 focus:ring-rose-500/15"
                 : "border-slate-200 bg-slate-50 text-slate-800 focus:bg-white focus:border-amber-400 focus:ring-3 focus:ring-amber-400/15"

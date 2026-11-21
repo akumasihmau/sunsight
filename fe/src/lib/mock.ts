@@ -352,11 +352,11 @@ function simulateRoof(
   const effectiveWidth = Math.max(0, rect.width - 2 * roof.setback_m);
   const effectiveAreaSqm = Math.min(areaSqm, effectiveLength * effectiveWidth);
 
-  const module =
+  const modSpec =
     MOCK_OPTIONS.modules.find((item) => item.key === roof.module_key) ?? MOCK_OPTIONS.modules[0];
   const isPortrait = roof.orientation !== "landscape";
-  const alongLength = isPortrait ? module.length_m : module.width_m;
-  const alongWidth = isPortrait ? module.width_m : module.length_m;
+  const alongLength = isPortrait ? modSpec.length_m : modSpec.width_m;
+  const alongWidth = isPortrait ? modSpec.width_m : modSpec.length_m;
 
   const columns = slotsThatFit(effectiveLength, alongLength, roof.clearance_m);
   const rows = slotsThatFit(effectiveWidth, alongWidth, roof.clearance_m);
@@ -364,9 +364,9 @@ function simulateRoof(
   const installed =
     roof.panel_count === null ? maxSlots : Math.max(0, Math.min(roof.panel_count, maxSlots));
 
-  const moduleAreaSqm = installed * module.length_m * module.width_m;
+  const moduleAreaSqm = installed * modSpec.length_m * modSpec.width_m;
   const densityRatio = effectiveAreaSqm > 0 ? moduleAreaSqm / effectiveAreaSqm : 0;
-  const capacityKwp = (installed * module.power_w) / 1000;
+  const capacityKwp = (installed * modSpec.power_w) / 1000;
   const incidenceFactor = calculateIncidenceFactor(roof.tilt_deg, roof.azimuth_deg, latitude);
   const annualProductionKwh =
     capacityKwp * DAILY_IRRADIANCE * incidenceFactor * 365 * PERFORMANCE_RATIO;
@@ -469,11 +469,11 @@ function buildDetail(
   );
 
   const modulesIdr = roofs.reduce((sum, roof) => {
-    const module =
+    const modSpec =
       MOCK_OPTIONS.modules.find((item) => item.key === roof.input.module_key) ??
       MOCK_OPTIONS.modules[0];
 
-    return sum + roof.result.installed * module.price_idr;
+    return sum + roof.result.installed * modSpec.price_idr;
   }, 0);
   const inverterIdr =
     payload.inverter_type === "micro"
@@ -609,8 +609,8 @@ function seedSimulations(): SimulationDetail[] {
           ],
           setback_m: 0.5,
           gutter_m: 0.6,
-          tilt_deg: 22,
-          azimuth_deg: 188,
+          tilt_deg: 10,
+          azimuth_deg: 0,
           module_key: "mono_perc_550",
           orientation: "portrait",
           clearance_m: 0.03,

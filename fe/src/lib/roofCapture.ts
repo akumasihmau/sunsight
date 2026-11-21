@@ -83,7 +83,7 @@ type MapLike = {
   getZoom(): number;
   getCenter(): LatLngLike;
   setView(center: LatLngLike, zoom: number, options?: { animate?: boolean }): unknown;
-  containerPointToLatLng(point: { x: number; y: number }): LatLngLike;
+  containerPointToLatLng(point: [number, number]): LatLngLike;
   distance(from: LatLngLike, to: LatLngLike): number;
   _animatingZoom?: boolean;
   _panAnim?: { _inProgress?: boolean };
@@ -112,19 +112,12 @@ const DEFAULT_QUALITY = 0.82;
 const DEFAULT_TIMEOUT_MS = 20_000;
 const SETTLE_POLL_MS = 120;
 
-/** Batas dimensi berkas menurut kontrak (`width`/`height` 64 s.d. 4096). */
-const MIN_IMAGE_SIDE_PX = 64;
-
 const JPEG_MIME = "image/jpeg";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 /** Ubin milik satu layer saja; ubin layer label tidak pernah ikut terambil. */
@@ -254,8 +247,8 @@ function drawTiles(
  * DPR maupun tingkat zoom yang sedang dipakai.
  */
 function measureMetersPerPixel(map: MapLike, size: { x: number; y: number }): number {
-  const from = { x: size.x / 2, y: size.y / 2 };
-  const to = { x: size.x / 2 + SCALE_PROBE_PX, y: size.y / 2 };
+  const from: [number, number] = [size.x / 2, size.y / 2];
+  const to: [number, number] = [size.x / 2 + SCALE_PROBE_PX, size.y / 2];
   const meters = map.distance(
     map.containerPointToLatLng(from),
     map.containerPointToLatLng(to),
@@ -408,15 +401,15 @@ export async function captureMapForDetection(
     throw new Error(CAPTURE_EMPTY_ERROR);
   }
 
-  const topLeft = map.containerPointToLatLng({ x: 0, y: 0 });
-  const bottomRight = map.containerPointToLatLng({ x: availW, y: availH });
+  const topLeft = map.containerPointToLatLng([0, 0]);
+  const bottomRight = map.containerPointToLatLng([availW, availH]);
   const bbox: BoundingBox = [topLeft.lng, bottomRight.lat, bottomRight.lng, topLeft.lat];
 
   // Cakupan diukur dari jarak nyata di bumi, bukan dari selisih derajat, supaya
   // angkanya tetap benar pada lintang mana pun.
   const metersPerPixelAtScale = Math.max(
     0.01,
-    map.distance(topLeft, map.containerPointToLatLng({ x: SCALE_PROBE_PX, y: 0 })) / SCALE_PROBE_PX,
+    map.distance(topLeft, map.containerPointToLatLng([SCALE_PROBE_PX, 0])) / SCALE_PROBE_PX,
   );
   const footprintM = Math.round(Math.max(availW, availH) * metersPerPixelAtScale);
 
@@ -540,8 +533,8 @@ export function captureGeometry(map: MapLike): CaptureGeometry {
   }
 
   const scale = Math.min(1, MAX_CAPTURE_SIDE_PX / Math.max(availW, availH));
-  const topLeft = map.containerPointToLatLng({ x: 0, y: 0 });
-  const bottomRight = map.containerPointToLatLng({ x: availW, y: availH });
+  const topLeft = map.containerPointToLatLng([0, 0]);
+  const bottomRight = map.containerPointToLatLng([availW, availH]);
 
   return {
     width: Math.max(1, Math.round(availW * scale)),

@@ -59,7 +59,7 @@ export default function SmartFeatures() {
         {features.map((item) => (
           <div
             key={item.id}
-            className="group p-6 sm:p-8 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_48px_rgba(245,158,11,0.12)] transition-all duration-300 flex flex-col justify-between"
+            className="group p-5 sm:p-8 rounded-[28px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 shadow-[0_12px_32px_rgba(15,23,42,0.04)] hover:shadow-[0_20px_48px_rgba(245,158,11,0.12)] transition-all duration-300 flex flex-col justify-between"
           >
             <div className="space-y-3.5">
               <div className="flex items-center justify-between">
@@ -81,7 +81,7 @@ export default function SmartFeatures() {
             </div>
 
             <div className="pt-5 mt-5 border-t border-slate-900/[0.06] flex items-center gap-2 text-xs font-medium text-amber-900">
-              <span className="material-symbols-outlined text-[16px] text-amber-600">check_circle</span>
+              <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0">check_circle</span>
               <span>{item.highlight}</span>
             </div>
           </div>

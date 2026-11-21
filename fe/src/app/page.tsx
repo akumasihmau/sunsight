@@ -825,9 +825,13 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
     }
   };
 
-  // Reset slide if project changes
-  useEffect(() => {
+  // Reset slide if project changes (adjust state during render, no cascading effect)
+  const [prevProjId, setPrevProjId] = useState(proj.id);
+  if (proj.id !== prevProjId) {
+    setPrevProjId(proj.id);
     setActiveFacetIdx(0);
+  }
+  useEffect(() => {
     if (carouselRef.current) {
       carouselRef.current.scrollTo({ left: 0, behavior: "instant" });
     }
@@ -891,22 +895,22 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
           >
             {/* Slide Header */}
             <div className="relative z-10 flex items-start justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <p className="text-[13px] font-semibold text-slate-900 leading-tight">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-900 leading-tight truncate">
                     {facet.name}
                   </p>
                   {hasMultiple && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-100/90 text-amber-900 text-[9.5px] font-bold font-code-metric">
+                    <span className="shrink-0 px-1.5 py-0.2 rounded-full bg-amber-100/90 text-amber-900 text-[9.5px] font-bold font-code-metric">
                       {activeFacetIdx + 1}/{facets.length}
                     </span>
                   )}
                 </div>
-                <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5">
+                <p className="text-[11.5px] text-slate-400 leading-tight mt-0.5 truncate">
                   {facet.dimensions} · {facet.capacityKwp} kWp
                 </p>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <p className="text-[22px] sm:text-[26px] font-bold text-slate-900 tracking-tight leading-none whitespace-nowrap">
                   {facet.moduleCount}{" "}
                   <span className="text-xs sm:text-sm font-semibold text-slate-500">panel</span>
@@ -932,7 +936,7 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
             type="button"
             onClick={handlePrev}
             aria-label="Poligon sebelumnya"
-            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-85 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">chevron_left</span>
           </button>
@@ -940,7 +944,7 @@ function RoofLayoutBentoCard({ proj }: { proj: SavedRoofProject }) {
             type="button"
             onClick={handleNext}
             aria-label="Poligon berikutnya"
-            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-full bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md flex items-center justify-center text-slate-700 hover:text-slate-950 hover:bg-white hover:scale-110 active:scale-95 transition-all opacity-85 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">chevron_right</span>
           </button>
@@ -1012,7 +1016,8 @@ function HomePageContent() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const frame = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   const tabParam = searchParams.get("tab") as DashboardNavTab | null;
@@ -1134,7 +1139,10 @@ function HomePageContent() {
   }, []);
 
   useEffect(() => {
-    void loadProjects();
+    const timer = window.setTimeout(() => {
+      void loadProjects();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadProjects]);
 
   // Fetch rincian poligon & bidang atap nyata dari database (`GET /analyses/{id}`)
@@ -1522,7 +1530,7 @@ function HomePageContent() {
   ];
 
   const navPillClass = (active: boolean) =>
-    `h-11 px-5 rounded-full text-sm font-medium flex items-center gap-2 whitespace-nowrap transition cursor-pointer shrink-0 ${
+    `h-10 lg:h-11 px-4 lg:px-5 rounded-full text-xs sm:text-sm font-medium flex items-center gap-2 whitespace-nowrap transition cursor-pointer shrink-0 ${
       active
         ? "bg-gradient-to-r from-amber-200 via-amber-300 to-amber-200 text-amber-950 font-bold shadow-[0_2px_10px_rgba(245,158,11,0.22),inset_0_1px_1px_rgba(255,255,255,0.8)] border border-amber-300/80"
         : "bg-white text-slate-700 hover:bg-slate-50 shadow-xs"
@@ -1580,7 +1588,7 @@ function HomePageContent() {
   ];
 
   return (
-    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-900 font-sans antialiased relative overflow-hidden print:min-h-0 print:h-auto print:overflow-visible print:bg-white">
+    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-900 font-sans antialiased relative overflow-x-clip print:min-h-0 print:h-auto print:overflow-visible print:bg-white">
       {/* Ambient soft glow radiant kuning & aksen biru (pure radial gradients — zero full-screen blur passes) */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" data-print-hide="true">
         <div
@@ -1601,15 +1609,15 @@ function HomePageContent() {
         {/* =======================================================
             TOP NAVIGATION (logo, search, pill tabs, profile)
             ======================================================= */}
-        <header className="relative z-30 flex items-center justify-between gap-3 pt-4 sm:pt-5">
-          <div className="flex items-center gap-2">
+        <header className="relative z-30 flex items-center justify-between gap-2 sm:gap-3 pt-4 sm:pt-5">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               href="/"
-              className="h-11 px-3.5 rounded-full bg-white flex items-center justify-center hover:bg-slate-50 transition shadow-xs"
+              className="h-9 sm:h-11 px-2.5 sm:px-3.5 rounded-full bg-white flex items-center justify-center hover:bg-slate-50 transition shadow-xs"
               title="SunSight"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
+              <img src="/logo.svg" alt="SunSight" className="h-5.5 sm:h-7 w-auto object-contain" />
             </Link>
 
             {/* Search (popover with address/street geocoding, saved projects, GPS & map) */}
@@ -1628,20 +1636,20 @@ function HomePageContent() {
             />
           </div>
 
-          <nav className="hidden md:flex items-center gap-2" aria-label="Navigasi utama">
+          <nav className="hidden lg:flex items-center gap-2" aria-label="Navigasi utama">
             {navPills}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Tombol Panduan Sunny (?) */}
             <button
               type="button"
               onClick={() => setTourOpen(true)}
-              className="w-11 h-11 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-amber-800 flex items-center justify-center transition shadow-xs border border-slate-200/60 cursor-pointer group"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-amber-800 flex items-center justify-center transition shadow-xs border border-slate-200/60 cursor-pointer group"
               title="Bantuan & Panduan Beranda bersama Sunny"
               aria-label="Panduan Beranda"
             >
-              <span className="material-symbols-outlined text-[20px] text-slate-600 group-hover:text-amber-600 transition-colors">
+              <span className="material-symbols-outlined text-[19px] sm:text-[20px] text-slate-600 group-hover:text-amber-600 transition-colors">
                 help
               </span>
             </button>
@@ -1649,31 +1657,31 @@ function HomePageContent() {
             <Link
               id="dashboard-studio-btn"
               href="/studio"
-              className="h-11 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold flex items-center gap-2 transition shadow-xs hover:text-amber-600 group"
+              className="h-9 w-9 sm:h-11 sm:w-auto px-0 sm:px-4 rounded-full bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold flex items-center justify-center gap-2 transition shadow-xs hover:text-amber-600 group"
               title="Buka Studio CAD"
             >
               <span className="material-symbols-outlined text-[19px] text-amber-500 group-hover:scale-110 transition-transform">
                 polyline
               </span>
-              <span>Studio</span>
+              <span className="hidden sm:inline">Studio</span>
             </Link>
 
             <Link
               id="dashboard-profile-btn"
               href="/profile"
-              className="w-11 h-11 rounded-full bg-white hover:bg-slate-50 flex items-center justify-center transition shadow-xs group border border-slate-200/60"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white hover:bg-slate-50 flex items-center justify-center transition shadow-xs group border border-slate-200/60"
               title="Profil & akun"
             >
-              <span className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-200 to-amber-300 text-amber-950 text-xs font-bold flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+              <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-200 to-amber-300 text-amber-950 text-[11px] sm:text-xs font-bold flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
                 {mounted ? initials : "PS"}
               </span>
             </Link>
           </div>
         </header>
 
-        {/* Mobile pill navigation */}
+        {/* Mobile & Tablet pill navigation */}
         <nav
-          className="md:hidden flex items-center gap-2 overflow-x-auto pt-3 pb-1 -mx-3 px-3 [scrollbar-width:none]"
+          className="lg:hidden flex items-center gap-2 overflow-x-auto pt-3 pb-1 -mx-3 px-3 no-scrollbar"
           aria-label="Navigasi utama"
         >
           {navPills}
@@ -1698,13 +1706,13 @@ function HomePageContent() {
                 actionLabel="Buka di Studio"
               />
 
-              <h2 className="relative text-[24px] sm:text-[28px] font-semibold leading-[1.15] tracking-tight text-slate-900 max-w-[11ch] sm:max-w-[12ch] z-10">
+              <h2 className="relative text-[20px] sm:text-[26px] md:text-[22px] lg:text-[26px] xl:text-[28px] font-semibold leading-[1.15] tracking-tight text-slate-900 max-w-[10ch] sm:max-w-[12ch] md:max-w-[10ch] lg:max-w-[12ch] z-10">
                 Ubah atap jadi sumber listrik.
               </h2>
 
               {/* Fanned Value Cards Stack (Hemat, Mandiri, Bersih - Radiant Soft Glow) */}
               <div
-                className="absolute -right-1 sm:right-2 -bottom-2 w-[180px] sm:w-[195px] h-[160px] sm:h-[170px] pointer-events-auto select-none"
+                className="absolute -right-1 sm:right-2 -bottom-2 w-[180px] sm:w-[195px] h-[160px] sm:h-[170px] scale-[0.82] sm:scale-95 md:scale-[0.82] lg:scale-95 xl:scale-100 origin-bottom-right pointer-events-auto select-none"
                 aria-label="Kartu nilai proyek: Bersih, Mandiri, Hemat"
               >
                 {/* 1. Bersih Card (Back layer - Radiant Soft Sage/Emerald Glow) */}
@@ -1984,15 +1992,15 @@ function HomePageContent() {
                 {stats.map((s) => (
                   <section
                     key={s.title}
-                    className="h-[170px] sm:h-[186px] bg-white rounded-[22px] p-5 flex flex-col justify-between"
+                    className="h-[156px] sm:h-[186px] bg-white rounded-[22px] p-3.5 sm:p-5 flex flex-col justify-between"
                   >
                     <CardHeader title={s.title} subtitle={s.subtitle} />
-                    <div className="flex items-end gap-2 flex-wrap">
-                      <span className="text-[36px] sm:text-[42px] font-medium tracking-tight leading-none text-slate-900">
+                    <div className="flex items-end gap-1.5 sm:gap-2 flex-wrap">
+                      <span className="text-[26px] sm:text-[42px] font-medium tracking-tight leading-none text-slate-900">
                         {s.value}
-                        <span className="ml-1 text-base font-normal text-slate-400">{s.unit}</span>
+                        <span className="ml-1 text-xs sm:text-base font-normal text-slate-400">{s.unit}</span>
                       </span>
-                      <span className={`mb-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap ${s.tone}`}>
+                      <span className={`mb-0.5 sm:mb-1 px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-medium whitespace-nowrap ${s.tone}`}>
                         {s.badge}
                       </span>
                     </div>
@@ -2002,7 +2010,7 @@ function HomePageContent() {
 
               {/* Star Cutout Slice that shapes the 4 Bento cards to follow the Gemini star with an exact 12px gap */}
               <div
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[76px] h-[76px] pointer-events-none z-10 select-none"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[56px] h-[56px] sm:w-[76px] sm:h-[76px] pointer-events-none z-10 select-none"
                 aria-hidden="true"
               >
                 <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -2018,7 +2026,7 @@ function HomePageContent() {
                 onClick={() => void openProposal()}
                 title="Buka Proposal Detail Hasil Studio"
                 aria-label="Buka Proposal Detail Hasil Studio"
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[52px] h-[52px] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer z-20 group border-0 outline-none select-none"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[40px] h-[40px] sm:w-[52px] sm:h-[52px] flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer z-20 group border-0 outline-none select-none"
               >
                 <svg
                   viewBox="0 0 100 100"
@@ -2078,7 +2086,7 @@ function HomePageContent() {
             </div>
 
             {/* Projects list + map */}
-            <section id="dashboard-map-section" className="md:col-span-2 xl:col-span-8 bg-white rounded-[22px] p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 xl:h-[384px]">
+            <section id="dashboard-map-section" className="md:col-span-2 xl:col-span-8 bg-white rounded-[22px] p-3 grid grid-cols-1 lg:grid-cols-2 gap-3 lg:h-[384px]">
               <div className="flex flex-col p-2 min-h-0">
                 <CardHeader
                   title="Proyek"
@@ -2087,7 +2095,7 @@ function HomePageContent() {
                   actionLabel="Lihat semua proyek"
                 />
 
-                <ul className="mt-3 space-y-2 flex-1 min-h-0 overflow-y-auto pr-1.5">
+                <ul className="mt-3 space-y-2 flex-1 min-h-0 max-h-[280px] sm:max-h-[320px] lg:max-h-none overflow-y-auto pr-1.5">
                   {projectsLoading ? (
                     [0, 1, 2].map((idx) => (
                       <li
@@ -2127,7 +2135,7 @@ function HomePageContent() {
                               setSelectedProjectId(proj.id);
                             }
                           }}
-                          className={`relative overflow-hidden flex items-center gap-3 p-3 rounded-2xl transition-all cursor-pointer shadow-none ${
+                          className={`relative overflow-hidden flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-2xl transition-all cursor-pointer shadow-none ${
                             active
                               ? "bg-gradient-to-r from-amber-100/90 via-amber-50/60 to-white border-0"
                               : "bg-white border border-slate-200/80 hover:border-slate-300 text-slate-900 hover:bg-slate-50/60"
@@ -2142,7 +2150,7 @@ function HomePageContent() {
                           )}
 
                           <span
-                            className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                            className={`relative z-10 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 ${
                               active ? "bg-amber-200/90 text-amber-950 font-bold" : PROJECT_TONES[idx % PROJECT_TONES.length]
                             }`}
                           >
@@ -2228,7 +2236,7 @@ function HomePageContent() {
 
               <div className="flex items-center gap-2.5 w-full sm:w-auto">
                 {/* Quick Search */}
-                <div className="relative flex-1 sm:w-72">
+                <div className="relative flex-1 sm:w-56 md:w-72">
                   <span className="material-symbols-outlined text-[16px] text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">
                     search
                   </span>
@@ -2287,7 +2295,7 @@ function HomePageContent() {
                   return (
                     <div
                       key={proj.id}
-                      className={`relative overflow-hidden rounded-[24px] p-5 flex flex-col justify-between transition-all backdrop-blur-2xl saturate-150 border ${
+                      className={`relative overflow-hidden rounded-[24px] p-4 sm:p-5 flex flex-col justify-between transition-all backdrop-blur-2xl saturate-150 border ${
                         isSelected
                           ? "bg-white/85 bg-gradient-to-br from-amber-50/75 via-white/90 to-sky-50/45 border-amber-300/75 shadow-[0_12px_32px_rgba(245,158,11,0.12)]"
                           : "bg-white/76 hover:bg-white/88 border-white/85 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
@@ -2305,9 +2313,9 @@ function HomePageContent() {
                             <span className="material-symbols-outlined text-[20px]">roofing</span>
                           </span>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="text-sm font-semibold text-slate-900 tracking-tight truncate">{proj.name}</h3>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3 className="text-sm font-semibold text-slate-900 tracking-tight truncate min-w-0">{proj.name}</h3>
+                              <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700">
                                 {proj.statusBadge}
                               </span>
                             </div>
@@ -2331,36 +2339,36 @@ function HomePageContent() {
                       />
 
                       {/* Unified 3-Cell Metrics Strip */}
-                      <div className="relative z-10 grid grid-cols-3 divide-x divide-slate-900/[0.06] rounded-2xl bg-slate-900/[0.035] mb-4 py-2.5 text-xs">
-                        <div className="px-3">
-                          <span className="text-[10.5px] text-slate-500 block">Dimensi</span>
+                      <div className="relative z-10 grid grid-cols-3 divide-x divide-slate-900/[0.06] rounded-2xl bg-slate-900/[0.035] mb-4 py-2.5 text-[11px] sm:text-xs">
+                        <div className="px-2 sm:px-3 min-w-0">
+                          <span className="text-[10px] sm:text-[10.5px] text-slate-500 block truncate">Dimensi</span>
                           <span className="font-semibold text-slate-900 block truncate font-code-metric tabular-nums mt-0.5">
                             {proj.dimensions}
                           </span>
                         </div>
-                        <div className="px-3">
-                          <span className="text-[10.5px] text-slate-500 block">Kapasitas</span>
-                          <span className="font-semibold text-slate-900 block font-code-metric tabular-nums mt-0.5">
+                        <div className="px-2 sm:px-3 min-w-0">
+                          <span className="text-[10px] sm:text-[10.5px] text-slate-500 block truncate">Kapasitas</span>
+                          <span className="font-semibold text-slate-900 block truncate font-code-metric tabular-nums mt-0.5">
                             {proj.capacityKwp} kWp
                           </span>
                         </div>
-                        <div className="px-3">
-                          <span className="text-[10.5px] text-slate-500 block">Hemat/Bln</span>
-                          <span className="font-semibold text-emerald-700 block font-code-metric tabular-nums mt-0.5">
+                        <div className="px-2 sm:px-3 min-w-0">
+                          <span className="text-[10px] sm:text-[10.5px] text-slate-500 block truncate">Hemat/Bln</span>
+                          <span className="font-semibold text-emerald-700 block truncate font-code-metric tabular-nums mt-0.5">
                             {formatJt(proj.monthlySavingIdr)}
                           </span>
                         </div>
                       </div>
 
                       {/* Card Actions */}
-                      <div className="relative z-10 flex items-center justify-between gap-2 pt-2 border-t border-slate-900/[0.06]">
+                      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900/[0.06]">
                         <button
                           type="button"
                           onClick={() => {
                             setSelectedProjectId(proj.id);
                             setActiveTab("overview");
                           }}
-                          className={`text-xs font-semibold px-3.5 py-1.5 rounded-full transition cursor-pointer ${
+                          className={`text-xs font-semibold px-3 lg:px-3.5 py-1.5 rounded-full transition cursor-pointer whitespace-nowrap ${
                             isSelected
                               ? "bg-amber-300/90 text-amber-950"
                               : "bg-slate-900/[0.05] hover:bg-slate-900/[0.09] text-slate-700"
@@ -2369,11 +2377,11 @@ function HomePageContent() {
                           {isSelected ? "Aktif di Beranda" : "Tampilkan"}
                         </button>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-end">
                           <button
                             type="button"
                             onClick={() => handleDeleteProject(proj.id, proj.name)}
-                            className="w-8 h-8 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
+                            className="w-8 h-8 rounded-full hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition cursor-pointer shrink-0"
                             title="Hapus proyek ini dari riwayat"
                             aria-label="Hapus proyek"
                           >
@@ -2385,14 +2393,14 @@ function HomePageContent() {
                               setSelectedProjectId(proj.id);
                               void openProposal(proj.id);
                             }}
-                            className="h-8 px-3 rounded-full hover:bg-slate-900/[0.05] text-slate-600 text-xs font-medium transition cursor-pointer"
+                            className="h-8 px-2.5 lg:px-3 rounded-full hover:bg-slate-900/[0.05] text-slate-600 text-xs font-medium transition cursor-pointer whitespace-nowrap"
                           >
                             Proposal PDF
                           </button>
                           <button
                             type="button"
                             onClick={() => openProjectInStudio(proj)}
-                            className="h-8 px-3.5 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-semibold flex items-center gap-1 transition cursor-pointer border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]"
+                            className="h-8 px-3 lg:px-3.5 rounded-full bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-200 hover:brightness-105 text-amber-950 text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap border border-amber-300/80 shadow-[0_2px_8px_rgba(245,158,11,0.18),inset_0_1px_1px_rgba(255,255,255,0.85)]"
                           >
                             <span>Buka Studio</span>
                             <span className="material-symbols-outlined text-[16px]">chevron_right</span>
@@ -2421,7 +2429,7 @@ function HomePageContent() {
                 </p>
               </div>
 
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/90 text-amber-900 border border-amber-200/70 text-[11px] font-semibold shrink-0">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50/90 text-amber-900 border border-amber-200/70 text-[11px] font-semibold shrink-0 self-start sm:self-auto">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                 Acuan Permen ESDM No. 2 &amp; 7/2024
               </span>
@@ -2453,7 +2461,7 @@ function HomePageContent() {
 
                 {/* Monthly Bill Input & Slider */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <label htmlFor="calc-bill-input" className="font-medium text-slate-600">
                       Tagihan Listrik per Bulan
                     </label>
@@ -2522,43 +2530,43 @@ function HomePageContent() {
               {/* Right Column: 4 Metrics & Timeline (7 Cols) */}
               <div className="lg:col-span-7 space-y-3.5">
                 {/* 4 Stat Cards in 2x2 Grid (Uncluttered Apple Metric Tiles) */}
-                <div className="grid grid-cols-2 gap-3.5">
-                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
-                    <span className="text-[11.5px] text-slate-500 font-medium">Hemat Bulanan</span>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-semibold tracking-tight text-emerald-700 font-code-metric tabular-nums">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-3.5 sm:p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[116px] sm:min-h-[124px]">
+                    <span className="text-[11px] sm:text-[11.5px] text-slate-500 font-medium">Hemat Bulanan</span>
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className="text-lg sm:text-2xl font-semibold tracking-tight text-emerald-700 font-code-metric tabular-nums">
                         {formatJt(calcMetrics.estimatedMonthlySavings)}
                       </span>
-                      <span className="text-xs text-slate-400">/bln</span>
+                      <span className="text-[11px] sm:text-xs text-slate-400">/bln</span>
                     </div>
-                    <span className="text-[11px] text-emerald-700/90 font-medium">~85% efisiensi tagihan</span>
+                    <span className="text-[10.5px] sm:text-[11px] text-emerald-700/90 font-medium">~85% efisiensi tagihan</span>
                   </section>
 
-                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
-                    <span className="text-[11.5px] text-slate-500 font-medium">Balik Modal (BEP)</span>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-3.5 sm:p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[116px] sm:min-h-[124px]">
+                    <span className="text-[11px] sm:text-[11.5px] text-slate-500 font-medium">Balik Modal (BEP)</span>
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className="text-lg sm:text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                         {calcMetrics.paybackYears}
                       </span>
-                      <span className="text-xs text-slate-400">tahun</span>
+                      <span className="text-[11px] sm:text-xs text-slate-400">tahun</span>
                     </div>
-                    <span className="text-[11px] text-slate-500">Impas di tahun ke-{Math.ceil(calcMetrics.paybackYears)}</span>
+                    <span className="text-[10.5px] sm:text-[11px] text-slate-500">Impas di tahun ke-{Math.ceil(calcMetrics.paybackYears)}</span>
                   </section>
 
-                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
-                    <span className="text-[11.5px] text-slate-500 font-medium">Investasi Awal (CAPEX)</span>
-                    <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-3.5 sm:p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[116px] sm:min-h-[124px]">
+                    <span className="text-[11px] sm:text-[11.5px] text-slate-500 font-medium">Investasi Awal (CAPEX)</span>
+                    <span className="text-lg sm:text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                       {formatJt(calcMetrics.totalCapex)}
                     </span>
-                    <span className="text-[11px] text-slate-500">Termasuk modul, inverter &amp; pasang</span>
+                    <span className="text-[10.5px] sm:text-[11px] text-slate-500">Termasuk modul, inverter &amp; pasang</span>
                   </section>
 
-                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[124px]">
-                    <span className="text-[11.5px] text-slate-500 font-medium">Total Nilai 25 Tahun</span>
-                    <span className="text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                  <section className="rounded-[22px] bg-white/78 backdrop-blur-2xl saturate-150 border border-white/85 p-3.5 sm:p-5 flex flex-col justify-between shadow-[0_8px_24px_rgba(15,23,42,0.04)] min-h-[116px] sm:min-h-[124px]">
+                    <span className="text-[11px] sm:text-[11.5px] text-slate-500 font-medium">Total Nilai 25 Tahun</span>
+                    <span className="text-lg sm:text-2xl font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
                       {formatJt(calcMetrics.cumulative25Years)}
                     </span>
-                    <span className="text-[11px] text-emerald-700 font-medium">Masa garansi IEC 61215</span>
+                    <span className="text-[10.5px] sm:text-[11px] text-emerald-700 font-medium">Masa garansi IEC 61215</span>
                   </section>
                 </div>
 
@@ -2584,9 +2592,9 @@ function HomePageContent() {
                       const barMax = Math.max(100, calcMetrics.roiYear25);
                       return (
                         <div key={item.year} className="space-y-1">
-                          <div className="flex justify-between text-xs">
+                          <div className="flex justify-between gap-2 text-xs">
                             <span className="text-slate-600 font-medium">{item.label}</span>
-                            <span className="font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums">
+                            <span className="font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums shrink-0">
                               {item.returnPct}% ROI
                             </span>
                           </div>
@@ -2605,7 +2613,7 @@ function HomePageContent() {
 
                   {/* Eco Stats & Primary Proposal Trigger */}
                   <div className="pt-3 border-t border-slate-900/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-3 text-slate-600 font-code-metric">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600 font-code-metric">
                       <span className="inline-flex items-center gap-1 font-medium">
                         <span className="material-symbols-outlined text-[16px] text-emerald-600">park</span>
                         {calcMetrics.trees} pohon/thn
@@ -2643,7 +2651,7 @@ function HomePageContent() {
             onClick={() => setMapPickerOpen(false)}
           />
 
-          <div className="relative w-full max-w-2xl bg-white/95 backdrop-blur-2xl rounded-[32px] border border-amber-200/80 shadow-2xl p-6 space-y-4 z-10 animate-fadeIn">
+          <div className="relative w-full max-w-2xl max-h-[90dvh] overflow-y-auto bg-white/95 backdrop-blur-2xl rounded-[24px] sm:rounded-[32px] border border-amber-200/80 shadow-2xl p-4 sm:p-6 space-y-4 z-10 animate-fadeIn">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -2670,7 +2678,7 @@ function HomePageContent() {
             </div>
 
             {/* Interactive Map Visual Stage */}
-            <div className="relative w-full h-64 rounded-2xl overflow-hidden border border-amber-200/70 shadow-inner bg-slate-100">
+            <div className="relative w-full h-48 sm:h-64 rounded-2xl overflow-hidden border border-amber-200/70 shadow-inner bg-slate-100">
               {/* Satellite Background */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -2762,8 +2770,8 @@ function HomePageContent() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-white/95 backdrop-blur-xl text-slate-900 text-xs font-bold shadow-[0_12px_36px_rgba(245,158,11,0.2)] flex items-center gap-2.5 border border-amber-300 animate-fadeIn" data-print-hide="true">
-          <span className="material-symbols-outlined text-[19px] text-amber-600">check_circle</span>
+        <div className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-auto sm:right-6 sm:max-w-md z-50 px-4 py-3 rounded-2xl bg-white/95 backdrop-blur-xl text-slate-900 text-xs font-bold shadow-[0_12px_36px_rgba(245,158,11,0.2)] flex items-center gap-2.5 border border-amber-300 animate-fadeIn" data-print-hide="true">
+          <span className="material-symbols-outlined text-[19px] text-amber-600 shrink-0">check_circle</span>
           <span>{toastMessage}</span>
         </div>
       )}
@@ -2781,7 +2789,7 @@ function HomePageContent() {
           >
             {/* Header with Radiant Soft Glow matching the pillar */}
             <div
-              className={`p-6 bg-gradient-to-br ${
+              className={`p-4 sm:p-6 bg-gradient-to-br ${
                 activePillarModal === "hemat"
                   ? "from-amber-200 via-amber-300 to-yellow-200 text-amber-950 border-b border-amber-300/80"
                   : activePillarModal === "mandiri"
@@ -2822,7 +2830,7 @@ function HomePageContent() {
 
               {/* Title & Headline */}
               <div className="mt-4 relative z-10">
-                <h3 className="text-2xl font-bold tracking-tight">
+                <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
                   {activePillarModal === "hemat"
                     ? "Kenapa Bisa Lebih Hemat?"
                     : activePillarModal === "mandiri"
@@ -2843,7 +2851,7 @@ function HomePageContent() {
                 <button
                   type="button"
                   onClick={() => setActivePillarModal("hemat")}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                     activePillarModal === "hemat"
                       ? "bg-white text-amber-950 shadow-sm border border-amber-200/80"
                       : "text-slate-700 hover:text-slate-950"
@@ -2855,7 +2863,7 @@ function HomePageContent() {
                 <button
                   type="button"
                   onClick={() => setActivePillarModal("mandiri")}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                     activePillarModal === "mandiri"
                       ? "bg-white text-sky-950 shadow-sm border border-sky-200/80"
                       : "text-slate-700 hover:text-slate-950"
@@ -2867,7 +2875,7 @@ function HomePageContent() {
                 <button
                   type="button"
                   onClick={() => setActivePillarModal("bersih")}
-                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                     activePillarModal === "bersih"
                       ? "bg-white text-emerald-950 shadow-sm border border-emerald-200/80"
                       : "text-slate-700 hover:text-slate-950"
@@ -2880,10 +2888,10 @@ function HomePageContent() {
             </div>
 
             {/* Scrollable Modal Body */}
-            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
               {/* Highlight Metric Card */}
               <div
-                className={`p-4 rounded-2xl border flex items-center gap-4 ${
+                className={`p-3.5 sm:p-4 rounded-2xl border flex items-center gap-3 sm:gap-4 ${
                   activePillarModal === "hemat"
                     ? "bg-amber-50/70 border-amber-200"
                     : activePillarModal === "mandiri"
@@ -2892,7 +2900,7 @@ function HomePageContent() {
                 }`}
               >
                 <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 ${
                     activePillarModal === "hemat"
                       ? "bg-amber-500 text-white"
                       : activePillarModal === "mandiri"
@@ -2908,7 +2916,7 @@ function HomePageContent() {
                       : "energy_savings_leaf"}
                   </span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-500 font-medium">Metrik Proyek ({activeProj.name})</p>
                   <p className="text-base font-bold text-slate-900">
                     {activePillarModal === "hemat" &&
@@ -3027,7 +3035,7 @@ function HomePageContent() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={() => setActivePillarModal(null)}

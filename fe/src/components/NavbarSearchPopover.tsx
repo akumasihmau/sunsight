@@ -280,7 +280,7 @@ export function NavbarSearchPopover({
       <button
         type="button"
         onClick={() => setSearchOpen((v) => !v)}
-        className={`w-11 h-11 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer border ${
+        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer border ${
           searchOpen
             ? "bg-gradient-to-br from-amber-100/95 via-amber-200/85 to-yellow-100/95 backdrop-blur-xl saturate-150 text-amber-950 border-amber-300/85 shadow-[0_4px_18px_rgba(245,158,11,0.24),0_0_22px_rgba(251,191,36,0.22),inset_0_1px_1px_rgba(255,255,255,0.9)]"
             : "bg-white/90 hover:bg-white backdrop-blur-xl saturate-150 text-slate-700 hover:text-amber-900 shadow-xs border-white/85 hover:border-amber-200/80"
@@ -302,10 +302,10 @@ export function NavbarSearchPopover({
             className="fixed inset-0 z-30 cursor-default"
             onClick={() => setSearchOpen(false)}
           />
-          <div className="absolute left-0 top-14 z-40 w-[min(430px,calc(100vw-1.5rem))] bg-white/92 backdrop-blur-2xl saturate-150 rounded-[28px] border border-white/90 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.24),0_0_28px_rgba(251,191,36,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] p-3 animate-fadeIn">
+          <div className="fixed left-3 right-3 top-[68px] sm:absolute sm:left-0 sm:right-auto sm:top-14 z-40 w-auto sm:w-[430px] bg-white/92 backdrop-blur-2xl saturate-150 rounded-[28px] border border-white/90 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.24),0_0_28px_rgba(251,191,36,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] p-3 animate-fadeIn">
             <form
               onSubmit={handleSearchSubmit}
-              className="flex items-center gap-1.5 h-11 pl-3.5 pr-1.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 focus-within:bg-white focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-200/40 transition"
+              className="flex items-center gap-1 sm:gap-1.5 h-11 pl-2.5 sm:pl-3.5 pr-1.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 focus-within:bg-white focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-200/40 transition"
             >
               <span className="material-symbols-outlined text-[18px] text-amber-600 shrink-0">
                 search
@@ -373,12 +373,12 @@ export function NavbarSearchPopover({
                 </span>
                 <span className="truncate">{activeLocationName}</span>
               </p>
-              <span className="shrink-0 text-[10px] font-medium text-slate-400">
+              <span className="hidden sm:inline shrink-0 text-[10px] font-medium text-slate-400">
                 Enter untuk cari jalan
               </span>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-2.5 pt-1 pr-0.5">
+            <div className="max-h-[min(20rem,calc(100dvh-11rem))] overflow-y-auto space-y-2.5 pt-1 pr-0.5">
               {/* Saved Projects */}
               {filteredProjects.length > 0 && (
                 <div>

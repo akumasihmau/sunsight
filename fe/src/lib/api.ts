@@ -236,6 +236,8 @@ export type SimulationRequest = {
   sun_hour?: number;
   /** Sudut dudukan tambahan, derajat; menambah produksi lewat bonus self-cleaning. */
   extra_tilt?: number;
+  /** Rugi bayangan samping (pohon / bangunan sekitar), persen 0–50. */
+  shading_loss_pct?: number;
 };
 
 /** Hasil per bidang; seluruh angka dihitung server. */
@@ -421,7 +423,9 @@ export function getToken(): string | null {
     return null;
   }
 
-  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  const token =
+    window.localStorage.getItem(TOKEN_STORAGE_KEY) ??
+    window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
   if (!token && USE_MOCK && window.sessionStorage.getItem("sunsight.explicit_logout") !== "true") {
     const defaultToken = "sunsight_mock_token";
     window.localStorage.setItem(TOKEN_STORAGE_KEY, defaultToken);
@@ -431,20 +435,28 @@ export function getToken(): string | null {
   return token;
 }
 
-export function setToken(token: string | null): void {
+export function setToken(token: string | null, options: { remember?: boolean } = {}): void {
   if (typeof window === "undefined") {
     return;
   }
 
   if (token === null) {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     window.sessionStorage.setItem("sunsight.explicit_logout", "true");
     window.dispatchEvent(new Event("sunsight:storage"));
     return;
   }
 
+  const remember = options.remember ?? true;
   window.sessionStorage.removeItem("sunsight.explicit_logout");
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  if (remember) {
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  } else {
+    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
   window.dispatchEvent(new Event("sunsight:storage"));
 }
 

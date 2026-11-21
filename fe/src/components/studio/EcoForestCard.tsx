@@ -77,16 +77,16 @@ export function EcoForestCard({ result }: Props) {
   const frontTrees = DIORAMA_TREES.filter((t) => t.layer === "front");
 
   return (
-    <div className="rounded-2xl bg-gradient-to-b from-sky-100/75 via-emerald-50/60 to-emerald-100/85 border border-emerald-200/90 overflow-hidden shadow-xs relative h-32 flex flex-col justify-between p-3">
+    <div className="rounded-2xl bg-gradient-to-b from-sky-100/75 via-emerald-50/60 to-emerald-100/85 border border-emerald-200/90 overflow-hidden shadow-xs relative min-h-36 sm:h-32 flex flex-col justify-between p-3 gap-2">
       {/* Top Sky Badges */}
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 bg-white/90 backdrop-blur-xs border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold text-emerald-900">
-          <span className="material-symbols-outlined text-[14px] text-emerald-600">forest</span>
-          <span>Diorama Dampak Ekologis</span>
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-1.5">
+        <span className="inline-flex items-center gap-1.5 bg-white/90 backdrop-blur-xs border border-emerald-200 px-2 sm:px-2.5 py-0.5 rounded-full text-[10.5px] font-bold text-emerald-900 max-w-full truncate">
+          <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0">forest</span>
+          <span className="truncate">Diorama Dampak Ekologis</span>
         </span>
-        <span className="inline-flex items-center gap-1 bg-emerald-800 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
-          <span>
+        <span className="inline-flex items-center gap-1 bg-emerald-800 text-white px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] font-bold max-w-full truncate">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 shrink-0" />
+          <span className="truncate">
             {sproutedCount}/24 Pohon Visual ({integer.format(result.installed)}/
             {integer.format(result.max_slots)} slot)
           </span>

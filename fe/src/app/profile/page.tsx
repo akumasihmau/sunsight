@@ -24,9 +24,10 @@ export default function ProfilePage() {
     // Check authentication once component mounts on client
     if (!getToken()) {
       router.replace("/login");
-    } else {
-      setMounted(true);
+      return;
     }
+    const frame = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(frame);
   }, [router]);
 
   // Edit form state initialized from stored biodata
@@ -212,7 +213,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-800 font-sans antialiased relative overflow-hidden">
+    <div className="min-h-screen w-full bg-[#EFF1F4] text-slate-800 font-sans antialiased relative overflow-x-clip">
       {/* Ambient Soft Radiant Glow Background (pure radial gradients — light on GPU) */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div
@@ -231,15 +232,15 @@ export default function ProfilePage() {
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-3.5 sm:px-6 pb-12 space-y-5 sm:space-y-6">
         {/* Top Navigation Pill Bar */}
-        <header className="relative z-30 flex items-center justify-between gap-3 pt-4 sm:pt-5">
-          <div className="flex items-center gap-2">
+        <header className="relative z-30 flex items-center justify-between gap-2 sm:gap-3 pt-4 sm:pt-5">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               href="/"
-              className="h-11 px-4 rounded-full bg-white/85 hover:bg-white backdrop-blur-xl saturate-150 flex items-center justify-center transition shadow-xs border border-white/90"
+              className="h-9 sm:h-11 px-2.5 sm:px-4 rounded-full bg-white/85 hover:bg-white backdrop-blur-xl saturate-150 flex items-center justify-center transition shadow-xs border border-white/90"
               title="SunSight Beranda"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.svg" alt="SunSight" className="h-6 sm:h-7 w-auto object-contain" />
+              <img src="/logo.svg" alt="SunSight" className="h-5.5 sm:h-7 w-auto object-contain" />
             </Link>
 
             <NavbarSearchPopover
@@ -248,7 +249,7 @@ export default function ProfilePage() {
             />
           </div>
 
-          <nav className="hidden md:flex items-center gap-2" aria-label="Navigasi utama">
+          <nav className="hidden lg:flex items-center gap-2" aria-label="Navigasi utama">
             <Link
               href="/"
               className="h-11 px-5 rounded-full text-sm font-medium flex items-center gap-2 bg-white/85 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-slate-900 transition shadow-xs border border-white/90"
@@ -272,23 +273,23 @@ export default function ProfilePage() {
             </Link>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               href="/studio"
-              className="h-11 px-4 sm:px-5 rounded-full bg-white/85 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-700 text-sm font-semibold flex items-center gap-2 transition shadow-xs border border-white/90 group"
+              className="h-9 w-9 sm:h-11 sm:w-auto px-0 sm:px-5 rounded-full bg-white/85 hover:bg-white backdrop-blur-xl text-slate-700 hover:text-amber-700 text-sm font-semibold flex items-center justify-center gap-2 transition shadow-xs border border-white/90 group"
               title="Buka Studio CAD"
             >
               <span className="material-symbols-outlined text-[19px] text-amber-500 group-hover:scale-110 transition-transform">
                 polyline
               </span>
-              <span>Studio</span>
+              <span className="hidden sm:inline">Studio</span>
             </Link>
 
             <div
-              className="w-11 h-11 rounded-full bg-white/90 backdrop-blur-xl flex items-center justify-center shadow-xs border border-amber-300/60 relative"
+              className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/90 backdrop-blur-xl flex items-center justify-center shadow-xs border border-amber-300/60 relative"
               title="Halaman Profil Aktif"
             >
-              <span className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 text-amber-950 text-xs font-bold flex items-center justify-center shadow-2xs">
+              <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 text-amber-950 text-[11px] sm:text-xs font-bold flex items-center justify-center shadow-2xs">
                 {initials}
               </span>
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
@@ -296,8 +297,8 @@ export default function ProfilePage() {
           </div>
         </header>
 
-        {/* Mobile secondary tab strip */}
-        <div className="md:hidden flex items-center gap-2 overflow-x-auto pb-1 -mx-3.5 px-3.5 scrollbar-none">
+        {/* Mobile & Tablet secondary tab strip */}
+        <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 -mx-3.5 px-3.5 no-scrollbar">
           <Link
             href="/"
             className="h-9 px-3.5 rounded-full bg-white/85 text-slate-700 text-xs font-medium flex items-center gap-1.5 shrink-0 shadow-2xs"
@@ -329,13 +330,13 @@ export default function ProfilePage() {
         </div>
 
         {/* Hero Card: Identitas & Portofolio (Frosted Glass + Soft Radiant Glow) */}
-        <section className="rounded-[28px] bg-white/78 bg-gradient-to-br from-white/92 via-amber-50/25 to-sky-50/25 backdrop-blur-2xl saturate-150 p-6 sm:p-7 relative overflow-hidden shadow-[0_14px_38px_rgba(15,23,42,0.05),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/85">
+        <section className="rounded-[28px] bg-white/78 bg-gradient-to-br from-white/92 via-amber-50/25 to-sky-50/25 backdrop-blur-2xl saturate-150 p-4 sm:p-7 relative overflow-hidden shadow-[0_14px_38px_rgba(15,23,42,0.05),inset_0_1px_1px_rgba(255,255,255,0.92)] border border-white/85">
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             {/* User Identity Info */}
-            <div className="flex items-center gap-4 sm:gap-5">
+            <div className="flex items-center gap-3.5 sm:gap-5 min-w-0">
               <div className="relative shrink-0">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full p-1 bg-gradient-to-tr from-amber-300/60 via-yellow-200/70 to-amber-400/40 shadow-[0_6px_22px_rgba(245,158,11,0.22)] flex items-center justify-center">
-                  <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 text-amber-950 font-bold text-xl sm:text-2xl flex items-center justify-center shadow-inner tracking-tight">
+                <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full p-1 bg-gradient-to-tr from-amber-300/60 via-yellow-200/70 to-amber-400/40 shadow-[0_6px_22px_rgba(245,158,11,0.22)] flex items-center justify-center">
+                  <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-500 text-amber-950 font-bold text-lg sm:text-2xl flex items-center justify-center shadow-inner tracking-tight">
                     {initials}
                   </div>
                 </div>
@@ -344,9 +345,9 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight">
+                  <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight break-words">
                     {name || "Pengguna SunSight"}
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium flex items-center gap-1">
@@ -362,34 +363,34 @@ export default function ProfilePage() {
                   </span>
                 </div>
 
-                <p className="text-xs sm:text-sm text-slate-500">
+                <p className="text-xs sm:text-sm text-slate-500 break-words">
                   {email || "-"} · {phone || "Belum diisi"}
                 </p>
 
                 <p className="flex items-center gap-1.5 text-xs font-medium text-slate-600 pt-0.5">
-                  <span className="material-symbols-outlined text-[15px] text-amber-500">location_on</span>
-                  <span>{location || "Kota Bogor, Jawa Barat"}</span>
+                  <span className="material-symbols-outlined text-[15px] text-amber-500 shrink-0">location_on</span>
+                  <span className="break-words">{location || "Kota Bogor, Jawa Barat"}</span>
                 </p>
               </div>
             </div>
 
             {/* Unified Grouped Portfolio Metrics Strip */}
-            <div className="rounded-2xl bg-slate-900/[0.04] grid grid-cols-3 divide-x divide-slate-900/[0.07] py-3 shrink-0 min-w-[280px] sm:min-w-[330px]">
-              <div className="px-4 text-center">
-                <span className="block text-[11px] text-slate-500">Simulasi</span>
-                <span className="block text-base sm:text-lg font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5">
+            <div className="rounded-2xl bg-slate-900/[0.04] grid grid-cols-3 divide-x divide-slate-900/[0.07] py-3 shrink-0 w-full lg:w-auto min-w-0 sm:min-w-[330px]">
+              <div className="px-2 sm:px-4 text-center min-w-0">
+                <span className="block text-[10.5px] sm:text-[11px] text-slate-500 truncate">Simulasi</span>
+                <span className="block text-sm sm:text-lg font-semibold tracking-tight text-slate-900 font-code-metric tabular-nums mt-0.5 truncate">
                   {portfolioStats.projects} Proyek
                 </span>
               </div>
-              <div className="px-4 text-center">
-                <span className="block text-[11px] text-amber-800">Kapasitas</span>
-                <span className="block text-base sm:text-lg font-semibold tracking-tight text-amber-950 font-code-metric tabular-nums mt-0.5">
+              <div className="px-2 sm:px-4 text-center min-w-0">
+                <span className="block text-[10.5px] sm:text-[11px] text-amber-800 truncate">Kapasitas</span>
+                <span className="block text-sm sm:text-lg font-semibold tracking-tight text-amber-950 font-code-metric tabular-nums mt-0.5 truncate">
                   {portfolioStats.totalKwp.toFixed(1)} kWp
                 </span>
               </div>
-              <div className="px-4 text-center">
-                <span className="block text-[11px] text-sky-800">Produksi/Thn</span>
-                <span className="block text-base sm:text-lg font-semibold tracking-tight text-sky-950 font-code-metric tabular-nums mt-0.5">
+              <div className="px-2 sm:px-4 text-center min-w-0">
+                <span className="block text-[10.5px] sm:text-[11px] text-sky-800 truncate">Produksi/Thn</span>
+                <span className="block text-sm sm:text-lg font-semibold tracking-tight text-sky-950 font-code-metric tabular-nums mt-0.5 truncate">
                   {portfolioStats.annualMwh.toFixed(1)} MWh
                 </span>
               </div>
@@ -529,21 +530,21 @@ export default function ProfilePage() {
               </div>
 
               <div className="rounded-2xl bg-slate-900/[0.035] divide-y divide-slate-900/[0.06] text-xs">
-                <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-0.5 sm:gap-2">
                   <span className="text-slate-600 font-medium">Pemetaan Atap</span>
-                  <span className="text-slate-900 font-semibold font-code-metric">Nadir 90° · 1 m = 20 px</span>
+                  <span className="text-slate-900 font-semibold font-code-metric sm:text-right">Nadir 90° · 1 m = 20 px</span>
                 </div>
-                <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-0.5 sm:gap-2">
                   <span className="text-slate-600 font-medium">Data Radiasi</span>
-                  <span className="text-slate-900 font-semibold font-code-metric">NASA &amp; Solargis (4,2–4,5 kWh/m²)</span>
+                  <span className="text-slate-900 font-semibold font-code-metric sm:text-right">NASA &amp; Solargis (4,2–4,5 kWh/m²)</span>
                 </div>
-                <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-0.5 sm:gap-2">
                   <span className="text-slate-600 font-medium">Standar Sistem</span>
-                  <span className="text-slate-900 font-semibold">IEC 61215 · IEEE 1547 · PUIL 2020</span>
+                  <span className="text-slate-900 font-semibold sm:text-right">IEC 61215 · IEEE 1547 · PUIL 2020</span>
                 </div>
-                <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div className="px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-0.5 sm:gap-2">
                   <span className="text-slate-600 font-medium">Regulasi &amp; Emisi</span>
-                  <span className="text-slate-900 font-semibold">Permen ESDM 2/2024 · ISO 14064</span>
+                  <span className="text-slate-900 font-semibold sm:text-right">Permen ESDM 2/2024 · ISO 14064</span>
                 </div>
               </div>
 
@@ -629,8 +630,8 @@ export default function ProfilePage() {
 
       {/* Floating Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-900/90 backdrop-blur-xl text-white text-xs font-semibold shadow-[0_8px_24px_rgba(15,23,42,0.20)] flex items-center gap-2.5 border border-amber-400/30 animate-fadeIn">
-          <span className="material-symbols-outlined text-[18px] text-amber-400">check_circle</span>
+        <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:max-w-md z-50 px-4 py-3 rounded-2xl bg-slate-900/90 backdrop-blur-xl text-white text-xs font-semibold shadow-[0_8px_24px_rgba(15,23,42,0.20)] flex items-center gap-2.5 border border-amber-400/30 animate-fadeIn">
+          <span className="material-symbols-outlined text-[18px] text-amber-400 shrink-0">check_circle</span>
           <span>{toastMessage}</span>
         </div>
       )}
