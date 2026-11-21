@@ -54,17 +54,17 @@ class AuthController extends Controller
 
     public function forgotPassword(Request $request)
     {
-        // 1. Validasi email
-        $request->validate(['email' => 'required|email|exists:users,email']);
+        // Validasi format email tanpa `exists:users,email` agar keberadaan akun
+        // tidak dapat diselidiki lewat respons 422 (mencegah account enumeration).
+        $request->validate(['email' => 'required|email']);
 
-        // 2. Kirim email reset password bawaan Laravel
-        $status = Password::sendResetLink(
+        Password::sendResetLink(
             $request->only('email')
         );
 
-        return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => 'Email berisi tautan reset password telah dikirim.'])
-            : response()->json(['message' => 'Gagal mengirim email reset password.'], 400);
+        return response()->json([
+            'message' => 'Jika alamat email terdaftar, tautan reset password telah dikirim.',
+        ]);
     }
 
     public function resetPassword(Request $request)
@@ -80,13 +80,13 @@ class AuthController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, $password) {
-                // Karena di model User teman Anda sudah ada cast 'hashed',
-                // kita cukup masukkan password mentahnya, Laravel akan nge-hash otomatis.
                 $user->forceFill([
                     'password' => $password,
                 ])->setRememberToken(Str::random(60));
 
                 $user->save();
+                // Cabut seluruh token lama agar sesi di perangkat lain ikut tertutup.
+                $user->tokens()->delete();
                 event(new PasswordReset($user));
             }
         );
@@ -168,6 +168,12 @@ class AuthController extends Controller
         }
 
         $user->forceFill(['password' => $validated['password']])->save();
+
+        // Cabut token sesi perangkat lain, sambil mempertahankan sesi aktif saat ini.
+        $currentToken = $user->currentAccessToken();
+        if ($currentToken !== null && isset($currentToken->id)) {
+            $user->tokens()->where('id', '!=', $currentToken->id)->delete();
+        }
 
         return response()->json(['message' => 'Password berhasil diperbarui.']);
     }

@@ -22,19 +22,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::patch('/user', [AuthController::class, 'updateProfile']);
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::post('/change-password', [AuthController::class, 'changePassword']);
+    Route::post('/change-password', [AuthController::class, 'changePassword'])->middleware('throttle:5,1');
     // Penanda onboarding selesai; idempoten sehingga aman dikirim berulang.
     Route::post('/onboarding/complete', [AuthController::class, 'completeOnboarding']);
 
     // Lokasi, katalog, deteksi, dan simulasi
-    Route::post('/location', [SimulationController::class, 'location']);
+    Route::post('/location', [SimulationController::class, 'location'])->middleware('throttle:30,1');
     Route::get('/options', [SimulationController::class, 'options']);
-    Route::post('/roof-detections', RoofDetectionController::class);
+    Route::post('/roof-detections', RoofDetectionController::class)->middleware('throttle:30,1');
     // Acuan tangkapan untuk bidang yang digambar sendiri, tanpa memanggil model.
-    Route::post('/captures', CaptureController::class);
+    Route::post('/captures', CaptureController::class)->middleware('throttle:30,1');
 
     Route::get('/reverse-geocode', [GeocodeController::class, 'reverse'])->middleware('throttle:30,1');
-    Route::post('/simulate', [SimulationController::class, 'simulate']);
+    Route::post('/simulate', [SimulationController::class, 'simulate'])->middleware('throttle:30,1');
 
     // Riwayat simulasi
     Route::get('/analyses', [SimulationController::class, 'index']);

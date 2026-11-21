@@ -54,6 +54,8 @@ class SimulateRequest extends FormRequest
             // Nilai bawaannya sama dengan posisi awal antarmuka.
             'sun_hour' => ['sometimes', 'nullable', 'numeric', 'between:6,18'],
             'extra_tilt' => ['sometimes', 'nullable', 'numeric', 'between:0,20'],
+            // Rugi bayangan samping (pohon / bangunan sekitar), dalam persen (0–50%).
+            'shading_loss_pct' => ['sometimes', 'nullable', 'numeric', 'between:0,50'],
 
             'roofs' => ['required', 'array', 'min:1', 'max:'.self::MAX_ROOFS],
 
@@ -146,6 +148,7 @@ class SimulateRequest extends FormRequest
         // mengirim masukan ini tetap menghasilkan angka seperti sebelumnya.
         $validated['sun_hour'] = (float) ($validated['sun_hour'] ?? 12.0);
         $validated['extra_tilt'] = (float) ($validated['extra_tilt'] ?? 10.0);
+        $validated['shading_loss_pct'] = (float) ($validated['shading_loss_pct'] ?? 0.0);
 
         foreach ($roofs as $index => $roof) {
             $ring = PolygonGeometry::makeSimple(array_map(

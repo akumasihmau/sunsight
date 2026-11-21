@@ -55,12 +55,14 @@ class EnergyModel
     }
 
     /**
-     * Faktor kecocokan azimuth, 1,0 pada azimuth optimal.
+     * Faktor kecocokan azimuth, 1,0 pada azimuth optimal (Utara 0° untuk Kota Bogor 6,6° LS).
+     * Memakai jarak sudut melingkar 360° agar 355° dan 5° sama-sama berdeviasi 5°.
      */
     public static function azimuthFactor(float $azimuthDeg): float
     {
         $optimal = (float) config('plts.energy.optimal_azimuth_deg');
-        $deviation = abs($azimuthDeg - $optimal);
+        $rawDiff = abs(fmod($azimuthDeg - $optimal + 360.0, 360.0));
+        $deviation = min($rawDiff, 360.0 - $rawDiff);
 
         return max(0.82, min(1.0, 1.0 - ($deviation / 180.0) * 0.15));
     }
@@ -88,6 +90,7 @@ class EnergyModel
         float $extraTiltDeg,
         float $sunHour,
         string $inverterType,
+        float $shadingLossPct = 0.0,
     ): EnergyResult {
         $peakSunHours = self::peakSunHours($sunHour);
         $incidenceFactor = round(
@@ -99,8 +102,9 @@ class EnergyModel
 
         $inverterEfficiency = config('plts.energy.inverter_efficiency')[$inverterType]
             ?? config('plts.energy.inverter_efficiency')['string'];
+        $shadingFactor = max(0.5, min(1.0, 1.0 - ($shadingLossPct / 100.0)));
         $performanceRatio = round(
-            (float) config('plts.energy.system_loss_ratio') * (float) $inverterEfficiency,
+            (float) config('plts.energy.system_loss_ratio') * (float) $inverterEfficiency * $shadingFactor,
             4,
         );
 
@@ -113,13 +117,12 @@ class EnergyModel
         return new EnergyResult(
             capacityKwp: round($capacityKwp, 3),
             annualProductionKwh: round($annualKwh, 2),
-            // Jam matahari puncak setara dengan kWh/m2/hari pada 1 kW/m2, sehingga
-            // nilainya tetap dapat dibaca sebagai iradiasi harian.
+            // Jam matahari puncak setara dengan kWh/m2/hari pada 1 kW/m2 (ISO 9060 / IEC 61724-1).
             dailyIrradianceKwhPerSqm: $peakSunHours,
             incidenceFactor: $incidenceFactor,
             performanceRatio: $performanceRatio,
-            irradianceSource: 'Jam matahari puncak studio',
-            irradiancePeriod: 'asumsi pengguna',
+            irradianceSource: (string) config('plts.energy.irradiance_source', 'NASA POWER & Global Solar Atlas (Kota Bogor)'),
+            irradiancePeriod: (string) config('plts.energy.irradiance_period', 'Klimatologi 2001–2024'),
         );
     }
 }
