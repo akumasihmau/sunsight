@@ -4,15 +4,32 @@ Panduan singkat ini disiapkan untuk tim/rekan yang menangani deployment **SunSig
 
 ---
 
-## 1. Ringkasan Perubahan Terbaru (Sudah di Branch `main`)
+## 1. Perbandingan ML Versi Sebelumnya (Teman) vs ML Versi Baru (v3 Pro)
 
-### A. ML Service (`ml/service/`) — Upgrade ke **YOLO11m-Seg v3 Pro**
-- **Kontrak API tetap sama** (`POST /api/v1/predict`, `GET /health`, `GET /ready`, header `X-Api-Key`) — tidak ada perubahan kode integrasi.
-- **Model naik versi** dari `YOLO11s-Seg` (`best.onnx`) ke **`YOLO11m-Seg v3 Pro`** (`best_v3.onnx`, 86 MB), tetap **CPU-only via ONNX Runtime** (tanpa butuh GPU maupun PyTorch).
-- **Preprocessing & Post-processing v3 Pro**:
-  - **Wajib aktifkan `USE_CLAHE_LAB=true`** (model dilatih dengan kontras CLAHE LAB; jika `false`, akurasi turun drastis).
-  - Regularisasi poligon ortogonal (`-92,2%` jumlah titik sudut, anti-blobby, rasio aspek maksimal `7.5` agar atap memanjang seperti ruko/kampus tidak terpotong).
-- **Hardening keamanan**: verifikasi `X-Api-Key` menggunakan `hmac.compare_digest` dan proteksi decompression bomb (`MAX_IMAGE_PIXELS=20000000`).
+> **Inti penting untuk tim deploy:** Seluruh layanan ML versi baru sudah menyatu di folder `ml/service/` pada repo utama (`main`) dan bersifat **100% *drop-in replacement*** terhadap layanan ML lama. Tidak perlu menggabungkan kode ML lama dengan yang baru, dan tidak ada perubahan kode integrasi di Laravel (`MlClient.php`).
+
+| Aspek | ML Versi Sebelumnya (`yolov8-seg` / Baseline) | ML Versi Baru (`ml/service/` — **v3 Pro**) |
+| :--- | :--- | :--- |
+| **Kontrak API HTTP** | `GET /health`, `GET /ready`, `POST /api/v1/predict` (`multipart/form-data`, header `X-Api-Key`) | **100% identik** — endpoint, payload, dan format JSON respons sama persis |
+| **Model & Runtime** | `YOLOv8n-seg` (`src/roof_inference/weights/best.pt`, butuh PyTorch + Ultralytics) | **`YOLO11m-Seg v3 Pro`** (`ml/service/weights/best_v3.onnx`, 86 MB, **ONNX Runtime CPU-only** — tanpa PyTorch/GPU, image Docker jauh lebih ringan) |
+| **Dataset & Akurasi Domain** | Dataset baseline awal (lebih rentan *false positive* jalan/parkiran dan bias warna genteng) | Dilatih ulang pada citra **Esri World Imagery Kota Bogor** (6 kecamatan) + *hard negatives* (jalan aspal, pohon, lapangan, sungai) + atap beton/gedung kompleks |
+| **Preprocessing Citra** | Citra RGB langsung (tanpa CLAHE) | **Wajib `USE_CLAHE_LAB=true`** (normalisasi kontras LAB sesuai saat training; jika `false`, akurasi turun drastis) |
+| **Post-Processing Poligon** | Kontur mentah dari mask (puluhan–ratusan titik *blobby*, bisa menyilang sendiri) | **Regularisasi Poligon Ortogonal (Area-Preserving)**: reduksi vertex **-92,2%** (`68,75 → 5,36` titik), galat luas turun (`25,77% → 25,50%`), *Road/Hard-Negative FPR* `14,29%` |
+| **Ambang & Rasio Aspek** | `MODEL_CONFIDENCE=0.25`, `MODEL_DEVICE=cpu`; di BE `ML_MAX_ASPECT_RATIO=5.0` | `MODEL_CONFIDENCE=0.18`, `MODEL_IOU_THRESHOLD=0.40`, `MAX_ASPECT_RATIO=7.5`; di BE **`ML_MAX_ASPECT_RATIO=8.0`** agar atap gedung memanjang (ruko/kampus) tidak terpotong |
+| **Performa CPU** | ~3–8 detik/gambar (cold start ~11–13 detik), konsumsi RAM PyTorch lebih tinggi | **~2,65 detik/gambar** di CPU (`MAX_CONCURRENT_INFERENCES=1`), image berbasis `python:3.12-slim` + `onnxruntime` |
+| **Lokasi Kode & Keamanan** | Repo/service terpisah (`src/roof_inference/...`) | Menyatu di `ml/service/` (`Dockerfile` port `7860`), verifikasi `X-Api-Key` tahan *timing attack* (`hmac.compare_digest`), proteksi `MAX_IMAGE_PIXELS=20000000` |
+
+**Langkah migrasi dari ML lama ke ML baru:**
+1. Matikan/gantikan container ML lama (`yolov8-seg` / `.pt`) dengan container baru yang di-build dari `ml/service/Dockerfile`.
+2. Pasang file bobot **`best_v3.onnx`** dari folder Google Drive ini ke `/app/weights/best_v3.onnx`.
+3. Pastikan env ML memakai nilai v3 Pro (terutama `USE_CLAHE_LAB=true`) dan di Backend Laravel ubah `ML_MAX_ASPECT_RATIO=8.0` serta `ML_SERVICE_URL` + `ML_SERVICE_KEY` mengarah ke container ML baru.
+
+---
+
+## 2. Ringkasan Perubahan Terbaru Lainnya (Sudah di Branch `main`)
+
+### A. ML Service (`ml/service/`)
+- Upgrade penuh ke **YOLO11m-Seg v3 Pro** (`best_v3.onnx`, ONNX CPU) dengan preprocessing CLAHE LAB, regularisasi poligon ortogonal, `hmac.compare_digest` untuk `X-Api-Key`, dan batas piksel `MAX_IMAGE_PIXELS=20000000`.
 
 ### B. Backend (`be/`) — Kalibrasi Fisika Surya Bogor & Security Hardening
 - **Kalibrasi klimatologi Kota Bogor** (NASA POWER & Global Solar Atlas 2001–2024): GHI `4,42 kWh/m²/hari` (pagi berawan `3,82`, sore `3,95`), orientasi optimal belahan bumi selatan **`0° Utara` dengan kemiringan `10°`**, perhitungan azimuth melingkar 360° sejati (`355° === 5°`).
@@ -32,7 +49,7 @@ Panduan singkat ini disiapkan untuk tim/rekan yang menangani deployment **SunSig
 
 ---
 
-## 2. File Bobot ML (Tidak Ada di GitHub)
+## 3. File Bobot ML (Tidak Ada di GitHub)
 
 File bobot **`best_v3.onnx` (~86 MB)** sengaja tidak dimasukkan ke repository Git. Unduh dari folder Google Drive yang dibagikan lalu letakkan di:
 - **Deploy native / VM**: `ml/service/weights/best_v3.onnx`
@@ -40,7 +57,7 @@ File bobot **`best_v3.onnx` (~86 MB)** sengaja tidak dimasukkan ke repository Gi
 
 ---
 
-## 3. Langkah Deploy & Environment Variables
+## 4. Langkah Deploy & Environment Variables
 
 ### A. ML Service (`ml/service/` — FastAPI + ONNX CPU)
 - **Spesifikasi minimum**: CPU-only, RAM **1,5–2 GB** (`MAX_CONCURRENT_INFERENCES=1`).
@@ -138,7 +155,7 @@ File bobot **`best_v3.onnx` (~86 MB)** sengaja tidak dimasukkan ke repository Gi
 
 ---
 
-## 4. Checklist Verifikasi Cepat Setelah Deploy
+## 5. Checklist Verifikasi Cepat Setelah Deploy
 
 1. **ML Ready**: `curl https://<domain-ml>/ready` → HTTP `200`, pastikan `"model": "yolo11m-seg-clahe"` dan `"ready": true`.
 2. **Backend & CORS**: `curl "https://<domain-backend>/api/geocode?q=Bogor"` → HTTP `200` mengembalikan daftar koordinat Kota Bogor.
